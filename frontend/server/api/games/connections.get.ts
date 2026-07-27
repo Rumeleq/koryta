@@ -1,24 +1,14 @@
-import { z } from "zod";
 import { authCachedEventHandler } from "~~/server/utils/handlers";
 import { fetchNodes, fetchEdges } from "~~/server/utils/fetch";
+import { gameDateValidator, warsawToday } from "~~/server/utils/games";
+import { toStringArray } from "~~/shared/games/util";
 import {
   generateConnectionsPuzzle,
   type ConnectionsCandidate,
 } from "~~/shared/games/connections";
 
-const queryValidator = z.object({
-  date: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional(),
-});
-
-export function warsawToday(): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Warsaw" });
-}
-
 export default authCachedEventHandler(async (event) => {
-  const { date } = queryValidator.parse(getQuery(event));
+  const { date } = gameDateValidator.parse(getQuery(event));
   const day = date ?? warsawToday();
 
   const [people, places, regions, edges] = await Promise.all([
@@ -33,14 +23,10 @@ export default authCachedEventHandler(async (event) => {
     if (!person.id || !person.name || !person.visibility || person.deleted) {
       continue;
     }
-    // Not every stored node matches the TS types (e.g. parties as a map).
-    const parties = Array.isArray(person.parties)
-      ? person.parties.filter((party) => typeof party === "string")
-      : [];
     candidates.set(person.id, {
       id: person.id,
       name: person.name,
-      parties,
+      parties: toStringArray(person.parties),
       companies: [],
       regions: [],
       years: [],

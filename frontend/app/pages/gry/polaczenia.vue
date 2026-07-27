@@ -293,8 +293,10 @@ async function shareResult() {
     ? `${guesses.value.length}/${4 + connectionsMaxMistakes - 1} prób`
     : "bez rozwiązania";
   const text = `Połączenia koryta.pl #${puzzle.value?.number} — ${outcome}\n${emojiGrid.value}\nhttps://koryta.pl/gry/polaczenia`;
+  // Despite the DOM types, navigator.share is missing on desktop browsers.
+  const canShare = "share" in navigator;
   try {
-    if ("share" in navigator) {
+    if (canShare) {
       await navigator.share({ text });
       return;
     }

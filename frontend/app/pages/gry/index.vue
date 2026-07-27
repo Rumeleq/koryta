@@ -11,27 +11,12 @@
     </v-col>
 
     <v-col v-for="game in games" :key="game.title" cols="12" md="6">
-      <v-card
-        :to="game.to"
-        height="100%"
-        variant="outlined"
-        :hover="!game.comingSoon"
-      >
+      <v-card :to="game.to" height="100%" variant="outlined" hover>
         <v-card-item>
           <template #prepend>
             <v-icon :icon="game.icon" size="large" color="primary" />
           </template>
-          <v-card-title>
-            {{ game.title }}
-            <v-chip
-              v-if="game.comingSoon"
-              size="small"
-              color="secondary"
-              class="ms-2"
-            >
-              wkrótce
-            </v-chip>
-          </v-card-title>
+          <v-card-title>{{ game.title }}</v-card-title>
         </v-card-item>
         <v-card-text class="text-medium-emphasis">
           {{ game.desc }}
@@ -76,14 +61,12 @@ const games = [
     desc: "Pogrupuj 16 osób w cztery czwórki: wspólna partia, rok wyborów, region albo miejsce pracy. Masz cztery próby — jak w klasycznym Connections.",
     icon: mdiViewGridOutline,
     to: "/gry/polaczenia",
-    comingSoon: false,
   },
   {
     title: "Korytle",
     desc: "Mozaika koryciarzy z jednego regionu Polski — podzielona według branż spółek i partii. Zgadnij, o które miasto chodzi; po każdej próbie podpowiemy odległość i kierunek.",
     icon: mdiMapSearchOutline,
     to: "/gry/korytle",
-    comingSoon: true,
   },
 ];
 </script>
