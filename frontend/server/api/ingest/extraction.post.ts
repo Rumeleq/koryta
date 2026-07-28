@@ -2,6 +2,7 @@ import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { getApp } from "firebase-admin/app";
 import { getUser } from "~~/server/utils/auth";
 import type { ExtractionFact } from "~~/shared/model";
+import { normalizeUrl } from "~~/shared/url";
 import { z } from "zod";
 
 const factSchema = z.object({
@@ -49,29 +50,27 @@ export default defineEventHandler(async (event) => {
 
   const db = getFirestore(getApp(), "koryta-pl");
 
-  // Collect unique article URLs for batch node lookup
-  const uniqueUrls = [...new Set(body.articles.map((a) => a.url))];
+  // Article nodes by normalized url. This used to be an `in` query on the exact
+  // `sourceURL`, which never matched anything: the crawler stores
+  // `https://www.example.pl/a`, the extraction pipeline sends `example.pl/a`,
+  // and Firestore compares strings. Reading the article nodes once and matching
+  // on the normalized form is both correct and, at a few hundred articles,
+  // cheaper than the chunked queries it replaces.
   const urlToNodeId = new Map<string, string>();
-
-  // Look up existing article nodes by URL (chunk by 10 for Firestore 'in' limit)
-  for (let i = 0; i < uniqueUrls.length; i += 10) {
-    const chunk = uniqueUrls.slice(i, i + 10);
-    const snapshot = await db
-      .collection("nodes")
-      .where("type", "==", "article")
-      .where("sourceURL", "in", chunk)
-      .get();
-
-    for (const doc of snapshot.docs) {
-      const sourceURL = doc.data().sourceURL as string;
-      urlToNodeId.set(sourceURL, doc.id);
-    }
+  const articles = await db
+    .collection("nodes")
+    .where("type", "==", "article")
+    .select("sourceURL")
+    .get();
+  for (const doc of articles.docs) {
+    const sourceURL = doc.data().sourceURL as string | undefined;
+    if (sourceURL) urlToNodeId.set(normalizeUrl(sourceURL), doc.id);
   }
 
   // Flatten all facts and prepare documents
   const allDocs: FirebaseFirestore.DocumentData[] = [];
   for (const article of body.articles) {
-    const articleNodeId = urlToNodeId.get(article.url);
+    const articleNodeId = urlToNodeId.get(normalizeUrl(article.url));
     for (const fact of article.extracted_facts) {
       const doc: Record<string, unknown> = {
         url: fact.url,

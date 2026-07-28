@@ -15,6 +15,7 @@ const { mockReadBody, mockBatchSet, mockCommit, mockCollection, nodesQuery } =
     // Article-node lookup: no existing nodes match.
     const nodesQuery: any = {
       where: vi.fn(() => nodesQuery),
+      select: vi.fn(() => nodesQuery),
       get: vi.fn().mockResolvedValue({ docs: [] }),
     };
     const mockCollection = vi.fn(() => ({
@@ -83,5 +84,46 @@ describe("api/ingest/extraction", () => {
       expect.objectContaining({ stats: { votes: { humanVoted: false } } }),
     );
     expect(mockCommit).toHaveBeenCalledTimes(1);
+  });
+
+  it("links a fact to its article node across url spellings", async () => {
+    // The pipeline sends no scheme; the crawler stored https and a www. Exact
+    // string matching found nothing, which is why no extraction in production
+    // carries an articleNodeId.
+    nodesQuery.get.mockResolvedValueOnce({
+      docs: [
+        {
+          id: "article-node",
+          data: () => ({ sourceURL: "https://www.example.com/a/" }),
+        },
+      ],
+    });
+    mockReadBody.mockResolvedValue({
+      articles: [
+        {
+          url: "example.com/a",
+          domain: "example.com",
+          title: null,
+          publication_date: null,
+          tag: "v1",
+          extracted_facts: [
+            {
+              url: "example.com/a",
+              justification: "bo tak",
+              fact_type: "employment",
+              person: "Jan Kowalski",
+              organization: "Orlen",
+            },
+          ],
+        },
+      ],
+    });
+
+    await handler({} as any);
+
+    expect(mockBatchSet).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ articleNodeId: "article-node" }),
+    );
   });
 });
