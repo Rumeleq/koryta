@@ -45,6 +45,85 @@
     />
 
     <v-row>
+      <!-- Untriaged feedback -->
+      <v-col cols="12" md="6">
+        <v-card height="100%" variant="outlined">
+          <v-card-item>
+            <template #prepend>
+              <v-icon :icon="mdiMessageAlertOutline" color="primary" />
+            </template>
+            <v-card-title>Nowe zgłoszenia</v-card-title>
+            <template #append>
+              <v-chip
+                v-if="!pending"
+                :color="
+                  summary && summary.feedback.needsAction > 0
+                    ? 'warning'
+                    : 'success'
+                "
+                variant="flat"
+              >
+                {{ summary?.feedback.needsAction ?? 0 }}
+              </v-chip>
+              <v-progress-circular v-else indeterminate size="20" />
+            </template>
+          </v-card-item>
+
+          <v-card-text>
+            <div class="text-caption text-medium-emphasis mb-2">
+              Wysłane przyciskiem „Zgłoś”, jeszcze nietknięte.
+            </div>
+
+            <template v-if="pending">
+              <v-skeleton-loader type="list-item-two-line@3" />
+            </template>
+            <template v-else-if="summary && summary.feedback.needsAction === 0">
+              <v-alert
+                type="success"
+                variant="tonal"
+                density="compact"
+                :icon="mdiCheckCircleOutline"
+                text="Brak nowych zgłoszeń."
+              />
+            </template>
+            <template v-else-if="summary">
+              <v-list density="compact" class="py-0">
+                <v-list-item
+                  v-for="item in summary.feedback.sample"
+                  :key="item.id"
+                  :title="item.pageTitle ?? item.route"
+                  :subtitle="item.message"
+                  lines="two"
+                />
+              </v-list>
+              <div
+                v-if="
+                  summary.feedback.needsAction > summary.feedback.sample.length
+                "
+                class="text-caption text-medium-emphasis mt-2"
+              >
+                …i
+                {{
+                  summary.feedback.needsAction - summary.feedback.sample.length
+                }}
+                więcej.
+              </div>
+            </template>
+          </v-card-text>
+
+          <v-card-actions>
+            <v-btn
+              variant="text"
+              color="primary"
+              to="/admin/opinie"
+              :append-icon="mdiChevronRight"
+            >
+              Przejdź do zgłoszeń
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-col>
+
       <!-- Notes needing action -->
       <v-col cols="12" md="6">
         <v-card height="100%" variant="outlined">
@@ -280,6 +359,7 @@ import {
   mdiCheckCircleOutline,
   mdiGestureTapButton,
   mdiRefresh,
+  mdiMessageAlertOutline,
 } from "@mdi/js";
 import { authRequest } from "~/composables/auth";
 import { noteAdminTypeLabel } from "~/composables/notes";
@@ -324,6 +404,12 @@ const subpages = [
     to: "/admin/notatki",
     icon: mdiNoteEditOutline,
     desc: "Zgłoszenia i źródła dodane przez użytkowników.",
+  },
+  {
+    title: "Zgłoszenia",
+    to: "/admin/opinie",
+    icon: mdiMessageAlertOutline,
+    desc: "Opinie i błędy zgłoszone przyciskiem na stronie.",
   },
   {
     title: "Ekstrakcje",

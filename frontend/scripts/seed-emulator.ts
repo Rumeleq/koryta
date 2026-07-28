@@ -71,7 +71,13 @@ async function seedDatabase() {
   console.log("Seeding database...");
 
   // Clear existing collections
-  const collections = ["nodes", "edges", "revisions", "extractions"];
+  const collections = [
+    "nodes",
+    "edges",
+    "revisions",
+    "extractions",
+    "feedback",
+  ];
   for (const col of collections) {
     const docs = await db.collection(col).listDocuments();
     if (docs.length > 0) {

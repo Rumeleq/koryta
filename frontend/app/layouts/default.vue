@@ -100,6 +100,14 @@
           />
         </v-btn>
         <v-btn
+          v-if="isAdmin"
+          :prepend-icon="mdiMessageAlertOutline"
+          variant="text"
+          to="/admin/opinie"
+        >
+          Zgłoszenia
+        </v-btn>
+        <v-btn
           :prepend-icon="mdiLightningBolt"
           variant="text"
           href="https://github.com/users/SzymonPajzert/projects/2/views/3"
@@ -127,6 +135,7 @@
       <slot />
     </v-container>
     <HomeAppFooter class="mt-auto w-100" />
+    <FeedbackLauncher />
   </v-main>
 </template>
 
@@ -139,6 +148,7 @@ import {
   mdiShieldAccount,
   mdiViewList,
   mdiNoteTextOutline,
+  mdiMessageAlertOutline,
 } from "@mdi/js";
 import { computed, ref } from "vue";
 import { useAuthState } from "@/composables/auth";

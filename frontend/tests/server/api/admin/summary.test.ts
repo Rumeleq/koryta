@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import handler from "../../../../server/api/admin/summary.get";
 
 /** A chainable query that remembers which collection it came from and what it
- * was filtered by, so one mock can serve the four different reads the handler
+ * was filtered by, so one mock can serve the five different reads the handler
  * makes without the test depending on the order they happen in. */
 type Where = [unknown, string, unknown];
 
@@ -10,6 +10,7 @@ const results = {
   notes: [] as unknown[],
   unapprovedNodes: { count: 0, docs: [] as unknown[] },
   edgeRevisions: { count: 0, docs: [] as unknown[] },
+  newFeedback: { count: 0, docs: [] as unknown[] },
   namedNodes: [] as unknown[],
 };
 
@@ -35,16 +36,21 @@ function makeQuery(collection: string, wheres: Where[] = []) {
       wheres.some((w) => w[0] === "revisions.has_unapproved")
     );
   }
+  function isNewFeedback() {
+    return collection === "feedback";
+  }
 
   function total() {
     if (isEdgeRevisions()) return results.edgeRevisions.count;
     if (isUnapprovedNodes()) return results.unapprovedNodes.count;
+    if (isNewFeedback()) return results.newFeedback.count;
     throw new Error(`unexpected count() on ${collection}`);
   }
   function resolve() {
     if (collection === "notes") return results.notes;
     if (isEdgeRevisions()) return results.edgeRevisions.docs;
     if (isUnapprovedNodes()) return results.unapprovedNodes.docs;
+    if (isNewFeedback()) return results.newFeedback.docs;
     // The remaining read on `nodes` resolves names for the notes sample.
     return results.namedNodes;
   }
@@ -123,6 +129,7 @@ beforeEach(() => {
   results.notes = [];
   results.unapprovedNodes = { count: 0, docs: [] };
   results.edgeRevisions = { count: 0, docs: [] };
+  results.newFeedback = { count: 0, docs: [] };
   results.namedNodes = [];
   byId.revisions = {};
   byId.edges = {};

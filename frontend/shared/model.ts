@@ -523,6 +523,62 @@ export type NoteRow = {
   adminTypeDeferred: boolean;
 };
 
+export type FeedbackKind = "bug" | "idea" | "data" | "other";
+
+/** Kept here rather than with the rest of the UI copy in
+ * `app/composables/feedback.ts`, because the Slack trigger needs the same
+ * labels and Cloud Functions cannot import from `app/`. */
+export const feedbackKindLabels: Record<FeedbackKind, string> = {
+  bug: "Coś nie działa",
+  data: "Błędne dane",
+  idea: "Pomysł",
+  other: "Coś innego",
+};
+
+export type FeedbackStatus = "new" | "in_progress" | "resolved" | "wont_fix";
+
+/** How far the Slack forward got. Absent on documents written before
+ * forwarding existed, and on any that the trigger has not reached yet. */
+export type FeedbackSlackState = {
+  state: "sending" | "sent" | "failed";
+  /** Slack's message id. A string, always — parsing it as a number loses
+   * precision and breaks any later chat.update. */
+  ts?: string;
+  channel?: string;
+  /** Bounded so a permanently broken forward cannot ride out Eventarc's whole
+   * retry window. */
+  attempts?: number;
+  error?: string;
+};
+
+/** What the reporter was looking at when they hit the feedback button, so a
+ * report arrives already tied to the page it is about. */
+export type FeedbackContext = {
+  route: string;
+  nodeId?: string;
+  /** The document title as it stood, captured rather than resolved later so a
+   * report reads the way the page did. */
+  pageTitle?: string;
+  userAgent?: string;
+  viewport?: { width: number; height: number };
+};
+
+export type Feedback = {
+  id?: string;
+  kind: FeedbackKind;
+  message: string;
+  /** Absent when the reporter was not signed in. Anonymous reports are allowed
+   * on purpose — the point is to lower the bar for telling us something. */
+  userUid?: string;
+  /** Volunteered by the reporter so we can reply. Never required. */
+  contact?: string;
+  context: FeedbackContext;
+  createdAt: string;
+  adminStatus: FeedbackStatus;
+  adminNote?: string;
+  slack?: FeedbackSlackState;
+};
+
 export type ExtractionFactType =
   | "employment"
   | "party_membership"

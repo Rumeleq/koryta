@@ -27,6 +27,19 @@ export function requireDatascience(user: DecodedIdToken): DecodedIdToken {
   return user;
 }
 
+/** Like `getUser`, but for routes that serve signed-in and signed-out callers
+ * alike: a missing or unusable token yields null instead of a 401. */
+export async function getOptionalUser(event: H3Event) {
+  const authHeader = getRequestHeader(event, "Authorization");
+  if (!authHeader?.startsWith("Bearer ")) return null;
+
+  try {
+    return await getAuth().verifyIdToken(authHeader.substring(7));
+  } catch {
+    return null;
+  }
+}
+
 export async function getUser(event: H3Event) {
   const authHeader = getRequestHeader(event, "Authorization");
   if (!authHeader?.startsWith("Bearer ")) {
