@@ -468,39 +468,41 @@ def test_every_node_has_a_name(nodes):
 
 
 @pytest.mark.integration
-def test_parties_is_stored_as_an_array(nodes):
-    """`parties` has to be a real array for the party filter to see it.
+def test_array_fields_are_stored_as_arrays(nodes):
+    """An array field has to be a real array for `array-contains` to see it.
 
-    `sanitizeFirestoreData` rewrites arrays as maps with numbered keys
-    (`{"0": "PO"}`) when a revision is written, and Firestore's
-    `array-contains-any` does not match a map. A person stored that way is
-    invisible to every party filter - and to the "no party" filter too, which
+    `sanitizeFirestoreData` used to rewrite arrays as maps with numbered keys
+    (`{"0": "PO"}`) when a revision was written, and Firestore's
+    `array-contains-any` does not match a map - nor does it raise, so the node
+    drops out of the filter rather than failing. A person stored that way is
+    invisible to every party filter, and to the "no party" filter too, which
     looks for `parties == []` and does not match `{}` either.
     """
-    # Not a legacy count but a growing one, and the reason to fix the writer
-    # rather than raise the number: the export of 2026-06-28 had 105 and that of
-    # 2026-07-28 had 461, while the count of people storing a real array stood
-    # still at 5617 in both. Every person added in that month got a map. If this
-    # fails, sanitizeFirestoreData is still rewriting the field on write; the
-    # budget is what it was when the test was written.
-    MAP_VALUED_PARTIES = 461
+    # The writer is fixed (server/utils/revisions.ts rewrites only an array
+    # nested directly inside another array, which is the case Firestore really
+    # cannot store), so this count no longer grows - it was 105 in the export of
+    # 2026-06-28 and 461 in that of 2026-07-28, while the number of people
+    # holding a real array stood still at 5617 in both.
+    #
+    # It goes to zero once scripts/migrate/unwrap-array-fields.ts is run against
+    # production; the budget is exactly the 3041 nodes its dry run reports.
+    MAP_VALUED = 3041
 
+    fields = ("parties", "activity", "categories")
     not_arrays = [
-        document["id"]
+        (document["id"], field)
         for document in nodes
-        if "parties" in document and not isinstance(document["parties"], list)
+        for field in fields
+        if field in document and not isinstance(document[field], list)
     ]
-    non_empty = [
-        document["id"]
-        for document in nodes
-        if isinstance(document.get("parties"), dict) and document["parties"]
-    ]
+    by_field = collections.Counter(field for _, field in not_arrays)
+    documents = {document_id for document_id, _ in not_arrays}
 
-    assert len(not_arrays) <= MAP_VALUED_PARTIES, (
-        f"{len(not_arrays)} nodes store `parties` as something other than an "
-        f"array ({len(non_empty)} of them non-empty, and so unreachable by any "
-        f"party filter), up from the {MAP_VALUED_PARTIES} known ones. "
-        f"Sample IDs: {sample(not_arrays)}"
+    assert len(documents) <= MAP_VALUED, (
+        f"{len(documents)} nodes store an array field as a map ({dict(by_field)}), "
+        f"and are missing from any array-contains filter on it - up from the "
+        f"{MAP_VALUED} the migration knows about. "
+        f"Sample: {sample(not_arrays)}"
     )
 
 
