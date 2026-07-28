@@ -53,8 +53,7 @@ useHead({
   title: "Ekstrakcje z artykułów - koryta.pl",
 });
 
-// This page renders every group at once, so it stays on the newest slice;
-// the review flow (/ekstrakcje/kategoryzacja) is the one that needs them all.
+// This page renders every group at once, so it stays on the newest slice.
 const { data, pending, error } = useExtractions({
   groupBy: "article",
   limit: 100,

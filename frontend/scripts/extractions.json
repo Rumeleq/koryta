@@ -1,0 +1,51 @@
+{
+  "seed-reviewed-employment": {
+    "url": "https://example.com/oceniony",
+    "articleUrl": "https://example.com/oceniony",
+    "articleDomain": "example.com",
+    "fact_type": "employment",
+    "person": "Jan Kowalski",
+    "organization": "Fundacja Oceniona",
+    "role": "prezes zarzadu",
+    "justification": "Fakt oceniony wczesniej przez innego recenzenta.",
+    "tag": "seed",
+    "createdAt": "2026-07-20T10:00:00.000Z",
+    "stats": {
+      "votes": {
+        "interesting": 0,
+        "quality": 0,
+        "correct": 1,
+        "humanVoted": true
+      }
+    }
+  },
+  "seed-open-employment": {
+    "url": "https://example.com/do-oceny",
+    "articleUrl": "https://example.com/do-oceny",
+    "articleDomain": "example.com",
+    "fact_type": "employment",
+    "person": "Anna Nowak",
+    "organization": "Spolka Nieoceniona",
+    "role": "czlonkini rady nadzorczej",
+    "justification": "Fakt czekajacy na ocene recenzenta.",
+    "tag": "seed",
+    "createdAt": "2026-07-21T10:00:00.000Z",
+    "stats": {
+      "votes": { "interesting": 0, "quality": 0, "humanVoted": false }
+    }
+  },
+  "seed-open-party": {
+    "url": "https://example.com/do-oceny-partia",
+    "articleUrl": "https://example.com/do-oceny-partia",
+    "articleDomain": "example.com",
+    "fact_type": "party_membership",
+    "person": "Anna Nowak",
+    "party": "Partia Testowa",
+    "justification": "Drugi fakt czekajacy na ocene recenzenta.",
+    "tag": "seed",
+    "createdAt": "2026-07-22T10:00:00.000Z",
+    "stats": {
+      "votes": { "interesting": 0, "quality": 0, "humanVoted": false }
+    }
+  }
+}

@@ -8,6 +8,7 @@ import { resolve } from "path";
 import nodes from "./nodes.json";
 import edges from "./edges.json";
 import revisions from "./revisions.json";
+import extractions from "./extractions.json";
 
 const projectId =
   process.env.USE_PROD_PROJECT === "true" ? "koryta-pl" : "demo-koryta-pl";
@@ -45,7 +46,7 @@ async function seedDatabase() {
   console.log("Seeding database...");
 
   // Clear existing collections
-  const collections = ["nodes", "edges", "revisions"];
+  const collections = ["nodes", "edges", "revisions", "extractions"];
   for (const col of collections) {
     const docs = await db.collection(col).listDocuments();
     if (docs.length > 0) {
@@ -80,6 +81,13 @@ async function seedDatabase() {
     batch.set(ref, rev);
   }
 
+  for (const [id, fact] of Object.entries(extractions)) {
+    const ref = db.collection("extractions").doc(id);
+    // The fixture carries an ISO string because JSON has no timestamp; the
+    // collection stores a Timestamp, which is what /api/extractions orders by.
+    batch.set(ref, { ...fact, createdAt: new Date(fact.createdAt) });
+  }
+
   await batch.commit();
   console.log("Database seeded successfully!");
 
@@ -88,6 +96,10 @@ async function seedDatabase() {
   console.log(
     (await db.collection("revisions").get()).docs.length,
     "revisions",
+  );
+  console.log(
+    (await db.collection("extractions").get()).docs.length,
+    "extractions",
   );
 }
 

@@ -30,6 +30,7 @@ const PUBLIC_ROUTES = [
 
 const LOGGED_IN_ROUTES = [
   "/eksploruj/nowe",
+  "/ekstrakcje/kategoryzacja",
   "/admin/rewizje",
   // The id does not have to resolve; the route's own chunk is what we want
   // compiled before a spec follows a revision link into it.

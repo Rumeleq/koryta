@@ -2,14 +2,26 @@ import { z } from "zod";
 import { getFirestore } from "firebase-admin/firestore";
 import { getApp } from "firebase-admin/app";
 import { authCachedEventHandler } from "~~/server/utils/handlers";
+import { toExtractionFact } from "~~/server/utils/extractions";
 import type { ExtractionFact } from "~~/shared/model";
 
+// The collection grows with every ingest, so a page is always served — no
+// caller needs the whole backlog, and `total` tells them how much they missed.
+const DEFAULT_LIMIT = 100;
+const MAX_LIMIT = 500;
+
 const queryValidator = z.object({
-  // No limit by default: the review flow needs the whole backlog, not a page of
-  // it. Callers that only render a slice pass an explicit `limit`.
-  limit: z.coerce.number().optional(),
+  limit: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(MAX_LIMIT)
+    .default(DEFAULT_LIMIT),
   page: z.coerce.number().default(0),
   tag: z.string().optional(),
+  // Mirrors `hideVoted` on /api/nodes: filters on the vote aggregate that the
+  // onVoteWritten trigger keeps on the document, so it costs no extra read.
+  reviewed: z.enum(["all", "yes", "no"]).default("all"),
   groupBy: z.enum(["article"]).optional(),
 });
 
@@ -27,31 +39,29 @@ export default authCachedEventHandler(
       firestoreQuery = firestoreQuery.where("tag", "==", query.tag);
     }
 
+    if (query.reviewed !== "all") {
+      firestoreQuery = firestoreQuery.where(
+        "stats.votes.humanVoted",
+        "==",
+        query.reviewed === "yes",
+      );
+    }
+
     // Newest first, so a freshly ingested batch is what reviewers see.
     firestoreQuery = firestoreQuery.orderBy("createdAt", "desc");
 
-    // Pagination is opt-in: `page` only means anything alongside a `limit`.
-    if (query.limit !== undefined) {
-      firestoreQuery = firestoreQuery
+    // The count is of the filtered query, not the page — it is what tells a
+    // reviewer how much backlog is left behind the slice they were served.
+    const [snapshot, countSnapshot] = await Promise.all([
+      firestoreQuery
         .offset(query.page * query.limit)
-        .limit(query.limit);
-    }
+        .limit(query.limit)
+        .get(),
+      firestoreQuery.count().get(),
+    ]);
+    const total = countSnapshot.data().count;
 
-    const snapshot = await firestoreQuery.get();
-
-    const facts: ExtractionFact[] = snapshot.docs.map((doc) => {
-      const { createdAt, stats, ...data } = doc.data();
-      return {
-        id: doc.id,
-        ...data,
-        stats,
-        // Stored as a Firestore Timestamp; the shared model says ISO string.
-        createdAt: createdAt?.toDate?.().toISOString() ?? createdAt,
-        // One reviewer per fact: the `onVoteWritten` trigger already keeps this
-        // aggregate on the document, so the review state costs no extra read.
-        reviewed: stats?.votes?.humanVoted === true,
-      };
-    }) as ExtractionFact[];
+    const facts: ExtractionFact[] = snapshot.docs.map(toExtractionFact);
 
     if (query.groupBy === "article") {
       const articles: Record<
@@ -68,10 +78,10 @@ export default authCachedEventHandler(
         }
         articles[url].facts.push(fact);
       }
-      return { articles };
+      return { articles, total };
     }
 
-    return { facts };
+    return { facts, total };
   },
   { maxAge: 60 },
 );
