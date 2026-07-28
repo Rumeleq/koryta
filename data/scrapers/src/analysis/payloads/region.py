@@ -55,12 +55,20 @@ def map_region_payload(row: pd.Series) -> dict[str, Any] | None:
 
     node_id = f"teryt{id_str}"
 
+    # No `revision_id`: it is a pointer to a revision document, so only whatever
+    # writes the region can know it. This payload used to carry the node's own id
+    # (`teryt02`) and `rev_<edge_id>` for the edge, as a way of saying "publish
+    # this" - which reads as published, but leaves 405 regions and 375 edges
+    # pointing at revisions that do not exist. `computeRevisionsObj` then marks
+    # every one of them as having an unapproved change, forever, and
+    # /api/revisions/byNode reports an approved revision nobody can fetch.
+    # Publishing is `createRevisionTransaction(..., approve=True)`'s job; see
+    # frontend/scripts/migrate/repair-revision-pointers.ts for the repair.
     payload: dict[str, Any] = {
         "node_id": node_id,
         "type": "region",
         "name": name,
         "teryt": id_str,
-        "revision_id": node_id,
     }
 
     parent_id = row.get("parent_id")
@@ -74,7 +82,6 @@ def map_region_payload(row: pd.Series) -> dict[str, Any] | None:
             "source": parent_node_id,
             "target": node_id,
             "type": "owns",
-            "revision_id": f"rev_{edge_id}",
         }
 
     return payload
