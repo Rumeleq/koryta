@@ -6,8 +6,9 @@
       <div>
         <p class="text-body-1 mb-4">
           Wiesz więcej na temat {{ subject }}? Podziel się dodatkowymi
-          informacjami i dodaj linki do źródeł. Twoje notatki będą publiczne - w
-          ten sposób pomożesz innym w znajdowaniu powiązań.
+          informacjami i dodaj linki do źródeł. Możesz też zgłosić poprawkę albo
+          brakujące dane. Twoje notatki będą publiczne - w ten sposób pomożesz
+          innym w znajdowaniu powiązań.
         </p>
       </div>
     </v-card-text>
@@ -46,15 +47,19 @@
           />
         </v-col>
         <v-col v-if="user" cols="12" :md="singleColumn ? '12' : '6'">
-          <v-btn
-            variant="outlined"
-            size="small"
-            color="primary"
-            @click="addSource"
-          >
-            <v-icon start :icon="mdiPlus" />
-            Dodaj źródło
-          </v-btn>
+          <div class="d-flex flex-wrap ga-2">
+            <v-btn
+              v-for="(config, value) in noteKindConfig"
+              :key="value"
+              variant="outlined"
+              size="small"
+              :color="config.color"
+              @click="addSource(value)"
+            >
+              <v-icon start :icon="config.icon" />
+              {{ config.addLabel }}
+            </v-btn>
+          </div>
         </v-col>
       </v-row>
 
@@ -78,11 +83,10 @@
 </template>
 
 <script setup lang="ts">
-import { mdiPlus } from "@mdi/js";
 import { ref, toRaw, computed } from "vue";
-import { useNotes } from "~/composables/notes";
+import { useNotes, noteKindConfig } from "~/composables/notes";
 import { useAuthState } from "~/composables/auth";
-import type { Note, NodeType } from "~~/shared/model";
+import type { Note, NodeType, NoteEntryKind } from "~~/shared/model";
 import { NoteSourceCard } from "#components";
 
 const props = withDefaults(
@@ -153,13 +157,14 @@ const cancelEdit = () => {
   isEditing.value = false;
 };
 
-const addSource = () => {
+const addSource = (kind: NoteEntryKind) => {
   if (!isEditing.value) {
     startEditing();
   }
   formData.value.sources.push({
     url: "",
     note: "",
+    kind,
   });
 };
 

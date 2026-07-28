@@ -1,7 +1,7 @@
 import { getFirestore, FieldPath } from "firebase-admin/firestore";
 import { defineEventHandler } from "h3";
 import { getUser } from "~~/server/utils/auth";
-import type { Note } from "~~/shared/model";
+import type { Note, NoteEntryKind } from "~~/shared/model";
 
 /** Cap on how many unapproved nodes we inspect to split manual vs automatic.
  * Aggregation gives the exact total cheaply, but deciding "automatic" needs a
@@ -17,8 +17,9 @@ export type AdminSummary = {
       noteId: string;
       nodeId: string;
       name: string | null;
-      url: string;
+      url: string | null;
       note: string;
+      kind: NoteEntryKind;
       adminType: string | null;
     }[];
   };
@@ -65,8 +66,9 @@ export default defineEventHandler(async (event): Promise<AdminSummary> => {
   const noteSampleRaw: {
     noteId: string;
     nodeId: string;
-    url: string;
+    url: string | null;
     note: string;
+    kind: NoteEntryKind;
     adminType: string | null;
   }[] = [];
 
@@ -79,8 +81,9 @@ export default defineEventHandler(async (event): Promise<AdminSummary> => {
           noteSampleRaw.push({
             noteId: doc.id,
             nodeId: data.nodeId,
-            url: source.url,
+            url: source.url ?? null,
             note: source.note,
+            kind: source.kind ?? "source",
             adminType: source.adminType ?? null,
           });
         }
