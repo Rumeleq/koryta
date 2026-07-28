@@ -47,6 +47,7 @@ const LOGGED_IN_ROUTES = [
   // The relation publishing queue, whose spec publishes an edge within its
   // first few seconds.
   "/admin/krawedzie",
+  "/admin/opinie",
   // The id does not have to resolve; the route's own chunk is what we want
   // compiled before a spec follows a revision link into it.
   "/admin/rewizje/warmup",

@@ -1,0 +1,133 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { mountSuspended } from "@nuxt/test-utils/runtime";
+import { ref } from "vue";
+import FeedbackDialog from "../../app/components/feedback/Dialog.vue";
+import { useAuthState, authRequest } from "~/composables/auth";
+
+vi.mock("~/composables/auth", () => ({
+  useAuthState: vi.fn(() => ({ user: ref(null) })),
+  authRequest: vi.fn(() => Promise.resolve({ id: "fb-1" })),
+}));
+
+vi.mock("@plausible-analytics/tracker", () => ({
+  init: vi.fn(),
+  track: vi.fn(),
+}));
+
+// Vuetify's overlay measures the viewport and observes resizes; neither exists
+// in the test DOM.
+global.ResizeObserver = class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as never;
+
+global.visualViewport = {
+  width: 1000,
+  height: 1000,
+  offsetLeft: 0,
+  offsetTop: 0,
+  pageLeft: 0,
+  pageTop: 0,
+  scale: 1,
+  onresize: null,
+  onscroll: null,
+  addEventListener: () => {},
+  removeEventListener: () => {},
+  dispatchEvent: () => true,
+} as never;
+
+const plainFetch = vi.fn(() => Promise.resolve({ id: "fb-1" }));
+
+const signedInAs = (email: string | null) =>
+  (useAuthState as any).mockReturnValue({
+    user: ref({ uid: "user-a", email }),
+  });
+
+const openDialog = async () => {
+  const wrapper = await mountSuspended(FeedbackDialog, {
+    props: { modelValue: false },
+  });
+  // The dialog snapshots its context and prefills on open, not on mount.
+  await wrapper.setProps({ modelValue: true });
+  await new Promise((r) => setTimeout(r, 0));
+  return wrapper;
+};
+
+const contactInput = () =>
+  document.querySelector<HTMLInputElement>(
+    '.v-overlay-container input[type="text"]:not([tabindex="-1"])',
+  );
+
+const clickButton = async (label: string) => {
+  const button = [
+    ...document.querySelectorAll<HTMLElement>(".v-overlay-container button"),
+  ].find((b) => b.textContent?.includes(label));
+  button?.click();
+  await new Promise((r) => setTimeout(r, 0));
+};
+
+describe("FeedbackDialog attribution", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("$fetch", plainFetch);
+    document.body.innerHTML = "";
+  });
+
+  it("prefills a signed-in reporter's address", async () => {
+    signedInAs("jan@example.com");
+    await openDialog();
+
+    expect(contactInput()?.value).toBe("jan@example.com");
+  });
+
+  it("leaves the field empty for a signed-out visitor", async () => {
+    (useAuthState as any).mockReturnValue({ user: ref(null) });
+    await openDialog();
+
+    expect(contactInput()?.value).toBe("");
+  });
+
+  it("signs the report when the address is left in", async () => {
+    signedInAs("jan@example.com");
+    const wrapper = await openDialog();
+
+    const textarea = document.querySelector("textarea:not([aria-hidden])");
+    (textarea as HTMLTextAreaElement).value = "Coś nie gra";
+    textarea?.dispatchEvent(new Event("input"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    await clickButton("Wyślij");
+
+    // authRequest attaches the ID token, which is what the server attributes.
+    expect(authRequest).toHaveBeenCalled();
+    expect(plainFetch).not.toHaveBeenCalled();
+    expect((authRequest as any).mock.calls[0][1].body.contact).toBe(
+      "jan@example.com",
+    );
+    wrapper.unmount();
+  });
+
+  it("sends without a token once the address is cleared", async () => {
+    signedInAs("jan@example.com");
+    const wrapper = await openDialog();
+
+    const input = contactInput()!;
+    input.value = "";
+    input.dispatchEvent(new Event("input"));
+
+    const textarea = document.querySelector("textarea:not([aria-hidden])");
+    (textarea as HTMLTextAreaElement).value = "Coś nie gra";
+    textarea?.dispatchEvent(new Event("input"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    await clickButton("Wyślij");
+
+    // The whole point: no token goes out, so the server cannot attribute the
+    // report even to itself. Anonymity is a property of the request.
+    expect(plainFetch).toHaveBeenCalled();
+    expect(authRequest).not.toHaveBeenCalled();
+    expect(plainFetch.mock.calls[0][1].body.contact).toBeUndefined();
+    wrapper.unmount();
+  });
+});

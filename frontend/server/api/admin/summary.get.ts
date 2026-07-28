@@ -2,7 +2,12 @@ import { getFirestore, FieldPath } from "firebase-admin/firestore";
 import type { Firestore } from "firebase-admin/firestore";
 import { defineEventHandler } from "h3";
 import { getUser } from "~~/server/utils/auth";
-import type { Note, NoteEntryKind } from "~~/shared/model";
+import type {
+  Feedback,
+  FeedbackKind,
+  Note,
+  NoteEntryKind,
+} from "~~/shared/model";
 
 /** Cap on how many unapproved nodes we inspect to split manual vs automatic.
  * Aggregation gives the exact total cheaply, but deciding "automatic" needs a
@@ -11,6 +16,18 @@ const MANUAL_INSPECT_CAP = 300;
 const SAMPLE_SIZE = 8;
 
 export type AdminSummary = {
+  feedback: {
+    // Reports nobody has triaged yet.
+    needsAction: number;
+    sample: {
+      id: string;
+      kind: FeedbackKind;
+      message: string;
+      route: string;
+      pageTitle: string | null;
+      createdAt: string;
+    }[];
+  };
   notes: {
     // Sources an admin has explicitly flagged as unresolved.
     needsAction: number;
@@ -106,6 +123,28 @@ export default defineEventHandler(async (event): Promise<AdminSummary> => {
     }
   }
 
+  // --- Untriaged feedback ---------------------------------------------------
+  const newFeedbackQuery = db
+    .collection("feedback")
+    .where("adminStatus", "==", "new");
+
+  const [feedbackCountSnap, feedbackSnap] = await Promise.all([
+    newFeedbackQuery.count().get(),
+    newFeedbackQuery.orderBy("createdAt", "desc").limit(SAMPLE_SIZE).get(),
+  ]);
+
+  const feedbackSample = feedbackSnap.docs.map((doc) => {
+    const data = doc.data() as Feedback;
+    return {
+      id: doc.id,
+      kind: data.kind,
+      message: data.message.slice(0, 200),
+      route: data.context.route,
+      pageTitle: data.context.pageTitle ?? null,
+      createdAt: data.createdAt,
+    };
+  });
+
   // --- Unapproved revisions -------------------------------------------------
   const unapprovedQuery = db
     .collection("nodes")
@@ -187,6 +226,10 @@ export default defineEventHandler(async (event): Promise<AdminSummary> => {
   }
 
   return {
+    feedback: {
+      needsAction: feedbackCountSnap.data().count,
+      sample: feedbackSample,
+    },
     notes: {
       needsAction,
       uncategorized,
