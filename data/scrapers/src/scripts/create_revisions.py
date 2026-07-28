@@ -50,13 +50,21 @@ def create_revisions(
             continue
 
         new_doc_ref = dest_ref.document()
-        for removable in ["user", "date", "source", "target"]:
+        # `user` and `date` are node bookkeeping that a revision has its own
+        # fields for. `source` and `target` used to be stripped alongside them,
+        # which cost 621 edge revisions the two fields that say what the edge
+        # links - see frontend/scripts/migrate/repair-migrated-revisions.ts.
+        for removable in ["user", "date"]:
             if removable in data:
                 del data[removable]
 
         new_doc_ref.set(
             {
-                "node_id": source_ref.document(doc.id),
+                # An id, not `source_ref.document(doc.id)`: the frontend finds a
+                # document's history with `where("node_id", "==", <id string>)`,
+                # and Firestore reads a reference as unequal to a string, so a
+                # revision stored as a reference is returned by no query at all.
+                "node_id": doc.id,
                 "update_user": "of0BKlwqWLX21Cuml4NMHZ18xoC3",
                 "update_time": firestore.SERVER_TIMESTAMP,
                 "data": data,
