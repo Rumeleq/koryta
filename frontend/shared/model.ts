@@ -253,9 +253,17 @@ export interface Comment {
 
 export type NoteAdminStatus = "resolved" | "unresolved";
 
+/** What the user meant by an entry: a source they read, a correction they want
+ * made, or data they noticed is absent. Missing means "source" — every entry
+ * written before kinds existed was one.
+ */
+export type NoteEntryKind = "source" | "change_request" | "missing";
+
 export type NoteSource = {
-  url: string;
+  /** Only a "source" entry needs one; a correction may stand on its own. */
+  url?: string;
   note: string;
+  kind?: NoteEntryKind;
   // TODO enable users associating with a source node.
   // source_id: string;
 

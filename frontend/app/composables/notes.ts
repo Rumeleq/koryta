@@ -8,8 +8,53 @@ import {
   query,
 } from "firebase/firestore";
 import { useCollection, useFirebaseApp } from "vuefire";
+import {
+  mdiLinkVariant,
+  mdiPencilOutline,
+  mdiHelpCircleOutline,
+} from "@mdi/js";
 import { useAuthState } from "./auth";
-import type { Note } from "~~/shared/model";
+import type { Note, NoteEntryKind, NoteSource } from "~~/shared/model";
+
+/** How each note entry kind presents itself: the label on its chip, the button
+ * that creates one, and the prompt above the text area. */
+export const noteKindConfig: Record<
+  NoteEntryKind,
+  {
+    title: string;
+    addLabel: string;
+    prompt: string;
+    icon: string;
+    color: string;
+  }
+> = {
+  source: {
+    title: "Źródło",
+    addLabel: "Dodaj źródło",
+    prompt: "Co ciekawego jest w tym źródle?",
+    icon: mdiLinkVariant,
+    color: "primary",
+  },
+  change_request: {
+    title: "Do poprawy",
+    addLabel: "Zgłoś poprawkę",
+    prompt: "Co jest nie tak i jak powinno być?",
+    icon: mdiPencilOutline,
+    color: "warning",
+  },
+  missing: {
+    title: "Brakuje danych",
+    addLabel: "Zgłoś brak",
+    prompt: "Czego tu brakuje?",
+    icon: mdiHelpCircleOutline,
+    color: "info",
+  },
+};
+
+/** Entries written before kinds existed are all sources. */
+export function noteKindOf(source: Pick<NoteSource, "kind">): NoteEntryKind {
+  return source.kind ?? "source";
+}
 
 export function useNotes(nodeID: MaybeRef<string>) {
   const { user } = useAuthState();

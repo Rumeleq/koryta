@@ -110,6 +110,8 @@ describe("/api/notes", () => {
       userUid: "user-a",
       content: "pierwsza",
       url: "https://a.example",
+      // Entries written before kinds existed read back as sources.
+      kind: "source",
       name: "Jan Testowy",
       nodeType: "person",
     });

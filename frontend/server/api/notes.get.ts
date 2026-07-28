@@ -30,7 +30,8 @@ export default defineEventHandler(async (event) => {
       nodeId: data.nodeId,
       userUid: data.userUid,
       content: source.note,
-      url: source.url,
+      url: source.url ?? null,
+      kind: source.kind ?? "source",
     }));
   });
 

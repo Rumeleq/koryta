@@ -10,7 +10,10 @@ vi.mock("~/composables/auth", () => ({
   useAuthState: vi.fn(() => ({ user: ref({ uid: "test-user-id" }) })),
 }));
 
-vi.mock("~/composables/notes", () => ({
+// Only useNotes is stubbed; the kind config the editor renders its buttons from
+// is real, so the buttons stay in sync with it.
+vi.mock("~/composables/notes", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/composables/notes")>()),
   useNotes: vi.fn(() => ({
     userNote: ref(null),
     otherNotes: ref([]),
@@ -111,7 +114,51 @@ describe("NoteEditor", () => {
     await saveBtn?.trigger("click");
 
     expect(mockSaveNote).toHaveBeenCalledWith({
-      sources: [{ url: "", note: "" }],
+      sources: [{ url: "", note: "", kind: "source" }],
+    });
+  });
+
+  it("offers an entry point for each note kind", async () => {
+    (useAuthState as any).mockReturnValue({ user: ref({ uid: "test-user" }) });
+    (useNotes as any).mockReturnValue({
+      userNote: ref(null),
+      otherNotes: ref([]),
+      saveNote: vi.fn(),
+    });
+
+    const wrapper = await mountSuspended(NoteEditor, {
+      props: { nodeId: "node-123" },
+    });
+
+    expect(wrapper.text()).toContain("Zgłoś poprawkę");
+    expect(wrapper.text()).toContain("Zgłoś brak");
+  });
+
+  it("records the kind chosen when adding an entry", async () => {
+    (useAuthState as any).mockReturnValue({ user: ref({ uid: "test-user" }) });
+    const mockSaveNote = vi.fn().mockResolvedValue(undefined);
+    (useNotes as any).mockReturnValue({
+      userNote: ref(null),
+      otherNotes: ref([]),
+      saveNote: mockSaveNote,
+    });
+
+    const wrapper = await mountSuspended(NoteEditor, {
+      props: { nodeId: "node-123" },
+    });
+
+    const addChangeBtn = wrapper
+      .findAll("button")
+      .find((b) => b.text().includes("Zgłoś poprawkę"));
+    await addChangeBtn?.trigger("click");
+
+    const saveBtn = wrapper
+      .findAll("button")
+      .find((b) => b.text().includes("Zapisz"));
+    await saveBtn?.trigger("click");
+
+    expect(mockSaveNote).toHaveBeenCalledWith({
+      sources: [{ url: "", note: "", kind: "change_request" }],
     });
   });
 });

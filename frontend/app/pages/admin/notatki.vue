@@ -6,7 +6,35 @@
       </v-col>
     </v-row>
 
-    <v-card v-for="entry in flatNotes" :key="entry.key" class="mb-4">
+    <v-row class="mb-2" align="center">
+      <v-col cols="12" md="4">
+        <v-select
+          v-model="kindFilter"
+          :items="kindFilterOptions"
+          label="Rodzaj"
+          density="compact"
+          variant="outlined"
+          hide-details
+          clearable
+        />
+      </v-col>
+      <v-col cols="12" md="4">
+        <v-select
+          v-model="statusFilter"
+          :items="statusFilterOptions"
+          label="Status"
+          density="compact"
+          variant="outlined"
+          hide-details
+          clearable
+        />
+      </v-col>
+      <v-col cols="12" md="4" class="text-medium-emphasis">
+        {{ visibleNotes.length }} z {{ flatNotes.length }}
+      </v-col>
+    </v-row>
+
+    <v-card v-for="entry in visibleNotes" :key="entry.key" class="mb-4">
       <v-row no-gutters>
         <!-- Node Name Column -->
         <v-col cols="12" md="3" class="pa-4 border-e">
@@ -83,7 +111,14 @@ import { useCollection, useFirebaseApp } from "vuefire";
 import { getFirestore, collection } from "firebase/firestore";
 import { generateEntityUrl } from "~/composables/slugs";
 import { authRequest } from "~/composables/auth";
-import type { Note, NoteSource, Node, NoteAdminStatus } from "~~/shared/model";
+import { noteKindConfig, noteKindOf } from "~/composables/notes";
+import type {
+  Note,
+  NoteSource,
+  Node,
+  NoteAdminStatus,
+  NoteEntryKind,
+} from "~~/shared/model";
 import { NoteSourceCard } from "#components";
 
 definePageMeta({
@@ -123,6 +158,31 @@ const flatNotes = computed<FlatNote[]>(() => {
     })),
   );
 });
+const kindFilter = ref<NoteEntryKind | null>(null);
+const statusFilter = ref<NoteAdminStatus | "none" | null>(null);
+
+const kindFilterOptions = Object.entries(noteKindConfig).map(
+  ([value, config]) => ({ title: config.title, value }),
+);
+
+const statusFilterOptions = [
+  { title: "Bez statusu", value: "none" },
+  { title: "Nierozwiązane", value: "unresolved" },
+  { title: "Rozwiązane", value: "resolved" },
+];
+
+const visibleNotes = computed(() =>
+  flatNotes.value.filter((entry) => {
+    if (kindFilter.value && noteKindOf(entry.source) !== kindFilter.value) {
+      return false;
+    }
+    if (statusFilter.value === "none") return !entry.source.adminStatus;
+    if (statusFilter.value)
+      return entry.source.adminStatus === statusFilter.value;
+    return true;
+  }),
+);
+
 const loadingNodes = ref<Record<string, boolean>>({});
 const saving = ref<Record<string, boolean>>({});
 

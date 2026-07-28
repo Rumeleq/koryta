@@ -1,5 +1,25 @@
 <template>
   <v-card class="mb-3" variant="outlined">
+    <v-chip-group
+      v-if="isEditing"
+      v-model="kind"
+      mandatory
+      class="px-2 pt-1"
+      density="compact"
+    >
+      <v-chip
+        v-for="(config, value) in noteKindConfig"
+        :key="value"
+        :value="value"
+        :color="config.color"
+        size="small"
+        variant="outlined"
+      >
+        <v-icon start :icon="config.icon" />
+        {{ config.title }}
+      </v-chip>
+    </v-chip-group>
+
     <v-expand-transition>
       <div v-if="editingUrl" class="pa-2 pb-0 d-flex">
         <v-text-field
@@ -25,7 +45,7 @@
 
     <v-textarea
       v-model="source.note"
-      label="Notatka do źródła"
+      :label="noteKindConfig[kind].prompt"
       :readonly="!isEditing"
       variant="plain"
       hide-details
@@ -35,6 +55,17 @@
     />
 
     <div class="d-flex align-center px-2 pb-2 mt-n2">
+      <v-chip
+        v-if="!isEditing && kind !== 'source'"
+        :color="noteKindConfig[kind].color"
+        variant="tonal"
+        class="mr-2"
+        size="small"
+      >
+        <v-icon start :icon="noteKindConfig[kind].icon" />
+        {{ noteKindConfig[kind].title }}
+      </v-chip>
+
       <v-chip
         v-if="source.url && !editingUrl"
         color="primary"
@@ -85,12 +116,22 @@
 
 <script lang="ts" setup>
 import { mdiCheck, mdiDelete, mdiLink, mdiPencil, mdiPlus } from "@mdi/js";
-import type { NoteSource } from "~~/shared/model";
+import { noteKindConfig, noteKindOf } from "~/composables/notes";
+import type { NoteEntryKind, NoteSource } from "~~/shared/model";
 
 defineEmits(["remove"]);
 
 const source = defineModel<NoteSource>({ required: true });
 const { isEditing } = defineProps<{ isEditing: boolean }>();
+
+// Replaces the object rather than mutating it so the parent's
+// `update:model-value` handler sees the change.
+const kind = computed<NoteEntryKind>({
+  get: () => noteKindOf(source.value),
+  set: (value) => {
+    source.value = { ...source.value, kind: value };
+  },
+});
 
 const editingUrl = ref(false);
 
