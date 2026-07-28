@@ -9,7 +9,7 @@ const { mockCollection, extractionsQuery, votesQuery } = vi.hoisted(() => {
   // assert on ordering/limits without a Firestore instance.
   const makeQuery = () => {
     const calls: Array<[string, unknown[]]> = [];
-    const query: any = { calls, docs: [] };
+    const query: any = { calls, docs: [], total: 0 };
     for (const method of ["where", "orderBy", "offset", "limit"]) {
       query[method] = vi.fn((...args: unknown[]) => {
         calls.push([method, args]);
@@ -17,6 +17,10 @@ const { mockCollection, extractionsQuery, votesQuery } = vi.hoisted(() => {
       });
     }
     query.get = vi.fn(async () => ({ docs: query.docs }));
+    // The count aggregation is a separate terminal call on the same builder.
+    query.count = vi.fn(() => ({
+      get: async () => ({ data: () => ({ count: query.total }) }),
+    }));
     return query;
   };
 
@@ -64,6 +68,8 @@ describe("GET /api/extractions", () => {
     votesQuery.calls.length = 0;
     extractionsQuery.docs = [];
     votesQuery.docs = [];
+    extractionsQuery.total = 0;
+    votesQuery.total = 0;
   });
 
   it("orders by createdAt descending", async () => {
@@ -74,24 +80,50 @@ describe("GET /api/extractions", () => {
     ]);
   });
 
-  it("applies no limit by default, so the whole backlog is returned", async () => {
-    extractionsQuery.docs = Array.from({ length: 250 }, (_, i) =>
-      factDoc(`f${i}`, timestamp("2026-07-27T10:00:00.000Z")),
-    );
-
-    const result = (await handler({ query: {} } as any)) as {
-      facts: unknown[];
-    };
-
-    expect(extractionsQuery.limit).not.toHaveBeenCalled();
-    expect(extractionsQuery.offset).not.toHaveBeenCalled();
-    expect(result.facts).toHaveLength(250);
+  it("serves a page by default, so the backlog is never returned whole", async () => {
+    await handler({ query: {} } as any);
+    expect(extractionsQuery.limit).toHaveBeenCalledWith(100);
+    expect(extractionsQuery.offset).toHaveBeenCalledWith(0);
   });
 
-  it("paginates only when an explicit limit is given", async () => {
+  it("paginates by the requested limit", async () => {
     await handler({ query: { limit: "50", page: "2" } } as any);
     expect(extractionsQuery.offset).toHaveBeenCalledWith(100);
     expect(extractionsQuery.limit).toHaveBeenCalledWith(50);
+  });
+
+  it("rejects a limit above the cap rather than serving it", async () => {
+    await expect(
+      handler({ query: { limit: "5000" } } as any),
+    ).rejects.toThrow();
+  });
+
+  it("counts the whole filtered query, not the page", async () => {
+    extractionsQuery.docs = [
+      factDoc("f1", timestamp("2026-07-27T10:00:00.000Z")),
+    ];
+    extractionsQuery.total = 742;
+
+    const result = (await handler({ query: { limit: "1" } } as any)) as {
+      facts: unknown[];
+      total: number;
+    };
+
+    expect(result.facts).toHaveLength(1);
+    expect(result.total).toBe(742);
+  });
+
+  it("filters on the vote aggregate when asked for unreviewed facts", async () => {
+    await handler({ query: { reviewed: "no" } } as any);
+    expect(extractionsQuery.calls).toContainEqual([
+      "where",
+      ["stats.votes.humanVoted", "==", false],
+    ]);
+  });
+
+  it("does not filter on the vote aggregate by default", async () => {
+    await handler({ query: {} } as any);
+    expect(extractionsQuery.where).not.toHaveBeenCalled();
   });
 
   it("serialises createdAt as an ISO string", async () => {

@@ -17,11 +17,8 @@
         <h1 class="text-subtitle-1 font-weight-medium text-truncate">
           Kategoryzuj fakty
         </h1>
-        <div
-          v-if="!loading && allFacts.length"
-          class="text-caption text-medium-emphasis"
-        >
-          Oznaczono {{ reviewedCount }} z {{ allFacts.length }}
+        <div v-if="!loading" class="text-caption text-medium-emphasis">
+          Pozostało do oceny: {{ remaining }}
         </div>
       </div>
     </div>
@@ -30,7 +27,11 @@
       <v-progress-circular indeterminate color="primary" size="48" />
     </div>
 
-    <div v-else-if="allFacts.length === 0" class="py-8 text-center">
+    <!-- A shared card is worth showing even when nothing is left to review. -->
+    <div
+      v-else-if="!currentFact && allFacts.length === 0"
+      class="py-8 text-center"
+    >
       <v-alert type="info" variant="tonal">
         Brak faktów do kategoryzacji.
       </v-alert>
@@ -45,6 +46,21 @@
           :fact="currentFact"
           @swiped="onSwiped"
         />
+
+        <!-- Two ways to run out: the loaded page is spent (more waits behind
+             it), or the backlog itself is empty. -->
+        <div v-else-if="remaining > 0" class="text-center py-8">
+          <v-icon size="64" color="primary" class="mb-4">{{
+            mdiCheckAll
+          }}</v-icon>
+          <div class="text-h6">Ta porcja przejrzana!</div>
+          <div class="text-body-2 text-medium-emphasis mt-1">
+            Zostało jeszcze {{ remaining }} do oceny.
+          </div>
+          <v-btn class="mt-4" color="primary" variant="tonal" @click="loadMore">
+            Wczytaj kolejne
+          </v-btn>
+        </div>
 
         <div v-else class="text-center py-8">
           <v-icon size="64" color="success" class="mb-4">{{
@@ -182,7 +198,7 @@ import {
   useFirebaseApp,
   useIsCurrentUserLoaded,
 } from "vuefire";
-import { useExtractions } from "~/composables/extractions";
+import { useExtraction, useExtractions } from "~/composables/extractions";
 import { castVoteOnce, saveCommentOnce } from "~/composables/votes";
 import { factSubject } from "~/utils/extraction";
 import type { ExtractionFact, VoteDocument } from "~~/shared/model";
@@ -194,13 +210,28 @@ useHead({
   title: "Kategoryzacja faktów - koryta.pl",
 });
 
-const { data, pending } = useExtractions();
+// One page of the unreviewed backlog at a time — enough swipes that few
+// sittings reach the end of it — and `total` says what waits behind.
+const PAGE_SIZE = 200;
+const page = ref(0);
+const { data, pending } = useExtractions({
+  reviewed: "no",
+  limit: PAGE_SIZE,
+  page,
+});
 const route = useRoute();
 const router = useRouter();
 const { smAndUp } = useDisplay();
 
+// The URL tracks the current card from here on (see syncUrlToFact), so the
+// shared id is read once, at load. Fetching it by id is what keeps a link
+// working after somebody reviews the fact: the page above holds unreviewed
+// facts only.
+const sharedId = typeof route.query.fact === "string" ? route.query.fact : null;
+const { fact: linkedFact, settled: linkedSettled } = useExtraction(sharedId);
+
 // All votable facts (an id is required to vote), newest ingest first — the
-// API returns the whole collection ordered by createdAt descending.
+// API returns the page ordered by createdAt descending.
 const allFacts = computed<ExtractionFact[]>(() =>
   (data.value?.facts ?? []).filter((f) => f.id),
 );
@@ -233,32 +264,37 @@ const serverVotedIds = computed(() => {
 // Facts voted on in this session — merged with the persisted votes below.
 const sessionVotedIds = ref(new Set<string>());
 
-// One reviewer per fact: a fact any user has already reviewed counts as done,
-// so concurrent reviewers spread over the backlog instead of piling up.
-// `reviewed` comes from the vote aggregate on the document, so it lags by the
-// trigger round-trip plus the API cache.
-const externallyReviewedIds = computed(() => {
-  const ids = new Set<string>();
-  for (const fact of allFacts.value) {
-    if (fact.id && fact.reviewed) ids.add(fact.id);
-  }
-  return ids;
-});
-
+// One reviewer per fact — a fact any user has reviewed counts as done, so
+// concurrent reviewers spread over the backlog instead of piling up — is now
+// the `reviewed: "no"` filter's job, and what is left to merge here is this
+// reviewer's own verdicts, which the aggregate may not have caught up with.
 const votedIds = computed(
-  () =>
-    new Set([
-      ...externallyReviewedIds.value,
-      ...serverVotedIds.value,
-      ...sessionVotedIds.value,
-    ]),
+  () => new Set([...serverVotedIds.value, ...sessionVotedIds.value]),
 );
 
 // The votes collection also holds other node types, so count only facts on
 // this page.
-const reviewedCount = computed(
+const votedOnPage = computed(
   () => allFacts.value.filter((f) => votedIds.value.has(f.id!)).length,
 );
+
+// The server counted what was unreviewed when the page was fetched, so verdicts
+// it has not caught up with — this session's, or ones the trigger has yet to
+// aggregate — are still in that total. They are exactly the loaded facts we
+// already know a vote for.
+const remaining = computed(() =>
+  Math.max(0, (data.value?.total ?? 0) - votedOnPage.value),
+);
+
+// Walking the offset, rather than refetching page 0, is what guarantees cards
+// the reviewer has not just judged: the aggregate this filter reads lags the
+// vote trigger, so page 0 can still hold the facts they spent the last hour on.
+// The cost is that once the trigger does catch up the offset overshoots and
+// skips a stretch of backlog — which the next visit, starting at page 0 again,
+// serves first.
+function loadMore() {
+  page.value += 1;
+}
 
 // Hold the spinner until facts and the user's existing votes are in, else the
 // first card flashes an already-reviewed fact.
@@ -269,14 +305,24 @@ const votesReady = computed(
 // client's first (hydration) render; rendering the card instead would cause a
 // hydration mismatch.
 const loading = computed(
-  () => import.meta.server || pending.value || !votesReady.value,
+  () =>
+    import.meta.server ||
+    pending.value ||
+    !votesReady.value ||
+    !linkedSettled.value,
 );
 
 // The fact currently under review, tracked by id (not index) so we can jump to
-// a related fact next while keeping context — see recordVote().
+// a related fact next while keeping context — see recordVote(). The shared
+// card is not in the page when somebody has already reviewed it, so it is
+// looked up alongside.
 const currentId = ref<string | null>(null);
-const currentFact = computed<ExtractionFact | undefined>(() =>
-  allFacts.value.find((f) => f.id === currentId.value),
+const currentFact = computed<ExtractionFact | undefined>(
+  () =>
+    allFacts.value.find((f) => f.id === currentId.value) ??
+    (linkedFact.value?.id === currentId.value
+      ? (linkedFact.value ?? undefined)
+      : undefined),
 );
 
 // Two independent context toggles → four combinations.
@@ -366,22 +412,28 @@ function onSwiped(direction: "left" | "right") {
   recordVote(direction === "right" ? "correct" : "incorrect");
 }
 
-// Deep-link: honour ?fact=<id> on load, then keep the URL in sync so the card
-// is shareable. Waits for persisted votes so the first card is unreviewed.
+// Pick a card whenever the loaded page changes: on first load, honouring
+// ?fact=<id> so a card is shareable, and again after `loadMore` swaps the page
+// underneath us. Waits for persisted votes so the first card is unreviewed.
 const initialized = ref(false);
 watch(
   [allFacts, loading],
   ([facts, isLoading]) => {
-    if (initialized.value || isLoading || facts.length === 0) return;
-    const target = route.query.fact;
-    if (typeof target === "string" && facts.some((f) => f.id === target)) {
-      // An explicitly shared card is shown even if it was already reviewed.
-      currentId.value = target;
-    } else {
-      currentId.value =
-        facts.find((f) => !votedIds.value.has(f.id!))?.id ?? null;
+    if (isLoading) return;
+
+    if (!initialized.value) {
+      initialized.value = true;
+      // A shared card jumps the queue, reviewed or not.
+      if (linkedFact.value?.id) {
+        currentId.value = linkedFact.value.id;
+        return;
+      }
+    } else if (currentFact.value) {
+      // Mid-review on a card we can still show: leave the reviewer on it.
+      return;
     }
-    initialized.value = true;
+
+    currentId.value = facts.find((f) => !votedIds.value.has(f.id!))?.id ?? null;
   },
   { immediate: true },
 );
