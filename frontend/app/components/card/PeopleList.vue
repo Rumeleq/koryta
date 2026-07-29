@@ -56,7 +56,7 @@
       height="64"
       link
       title="Zobacz cały region"
-      :subtitle="`(${polishCounting(props.region.people ?? 0, 'powiązanie', 'powiązania', 'powiązań')})`"
+      :subtitle="totalLabel"
       :to="`/eksploruj/tabela?teryt=${String(props.region.teryt).padStart(4, '0')}`"
     >
       <template #append>
@@ -76,6 +76,7 @@ import { computed } from "vue";
 import type { Powiat } from "~/composables/entity/regions";
 import type { PersonRich } from "~~/shared/model";
 import { useListWithStats } from "~/composables/entity/listWithStats";
+import { polishCounting } from "~/composables/polish";
 import type { Query } from "~~/server/api/nodes/index.get";
 
 const props = defineProps<{ region: Powiat | undefined }>();
@@ -100,8 +101,19 @@ const apiQuery = computed(() => {
   } as Query;
 });
 
-const { tableItems: people, pending: loading } = await useListWithStats(
-  apiQuery,
-  "people-list-data",
+const {
+  tableItems: people,
+  totalItems,
+  pending: loading,
+} = await useListWithStats(apiQuery, "people-list-data");
+
+/** Counted from the same query that fills the list above, not from the map's
+ * `region.people`. That stat is precomputed over approved people and approved
+ * edges only, so for a signed-in user - who sees unapproved ones too - it
+ * promised fewer rows than both this card and the table it links to. */
+const totalLabel = computed(() =>
+  loading.value
+    ? ""
+    : `(${polishCounting(totalItems.value, "powiązanie", "powiązania", "powiązań")})`,
 );
 </script>
