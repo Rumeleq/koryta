@@ -114,7 +114,6 @@ dependencies = [
     "mwparserfromhell (>=0.7.2,<0.8.0)",
     "scipy (>=1.18.0,<2.0.0)",
     "leveldb-export @ git+https://github.com/SzymonPajzert/leveldb-export.git@upgrade",
-    "stanza (>=1.14.0,<2.0.0)",
     "dacite (>=1.9.2,<2.0.0)",
     "psycopg[binary] (>=3.3.4,<4.0.0)",
     "psycopg-pool (>=3.0.0,<4.0.0)",
@@ -150,6 +149,8 @@ ml = [
     "spacy==3.8.7",
     "spacy-legacy==3.0.12",
     "spacy-loggers==1.0.5",
+    # Pulls torch, so it belongs here rather than in the base dependencies.
+    "stanza (>=1.14.0,<2.0.0)",
 ]
 
 

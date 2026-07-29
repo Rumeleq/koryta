@@ -3099,7 +3099,6 @@ dependencies = [
     { name = "sniffio" },
     { name = "soupsieve" },
     { name = "srsly" },
-    { name = "stanza" },
     { name = "sympy" },
     { name = "tabulate" },
     { name = "thinc" },
@@ -3132,6 +3131,7 @@ ml = [
     { name = "spacy" },
     { name = "spacy-legacy" },
     { name = "spacy-loggers" },
+    { name = "stanza" },
     { name = "tokenizers" },
     { name = "torch" },
 ]
@@ -3248,7 +3248,6 @@ requires-dist = [
     { name = "sniffio", specifier = "==1.3.1" },
     { name = "soupsieve", specifier = "==2.9.1" },
     { name = "srsly", specifier = "==2.5.3" },
-    { name = "stanza", specifier = ">=1.11.1,<2.0.0" },
     { name = "sympy", specifier = "==1.14.0" },
     { name = "tabulate", specifier = "==0.10.0" },
     { name = "thinc", specifier = "==8.3.6" },
@@ -3281,6 +3280,7 @@ ml = [
     { name = "spacy", specifier = "==3.8.7" },
     { name = "spacy-legacy", specifier = "==3.0.12" },
     { name = "spacy-loggers", specifier = "==1.0.5" },
+    { name = "stanza", specifier = ">=1.14.0,<2.0.0" },
     { name = "tokenizers", specifier = "==0.22.2" },
     { name = "torch", specifier = "==2.13.0" },
 ]
