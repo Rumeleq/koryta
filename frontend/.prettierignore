@@ -1,0 +1,9 @@
+# Prettier only reads the .gitignore next to it, so build output that a nested
+# .gitignore already covers still has to be named here. Formatting any of it
+# would last until the next build.
+
+# tsc output for the functions package (frontend/functions/.gitignore)
+functions/lib
+
+# rewritten by `nuxt build` via the apphosting nitro preset
+.apphosting
