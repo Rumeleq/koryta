@@ -317,6 +317,47 @@ describe("buildStructuralFilterOps, company level filters", () => {
     expect(ops[0]!.applyMem(nodes).map((n) => n.id)).toEqual(["atMazHospital"]);
   });
 
+  it("filters by place node id, without going to the register", async () => {
+    // The identifier a ministry or an urząd can be named by: it has no KRS
+    // number, so the register lookup would find nothing to filter on.
+    const { ops, empty } = await buildStructuralFilterOps(
+      db,
+      { place: ["ministerstwoInfrastruktury"] },
+      "approved",
+    );
+    expect(empty).toBe(false);
+    expect(mockGet).not.toHaveBeenCalled();
+
+    const nodes = [
+      worker("urzednik", ["ministerstwoInfrastruktury"]),
+      worker("lekarz", ["szpitalWarszawa"]),
+    ];
+    expect(ops[0]!.applyMem(nodes).map((n) => n.id)).toEqual(["urzednik"]);
+  });
+
+  it("unions place with krs rather than intersecting them", async () => {
+    // Both name the employer, just by different identifiers, so a legacy `krs`
+    // link that also picked up a `place` must widen the selection, not empty it.
+    mockDb({ placesByKrs: ["szpitalWarszawa"] });
+    const { ops, empty } = await buildStructuralFilterOps(
+      db,
+      { krs: ["0000000001"], place: ["ministerstwoInfrastruktury"] },
+      "approved",
+    );
+    expect(empty).toBe(false);
+    expect(ops).toHaveLength(1);
+
+    const nodes = [
+      worker("urzednik", ["ministerstwoInfrastruktury"]),
+      worker("lekarz", ["szpitalWarszawa"]),
+      worker("wodociagowiec", ["wodociagiWarszawa"]),
+    ];
+    expect(ops[0]!.applyMem(nodes).map((n) => n.id)).toEqual([
+      "urzednik",
+      "lekarz",
+    ]);
+  });
+
   it("intersects KRS with category as well", async () => {
     mockDb({ placesByKrs: ["szpitalWarszawa", "wodociagiWarszawa"] });
     const { ops } = await buildStructuralFilterOps(

@@ -93,6 +93,23 @@
                 class="mb-2"
               />
             </template>
+            <template v-if="type === 'place'">
+              <v-text-field
+                v-model="editData.krsNumber"
+                label="Numer KRS"
+                hint="Numer w Krajowym Rejestrze Sądowym, jeśli podmiot jest w nim wpisany"
+                persistent-hint
+                class="mb-2"
+              />
+              <v-select
+                v-model="editData.isPublic"
+                :items="ownershipOptions"
+                label="Właściciel"
+                hint="KRS nie ujawnia akcjonariuszy spółek akcyjnych, a ministerstwa i urzędy nie mają w nim wpisu - dlatego pytamy."
+                persistent-hint
+                class="mb-2"
+              />
+            </template>
             <v-textarea
               v-model="editData.content"
               label="Treść (opcjonalnie)"
@@ -126,7 +143,7 @@ import { mdiAccountPlusOutline, mdiPencilOutline } from "@mdi/js";
 import { authRequest } from "@/composables/auth";
 import { generateEntityUrl } from "~/composables/slugs";
 import { parties } from "~~/shared/misc";
-import type { NodeType } from "~~/shared/model";
+import { publicSectorKnown, type NodeType } from "~~/shared/model";
 
 const props = defineProps<{
   /** Omitted when proposing a brand new node instead of an edit. */
@@ -182,6 +199,14 @@ const onLoginSuccess = () => {
 // while keeping the "log in first" gating in one place.
 defineExpose({ open: handleActivatorClick });
 
+/** `null` is "we still don't know", which is the honest answer for most places
+ * and the one the scrapers cannot distinguish from "privately owned". */
+const ownershipOptions = [
+  { title: "Nie wiem", value: null },
+  { title: "Skarb państwa lub samorząd", value: true },
+  { title: "Podmiot prywatny", value: false },
+];
+
 const editData = reactive({
   name: "",
   content: "",
@@ -189,6 +214,8 @@ const editData = reactive({
   birthDate: "",
   wikipedia: "",
   rejestrIo: "",
+  krsNumber: "",
+  isPublic: null as boolean | null,
   ktomaco: "",
 });
 
@@ -202,6 +229,10 @@ watch(dialog, (val) => {
   editData.birthDate = entity.birthDate || "";
   editData.wikipedia = entity.wikipedia || "";
   editData.rejestrIo = entity.rejestrIo || "";
+  editData.krsNumber = entity.krsNumber || "";
+  // A scraped `false` prefills as "nie wiem": it means KRS had nothing to say,
+  // so offering it back as an answer would launder a gap into a fact.
+  editData.isPublic = publicSectorKnown(entity) ? !!entity.isPublic : null;
   editData.ktomaco = entity.ktomaco || "";
 });
 
@@ -232,6 +263,20 @@ async function submit() {
       body.wikipedia = editData.wikipedia;
       body.rejestrIo = editData.rejestrIo;
       body.ktomaco = editData.ktomaco;
+    }
+
+    if (type.value === "place") {
+      // Sent as typed, so clearing a wrong number really clears it - but not
+      // when it was empty all along, or an institution outside KRS would gain a
+      // blank field it never had.
+      if (editData.krsNumber || props.entity?.krsNumber) {
+        body.krsNumber = editData.krsNumber;
+      }
+      // Left out when unanswered, so that "nie wiem" does not get recorded as
+      // somebody having decided the place is private.
+      if (editData.isPublic !== null) {
+        body.isPublic = editData.isPublic;
+      }
     }
 
     const response = await authRequest<{ id: string; node_id: string }>(

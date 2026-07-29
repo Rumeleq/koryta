@@ -33,7 +33,13 @@ export default defineEventHandler(async (event) => {
     revisionData.activity = body.activity;
     revisionData.categories = categoriesFromActivity(body.activity);
   }
-  if (body.is_public !== undefined) {
+  // A human answer wins. KRS cannot see who owns a spółka akcyjna, so the
+  // scrapers' `false` is "no evidence" rather than "privately owned", and
+  // re-running an ingest must not undo somebody who knew better.
+  if (
+    body.is_public !== undefined &&
+    revisionData.isPublicSource !== "manual"
+  ) {
     revisionData.isPublic = body.is_public;
   }
 

@@ -124,11 +124,13 @@ export function computeVoteStats(
   return aggregatedVotes;
 }
 
-/** Keeps only employment in a company the public sector owns.
+/** Keeps only employment in a place the public sector is known to own.
  *
  * The explore table reports experience and the latest employment date for
- * public companies only — time spent in a private company is not what the site
- * tracks. See `Company.isPublic` for how a company earns the flag.
+ * public institutions only — time spent in a private company is not what the
+ * site tracks. Known is the operative word: a place whose ownership nobody
+ * could establish is left out too, so these numbers are a floor rather than a
+ * count. See `Company.isPublic` for why that gap exists.
  */
 function publicEmployment(
   edges: Edge[],

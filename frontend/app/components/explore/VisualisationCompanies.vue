@@ -48,8 +48,8 @@
             {{ company.affiliatedPercentage.toFixed(0) }}% upolityczniona
             <br />
             <NuxtLink
-              v-if="company.krsNumber"
-              :to="`/eksploruj/tabela?krs=${company.krsNumber}`"
+              v-if="company.placeId"
+              :to="`/eksploruj/tabela?place=${company.placeId}`"
               class="text-grey text-caption text-decoration-none"
             >
               ({{ company.affiliatedPeople }} z {{ company.totalPeople }} osób)
@@ -81,7 +81,8 @@ interface CompanyData {
   totalPeople: number;
   affiliatedPeople: number;
   partyCounts: Record<string, number>;
-  krsNumber?: string;
+  /** Place node the bar links to, when one carries this name. */
+  placeId?: string;
 }
 
 const companies = computed(() => {
@@ -108,11 +109,11 @@ const companies = computed(() => {
         continue;
       }
       if (!stats.has(companyName)) {
-        let krsNumber: string | undefined = undefined;
+        let placeId: string | undefined = undefined;
         if (places.value) {
-          for (const place of Object.values(places.value)) {
-            if (place.name === companyName && place.krsNumber) {
-              krsNumber = place.krsNumber;
+          for (const [id, place] of Object.entries(places.value)) {
+            if (place.name === companyName) {
+              placeId = id;
               break;
             }
           }
@@ -123,7 +124,7 @@ const companies = computed(() => {
           totalPeople: 0,
           affiliatedPeople: 0,
           partyCounts: {},
-          krsNumber,
+          placeId,
         });
       }
 

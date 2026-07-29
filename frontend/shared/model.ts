@@ -184,17 +184,41 @@ export interface Company extends Omit<Node, "type"> {
   activity?: string[];
   /** Categories derived from PKD codes, see shared/companyCategories.ts */
   categories?: string[];
-  /** Whether the company is owned by the public sector, derived from KRS.
+  /** Whether the place is owned or run by the public sector.
    *
-   * Set by the scrapers when the company has a supervising ministry
-   * (`organPodmiotZalozycielskiMinisterNadzorujacy`), when a shareholder is a
-   * gmina/powiat/województwo/Skarb Państwa, or when it appears on a hardcoded
-   * list of state-owned companies. The flag is then propagated down ownership
-   * chains, so subsidiaries of public companies are public too.
+   * Only `true` is an assertion. `false` and absent both mean *not confirmed*,
+   * and are not evidence of private ownership - see `publicSectorKnown`.
+   *
+   * The scrapers set it from KRS: a supervising ministry
+   * (`organPodmiotZalozycielskiMinisterNadzorujacy`), a shareholder that is a
+   * gmina/powiat/województwo/Skarb Państwa, or a hardcoded list of state-owned
+   * companies, then propagated down ownership chains so subsidiaries inherit it.
    *
    * Note this is *not* "publicly traded" — see `data/scrapers/src/scrapers/krs/list.py`.
    */
   isPublic?: boolean;
+  /** Where `isPublic` came from, so an ingest does not overwrite a human.
+   *
+   * Absent means the scrapers wrote it, which is the case for every value
+   * predating the edit form. */
+  isPublicSource?: "manual";
+}
+
+/** Whether anything is actually known about a place's ownership.
+ *
+ * KRS does not publish the shareholders of a spółka akcyjna unless there is
+ * exactly one, so for most joint-stock companies the scrapers have no signal at
+ * all and store `false` - Małopolska Agencja Rozwoju Regionalnego, owned in
+ * majority by Województwo Małopolskie, among them. Institutions that are not in
+ * KRS at all (ministries, urzędy, wojewódzkie fundusze) have no value either.
+ *
+ * So `false` is only worth showing as "private" once a human has said so; until
+ * then the honest answer is that we do not know. */
+export function publicSectorKnown(company: {
+  isPublic?: boolean;
+  isPublicSource?: "manual";
+}): boolean {
+  return company.isPublic === true || company.isPublicSource === "manual";
 }
 
 export interface Article extends Omit<Node, "type"> {

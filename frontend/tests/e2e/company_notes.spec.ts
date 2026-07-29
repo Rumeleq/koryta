@@ -1,7 +1,11 @@
 import { test, expect } from "@playwright/test";
 import { waitForLoginFormHydrated } from "./helpers/login";
 
-/** KRS of the company seeded for the emulator, so this also runs on seed data. */
+/** KRS of the company seeded for the emulator, so this also runs on seed data.
+ *
+ * The table filters on node ids now, which differ between the seed and prod;
+ * the KRS number is the identifier both share, so the view is opened by the
+ * legacy `krs` parameter and rewritten to `place` once the places load. */
 const COMPANY_KRS = "0000357114";
 const COMPANY_VIEW = `/eksploruj/tabela?krs=${COMPANY_KRS}`;
 

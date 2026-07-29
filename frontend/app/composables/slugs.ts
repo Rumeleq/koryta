@@ -69,10 +69,10 @@ export function generateNodeUrl(node: Node): string | undefined {
   }
 
   if (node.type === "place") {
-    if ("krsNumber" in node && node.krsNumber) {
-      return `/eksploruj/tabela?krs=${node.krsNumber}`;
-    }
-    return "/eksploruj/tabela";
+    // A place's page is the table filtered to it, addressed by node id. Keying
+    // this on the KRS number sent every institution without one - ministries,
+    // urzędy, WFOŚiGW - to the unfiltered table instead.
+    return `/eksploruj/tabela?place=${node.id}`;
   }
 
   if (node.type === "region") {

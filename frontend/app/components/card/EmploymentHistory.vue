@@ -23,7 +23,7 @@
           <span class="text-caption text-medium-emphasis text-wrap">
             {{ edgeLabel(edge) }}
           </span>
-          <ChipPublicCompany :is-public="publicCompanyFlag(edge)" />
+          <ChipPublicCompany :company="asCompany(edge)" />
         </div>
 
         <div class="d-md-none mt-2 pb-2">
@@ -100,9 +100,10 @@ function edgeLabel(edge: EdgeNode) {
   return edge.label;
 }
 
-/** Public-sector ownership of the company behind an edge, if it is a company. */
-function publicCompanyFlag(edge: EdgeNode): boolean | undefined {
-  if (edge.richNode.type !== "place") return undefined;
-  return (edge.richNode as Company).isPublic;
+/** The company behind an edge, when the edge leads to one at all. */
+function asCompany(edge: EdgeNode): Company | undefined {
+  return edge.richNode.type === "place"
+    ? (edge.richNode as Company)
+    : undefined;
 }
 </script>

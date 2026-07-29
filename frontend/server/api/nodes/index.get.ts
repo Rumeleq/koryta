@@ -29,6 +29,7 @@ const queryValidator = z.object({
   teryt: z.string().optional(),
   companyTeryt: z.string().optional(),
   krs: z.union([z.string(), z.array(z.string())]).optional(),
+  place: z.union([z.string(), z.array(z.string())]).optional(),
   category: z.string().optional(),
   visibility: z.enum(["public", "private"]).optional(),
   hideVoted: z.enum(["all", "no_votes", "has_votes"]).optional(),

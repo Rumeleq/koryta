@@ -157,9 +157,13 @@ export default defineEventHandler(async () => {
     else if (n.data.type === "region") regionsMap[n.id] = n.data as Region;
   }
 
+  // Confirmed public only. `isPublic` being false or absent means nobody could
+  // tell (see `Company.isPublic`), and counting the unknown as public would
+  // sweep in every cech, izba gospodarcza and private company the scrapers also
+  // could not place. Corrections arrive as edits, not as a changed default.
   const publicPlaceIds = new Set(
     Object.entries(placesMap)
-      .filter(([, place]) => place.isPublic)
+      .filter(([, place]) => place.isPublic === true)
       .map(([id]) => id),
   );
 

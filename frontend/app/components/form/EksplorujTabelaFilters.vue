@@ -39,9 +39,9 @@
       </v-col>
       <v-col cols="12" md="3">
         <v-autocomplete
-          v-model="krs"
+          v-model="place"
           :items="availableCompanies"
-          label="Spółki"
+          label="Instytucje"
           variant="outlined"
           density="comfortable"
           hide-details
@@ -50,18 +50,18 @@
           chips
           closable-chips
           class="collapsible-autocomplete"
-          :class="{ 'is-expanded': showAllKrs }"
+          :class="{ 'is-expanded': showAllPlaces }"
         >
-          <template v-if="(krs?.length || 0) > 1" #append-inner>
+          <template v-if="(place?.length || 0) > 1" #append-inner>
             <v-btn
               variant="tonal"
               size="small"
               color="primary"
               density="compact"
               class="mt-1"
-              @click.stop="showAllKrs = !showAllKrs"
+              @click.stop="showAllPlaces = !showAllPlaces"
             >
-              {{ showAllKrs ? "Zwiń" : `+${(krs?.length || 0) - 1}` }}
+              {{ showAllPlaces ? "Zwiń" : `+${(place?.length || 0) - 1}` }}
             </v-btn>
           </template>
         </v-autocomplete>
@@ -215,7 +215,7 @@ import { ref, computed } from "vue";
 import { companyCategories } from "~~/shared/companyCategories";
 
 const showStatusBanner = ref(true);
-const showAllKrs = ref(false);
+const showAllPlaces = ref(false);
 
 const availableCategories = companyCategories.map((c) => ({
   title: c.title,
@@ -226,7 +226,8 @@ const visibility = defineModel<"all" | "public" | "private">("visibility");
 const party = defineModel<string[] | null>("party");
 const teryt = defineModel<string | null>("teryt");
 const companyTeryt = defineModel<string | null>("companyTeryt");
-const krs = defineModel<string[] | null>("krs");
+/** Selected employers, by place node id. */
+const place = defineModel<string[] | null>("place");
 const category = defineModel<string | null>("category");
 const hideVoted = defineModel<"all" | "no_votes" | "has_votes">("hideVoted");
 const currentlyEmployed = defineModel<"all" | "any" | "selected">(

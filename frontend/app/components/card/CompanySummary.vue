@@ -15,7 +15,7 @@
             <span v-if="location">
               <strong>Lokalizacja:</strong> {{ location }}
             </span>
-            <ChipPublicCompany :is-public="company.isPublic" />
+            <ChipPublicCompany :company="company" show-unknown />
           </div>
 
           <div class="d-flex flex-wrap ga-2">
