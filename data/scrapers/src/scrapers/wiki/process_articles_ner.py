@@ -6,7 +6,8 @@ import pandas as pd
 from tqdm import tqdm
 
 from scrapers.stores import Context, Pipeline
-from scrapers.wiki.process_articles import DUMP_SIZE, WIKI_DUMP, WikiArticle
+from scrapers.wiki.dump import dump_bytes, wiki_dump, wiki_workers
+from scrapers.wiki.process_articles import WikiArticle
 
 # TODO https://github.com/SzymonPajzert/koryta/issues/327
 
@@ -47,11 +48,11 @@ class ProcessWikiPeopleNames(Pipeline):
     def process(self, ctx: Context) -> pd.DataFrame:
         person_titles = []
         with (
-            ctx.io.read_data(WIKI_DUMP).read_zip().read_file() as f,
-            tqdm(total=DUMP_SIZE, unit_scale=True, smoothing=0.1) as tq,
+            ctx.io.read_data(wiki_dump()).read_zip().read_file() as f,
+            tqdm(total=dump_bytes(), unit_scale=True, smoothing=0.1) as tq,
         ):
             article_gen = _article_generator(f, tq)
-            with multiprocessing.Pool(processes=multiprocessing.cpu_count()) as pool:
+            with multiprocessing.Pool(processes=wiki_workers()) as pool:
                 for title in pool.imap_unordered(
                     _is_person_article_worker, article_gen, chunksize=1000
                 ):
@@ -105,14 +106,14 @@ class ProcessWikiNer(Pipeline):
 
         dataset = []
         with (
-            ctx.io.read_data(WIKI_DUMP).read_zip().read_file() as f,
-            tqdm(total=DUMP_SIZE, unit_scale=True, smoothing=0.1) as tq,
+            ctx.io.read_data(wiki_dump()).read_zip().read_file() as f,
+            tqdm(total=dump_bytes(), unit_scale=True, smoothing=0.1) as tq,
         ):
             worker_args = (
                 (title, wikitext, people_titles)
                 for title, wikitext in _article_generator(f, tq)
             )
-            with multiprocessing.Pool(processes=multiprocessing.cpu_count()) as pool:
+            with multiprocessing.Pool(processes=wiki_workers()) as pool:
                 for result in pool.imap_unordered(
                     _ner_worker, worker_args, chunksize=100
                 ):
