@@ -115,6 +115,12 @@ export default defineNuxtConfig({
   },
 
   vuetify: {
+    moduleOptions: {
+      // Vuetify's auto-imported useLayout shadows the one Nuxt provides, and
+      // nothing here needs those auto-imports: every call site imports the
+      // composable it wants from "vuetify" by hand.
+      importComposables: false,
+    },
     vuetifyOptions: {
       icons: {
         defaultSet: "mdi-svg",
