@@ -1,0 +1,100 @@
+{
+  "_comment": "Bands the nightly pipeline run is checked against. Numbers come from an observed run, not from anyone's guess: run the pipelines, then pytest with KORYTA_E2E_UPDATE_BASELINE=1, then commit the diff. An entry whose rows is null is reported but not enforced.",
+  "outputs": {
+    "committee_parties": {
+      "format": "jsonl",
+      "non_null": {},
+      "rows": null
+    },
+    "companies_merged": {
+      "format": "jsonl",
+      "non_null": {},
+      "rows": null
+    },
+    "company_kmgp": {
+      "format": "jsonl",
+      "non_null": {},
+      "rows": null
+    },
+    "company_krs": {
+      "format": "jsonl",
+      "non_null": {},
+      "rows": null
+    },
+    "company_scores": {
+      "format": "jsonl",
+      "non_null": {},
+      "rows": null
+    },
+    "company_wikipedia": {
+      "format": "jsonl",
+      "non_null": {},
+      "rows": null
+    },
+    "people_enriched": {
+      "format": "jsonl",
+      "non_null": {},
+      "rows": null
+    },
+    "people_kmgp": {
+      "format": "jsonl",
+      "non_null": {},
+      "rows": null
+    },
+    "people_merged": {
+      "format": "jsonl",
+      "non_null": {},
+      "rows": null
+    },
+    "people_parties": {
+      "format": "jsonl",
+      "non_null": {},
+      "rows": null
+    },
+    "people_scores": {
+      "format": "jsonl",
+      "non_null": {},
+      "rows": null
+    },
+    "person_krs": {
+      "format": "jsonl",
+      "non_null": {},
+      "rows": null
+    },
+    "person_pkw": {
+      "format": "jsonl",
+      "non_null": {},
+      "rows": null
+    },
+    "person_wikipedia": {
+      "format": "jsonl",
+      "non_null": {},
+      "rows": null
+    },
+    "postal_codes": {
+      "format": "jsonl",
+      "non_null": {},
+      "rows": null
+    },
+    "regions": {
+      "format": "jsonl",
+      "non_null": {},
+      "rows": null
+    }
+  },
+  "required": {
+    "full": [
+      "person_wikipedia",
+      "company_wikipedia"
+    ],
+    "slice": [
+      "person_wikipedia",
+      "company_wikipedia"
+    ]
+  },
+  "tolerance": {
+    "_comment": "rows is a fraction of the baseline count; non_null is an absolute difference between ratios, and only a drop counts as a failure.",
+    "non_null": 0.1,
+    "rows": 0.25
+  }
+}

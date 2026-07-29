@@ -232,9 +232,12 @@ max-branches = 15
 "src/stores/storage.py" = ["PLR0402"]
 
 [tool.pytest.ini_options]
-markers = ["parametrize_skip_if"]
+markers = [
+    "parametrize_skip_if",
+    "e2e: asserts on versioned/ output from a completed pipeline run. Needs one, so it is deselected by default -- run with `pytest -m e2e src/tests/e2e`.",
+]
 # addopts = "--cov=src --cov-report=term:skip-covered --durations=5"
-addopts = "--durations=5 --ff-group-by-module"
+addopts = "--durations=5 --ff-group-by-module -m 'not e2e'"
 
 [tool.importlinter]
 root_packages = ["analysis", "stores", "scrapers", "util", "entities"]
