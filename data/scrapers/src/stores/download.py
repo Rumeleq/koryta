@@ -80,17 +80,37 @@ class FileSource:
             raise
 
 
+# Wikimedia 403s the default Python-urllib agent outright, so downloads have to
+# say who they are: https://foundation.wikimedia.org/wiki/Policy:User-Agent_policy
+USER_AGENT = "koryta.pl-pipeline/1.0 (https://github.com/SzymonPajzert/koryta)"
+
+_CHUNK_BYTES = 1 << 20
+
+
 def download_from_url(url):
     def method(destination_path):
         print(f"Downloading {url} to {destination_path}...")
 
-        p = tqdm()
+        # Written aside and renamed on success. An interrupted multi-GB dump
+        # left at the real path would look downloaded to every later run.
+        partial_path = Path(f"{destination_path}.part")
+        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
 
-        def reporthook(_, read_size, total_file_size):
-            p.total = total_file_size
-            p.update(read_size)
+        with urllib.request.urlopen(request) as response:
+            total = response.headers.get("Content-Length")
+            with (
+                open(partial_path, "wb") as out,
+                tqdm(
+                    total=int(total) if total else None,
+                    unit="B",
+                    unit_scale=True,
+                ) as p,
+            ):
+                while chunk := response.read(_CHUNK_BYTES):
+                    out.write(chunk)
+                    p.update(len(chunk))
 
-        urllib.request.urlretrieve(url, destination_path, reporthook=reporthook)
+        partial_path.replace(destination_path)
         print("Download complete!")
         return destination_path
 
