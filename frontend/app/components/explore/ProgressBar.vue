@@ -139,6 +139,7 @@ const progressQuery = computed(() => ({
   teryt: props.query.teryt,
   companyTeryt: props.query.companyTeryt,
   krs: props.query.krs,
+  place: props.query.place,
   category: props.query.category,
   currentlyEmployed:
     props.query.currentlyEmployed !== "all"

@@ -1,30 +1,70 @@
 <template>
-  <v-tooltip v-if="isPublic !== undefined" :text="tooltip" location="bottom">
+  <v-tooltip v-if="chip" :text="chip.tooltip" location="bottom">
     <template #activator="{ props: tooltipProps }">
       <v-chip
         v-bind="tooltipProps"
-        :color="isPublic ? 'primary' : undefined"
-        :prepend-icon="isPublic ? mdiBankOutline : mdiDomain"
+        :color="chip.color"
+        :prepend-icon="chip.icon"
         size="x-small"
         variant="tonal"
       >
-        {{ isPublic ? "Spółka publiczna" : "Spółka prywatna" }}
+        {{ chip.label }}
       </v-chip>
     </template>
   </v-tooltip>
 </template>
 
 <script lang="ts" setup>
-import { mdiBankOutline, mdiDomain } from "@mdi/js";
+import { mdiBankOutline, mdiDomain, mdiHelpCircleOutline } from "@mdi/js";
+import { publicSectorKnown, type Company } from "~~/shared/model";
 
-// Undefined means KRS gave us nothing to judge by, so we stay silent rather
-// than claiming the company is private.
-const props = defineProps<{ isPublic: boolean | undefined }>();
+const props = defineProps<{
+  /** Takes the whole company rather than the flags, so a caller holding
+   * something that may not be a company at all - an edge to an article, say -
+   * can hand it straight over. */
+  company: Company | undefined;
+  /** Whether to say so when the ownership is unknown, rather than staying
+   * silent. Worth it where the reader can do something about it - a company's
+   * own card, which carries a "zaproponuj zmianę" button - and only noise in a
+   * list, where most rows would carry it. */
+  showUnknown?: boolean;
+}>();
 
-const tooltip = computed(() =>
-  props.isPublic
-    ? "Spółka należąca do skarbu państwa lub samorządu, według KRS. " +
-      "Dotyczy też spółek zależnych od takich spółek."
-    : "Według KRS spółka nie należy do skarbu państwa ani samorządu.",
-);
+// Three states, not two. KRS can only ever prove public ownership, never the
+// absence of it, so a place nobody has confirmed is never called private on the
+// register's behalf.
+const chip = computed(() => {
+  if (!props.company) return undefined;
+
+  if (props.company.isPublic) {
+    return {
+      label: "Instytucja publiczna",
+      color: "primary",
+      icon: mdiBankOutline,
+      tooltip:
+        "Podmiot należący do skarbu państwa lub samorządu. " +
+        "Dotyczy też spółek zależnych od takich spółek.",
+    };
+  }
+
+  if (publicSectorKnown(props.company)) {
+    return {
+      label: "Podmiot prywatny",
+      color: undefined,
+      icon: mdiDomain,
+      tooltip: "Podmiot nie należy do skarbu państwa ani samorządu.",
+    };
+  }
+
+  if (!props.showUnknown) return undefined;
+  return {
+    label: "Właściciel nieustalony",
+    color: undefined,
+    icon: mdiHelpCircleOutline,
+    tooltip:
+      "Nie wiadomo, kto jest właścicielem. KRS nie ujawnia akcjonariuszy " +
+      "spółek akcyjnych, a instytucje spoza KRS - ministerstwa, urzędy - nie " +
+      "mają w nim wpisu. Zaproponuj zmianę, jeśli wiesz.",
+  };
+});
 </script>

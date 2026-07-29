@@ -100,7 +100,7 @@
         v-model:party="filterParty"
         v-model:teryt="filterTeryt"
         v-model:company-teryt="filterCompanyTeryt"
-        v-model:krs="filterKrs"
+        v-model:place="filterPlace"
         v-model:category="filterCategory"
         v-model:hide-voted="filterHideVoted"
         v-model:currently-employed="filterCurrentlyEmployed"
@@ -285,18 +285,9 @@ const region = computed<[string, string] | undefined>(() => {
 });
 
 const company = computed<[string, string] | undefined>(() => {
-  const krsParam = route.query.krs;
-  if (krsParam) {
-    const krsToMatch = Array.isArray(krsParam)
-      ? krsParam[0]
-      : (krsParam as string);
-    for (const [id, place] of Object.entries(places.value ?? {})) {
-      if (place.krsNumber === krsToMatch) {
-        return [id, place.name];
-      }
-    }
-  }
-  return undefined;
+  const id = filterPlace.value?.[0];
+  const place = id ? places.value?.[id] : undefined;
+  return id && place ? [id, place.name] : undefined;
 });
 
 /** Region each company sits in, keyed by company node id. */
@@ -305,11 +296,11 @@ const companyLocations = computed(() =>
 );
 
 const selectedCompaniesData = computed(() => {
-  if (!filterKrs.value || !places.value) return [];
+  if (!filterPlace.value || !places.value) return [];
   const selected = [];
-  const krsSet = new Set(filterKrs.value);
-  for (const [id, place] of Object.entries(places.value)) {
-    if (place.krsNumber && krsSet.has(place.krsNumber)) {
+  for (const id of filterPlace.value) {
+    const place = places.value[id];
+    if (place) {
       selected.push({ id, ...place, location: companyLocations.value[id] });
     }
   }
@@ -317,7 +308,7 @@ const selectedCompaniesData = computed(() => {
 });
 
 const entityName = computed(() => {
-  if (filterKrs.value) return "wybranych firm";
+  if (filterPlace.value) return "wybranych firm";
   if (region.value) return region.value[1];
   return "aktualnego wyszukiwania";
 });
@@ -329,7 +320,11 @@ const filterVisibility = choiceFilter<"all" | "public" | "private">(
 const filterParty = arrayFilter("party");
 const filterTeryt = stringFilter("teryt");
 const filterCompanyTeryt = stringFilter("companyTeryt");
-const filterKrs = arrayFilter("krs");
+const { filterPlace, legacyKrs, availableCompanies } = usePlaceFilter(
+  places,
+  arrayFilter,
+  setQuery,
+);
 const filterCategory = stringFilter("category");
 const filterCurrentlyEmployed = choiceFilter<"all" | "any" | "selected">(
   "currentlyEmployed",
@@ -345,13 +340,6 @@ const filterMinVotes = numberFilter("minVotes");
 const availableRegions = computed(() =>
   regionFilterOptions(Object.values(regions.value ?? {})),
 );
-
-const availableCompanies = computed(() => {
-  return Object.values(places.value ?? {})
-    .filter((p) => p.krsNumber)
-    .map((p) => ({ title: p.name, value: p.krsNumber as string }))
-    .sort((a, b) => a.title.localeCompare(b.title));
-});
 
 const availableParties = computed(() => {
   return [
@@ -377,10 +365,14 @@ const apiQuery = computed(
           : undefined,
       visibility:
         filterVisibility.value !== "all" ? filterVisibility.value : undefined,
-      krs:
-        filterKrs.value && filterKrs.value.length > 0
-          ? filterKrs.value
+      place:
+        filterPlace.value && filterPlace.value.length > 0
+          ? filterPlace.value
           : undefined,
+      // Passed straight through rather than translated, so an old link filters
+      // on the first render too, before the place list needed to map it onto
+      // node ids has arrived. The api unions the two.
+      krs: legacyKrs.value ?? undefined,
       teryt: filterTeryt.value || undefined,
       companyTeryt: filterCompanyTeryt.value || undefined,
       category: filterCategory.value || undefined,

@@ -56,7 +56,9 @@ export const onEdgeWritten = onDocumentWritten(
         );
         for (const doc of targetNodes) {
           const node = doc.data();
-          if (node?.type === "place" && node.isPublic) {
+          // Confirmed public only - `false` and absent both mean the ownership
+          // is unknown, not that it is private. See `Company.isPublic`.
+          if (node?.type === "place" && node.isPublic === true) {
             publicPlaceIds.add(doc.id);
           }
         }

@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createRevisionTransaction } from "../../../../server/utils/revisions";
+import {
+  baseNodeFields,
+  createRevisionTransaction,
+} from "../../../../server/utils/revisions";
 import handler from "../../../../server/api/ingest/company.post";
 
 // Mock dependencies
@@ -213,6 +216,41 @@ describe("api/ingest/company", () => {
         type: "place",
         krsNumber: "12345",
         isPublic: true,
+      },
+      true,
+      true,
+    );
+  });
+
+  it("should leave a manually set isPublic alone", async () => {
+    // KRS cannot see who owns a spółka akcyjna, so a re-ingest that found no
+    // public owner must not overturn somebody who knew there was one.
+    vi.mocked(baseNodeFields).mockResolvedValueOnce({
+      isPublic: true,
+      isPublicSource: "manual",
+    });
+    mockReadBody.mockResolvedValue({
+      krs: "12345",
+      name: "Public Company",
+      is_public: false,
+    });
+    mockGet.mockResolvedValue({ empty: true, docs: [] });
+    mockDoc.mockReturnValue(mockRef);
+
+    await handler({} as any);
+
+    expect(createRevisionTransaction).toHaveBeenNthCalledWith(
+      1,
+      mockDb,
+      expect.anything(),
+      { uid: "test-user-id" },
+      mockRef,
+      {
+        name: "Public Company",
+        type: "place",
+        krsNumber: "12345",
+        isPublic: true,
+        isPublicSource: "manual",
       },
       true,
       true,

@@ -44,7 +44,7 @@
         v-model:party="filterParty"
         v-model:teryt="filterTeryt"
         v-model:company-teryt="filterCompanyTeryt"
-        v-model:krs="filterKrs"
+        v-model:place="filterPlace"
         v-model:hide-voted="filterHideVoted"
         v-model:currently-employed="filterCurrentlyEmployed"
         :available-parties="availableParties"
@@ -116,7 +116,7 @@ const route = useRoute();
 const router = useRouter();
 
 const DATA_LIMIT = 200;
-const { stringFilter, arrayFilter, choiceFilter } = useQueryFilters();
+const { setQuery, stringFilter, arrayFilter, choiceFilter } = useQueryFilters();
 
 const activeVisualisation = computed({
   get: () => route.params.type as string,
@@ -143,18 +143,9 @@ const region = computed<[string, string] | undefined>(() => {
 });
 
 const company = computed<[string, string] | undefined>(() => {
-  const krsParam = route.query.krs;
-  if (krsParam) {
-    const krsToMatch = Array.isArray(krsParam)
-      ? krsParam[0]
-      : (krsParam as string);
-    for (const [id, place] of Object.entries(places.value ?? {})) {
-      if (place.krsNumber === krsToMatch) {
-        return [id, place.name];
-      }
-    }
-  }
-  return undefined;
+  const id = filterPlace.value?.[0];
+  const place = id ? places.value?.[id] : undefined;
+  return id && place ? [id, place.name] : undefined;
 });
 
 const filterVisibility = choiceFilter<"all" | "public" | "private">(
@@ -164,7 +155,11 @@ const filterVisibility = choiceFilter<"all" | "public" | "private">(
 const filterParty = arrayFilter("party");
 const filterTeryt = stringFilter("teryt");
 const filterCompanyTeryt = stringFilter("companyTeryt");
-const filterKrs = arrayFilter("krs");
+const { filterPlace, legacyKrs, availableCompanies } = usePlaceFilter(
+  places,
+  arrayFilter,
+  setQuery,
+);
 const filterCurrentlyEmployed = choiceFilter<"all" | "any" | "selected">(
   "currentlyEmployed",
   "all",
@@ -175,28 +170,15 @@ const filterHideVoted = choiceFilter<"all" | "no_votes" | "has_votes">(
 );
 
 const allowedCompanyNames = computed(() => {
-  if (!filterKrs.value || filterKrs.value.length === 0) return null;
-  const names: string[] = [];
-  for (const krs of filterKrs.value) {
-    for (const place of Object.values(places.value ?? {})) {
-      if (place.krsNumber === krs) {
-        names.push(place.name);
-      }
-    }
-  }
-  return names;
+  if (!filterPlace.value || filterPlace.value.length === 0) return null;
+  return filterPlace.value
+    .map((id) => places.value?.[id]?.name)
+    .filter((name): name is string => !!name);
 });
 
 const availableRegions = computed(() =>
   regionFilterOptions(Object.values(regions.value ?? {})),
 );
-
-const availableCompanies = computed(() => {
-  return Object.values(places.value ?? {})
-    .filter((p) => p.krsNumber)
-    .map((p) => ({ title: p.name, value: p.krsNumber as string }))
-    .sort((a, b) => a.title.localeCompare(b.title));
-});
 
 const availableParties = computed(() => {
   return [
@@ -237,10 +219,13 @@ const apiQuery = computed(
           : undefined,
       visibility:
         filterVisibility.value !== "all" ? filterVisibility.value : undefined,
-      krs:
-        filterKrs.value && filterKrs.value.length > 0
-          ? filterKrs.value
+      place:
+        filterPlace.value && filterPlace.value.length > 0
+          ? filterPlace.value
           : undefined,
+      // See `eksploruj/tabela.vue`: an old link has to filter before the place
+      // list that maps it onto node ids arrives.
+      krs: legacyKrs.value ?? undefined,
       teryt: filterTeryt.value || undefined,
       companyTeryt: filterCompanyTeryt.value || undefined,
       hideVoted:

@@ -22,6 +22,9 @@ export type StructuralQuery = {
    * matches any tie the person has to a region (a job, but also an election). */
   companyTeryt?: string;
   krs?: string | string[];
+  /** Employer, by place node id. The identifier the table filters on: an
+   * institution without a KRS number - a ministry, an urząd - has no other one. */
+  place?: string | string[];
   category?: string;
   currentlyEmployed?: "all" | "any" | "selected";
   minEmploymentDate?: string;
@@ -37,6 +40,12 @@ export function asArray<T>(
   if (Array.isArray(value)) return value;
   if (typeof value === "object") return Object.values(value);
   return [];
+}
+
+/** A query parameter that may arrive once, repeated, or not at all. */
+function toArray(value: string | string[] | undefined): string[] {
+  if (!value) return [];
+  return Array.isArray(value) ? value : [value];
 }
 
 function edgeTargetsField(
@@ -131,11 +140,13 @@ export async function buildStructuralFilterOps(
   // region.
   const placeIdSets: string[][] = [];
 
-  if (query.krs) {
-    const krsArray = [
-      ...new Set(Array.isArray(query.krs) ? query.krs : [query.krs]),
-    ];
-    const places: any[] = [];
+  // `place` and `krs` name the same dimension - which employer - by two
+  // identifiers, so they union into one set instead of intersecting like the
+  // filters below. `krs` is kept for links minted before institutions without a
+  // KRS number became selectable.
+  if (query.place || query.krs) {
+    const placeIds = new Set(toArray(query.place));
+    const krsArray = [...new Set(toArray(query.krs))];
     for (let i = 0; i < krsArray.length; i += 10) {
       const chunk = krsArray.slice(i, i + 10);
       const chunkPlaces = await db
@@ -143,9 +154,11 @@ export async function buildStructuralFilterOps(
         .where("type", "==", "place")
         .where("krsNumber", "in", chunk)
         .get();
-      places.push(...chunkPlaces.docs);
+      for (const doc of chunkPlaces.docs) {
+        placeIds.add(doc.id);
+      }
     }
-    placeIdSets.push(places.map((doc) => doc.id));
+    placeIdSets.push([...placeIds]);
   }
 
   if (query.category) {

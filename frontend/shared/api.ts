@@ -1,4 +1,4 @@
-import type { ElectionPosition, Person } from "./model";
+import type { Company, ElectionPosition, Person } from "./model";
 import { z } from "zod";
 
 export const companyRequestSchema = z.object({
@@ -8,7 +8,9 @@ export const companyRequestSchema = z.object({
   teryt: z.string().optional(),
   /** PKD codes from KRS, e.g. "86.10.Z" */
   activity: z.array(z.string()).optional(),
-  /** Whether the company is publicly traded (spółka publiczna), from KRS. */
+  /** Whether the public sector owns the company, as far as KRS shows — not
+   * whether it is publicly traded. Only `true` is an assertion, see
+   * `Company.isPublic`. */
   is_public: z.boolean().optional(),
 });
 
@@ -95,7 +97,7 @@ export type EntityResult = {
 };
 
 /** Fields a user may propose for a person node, whether creating a new one
- * or editing an existing one. Only person nodes are supported for now.
+ * or editing an existing one.
  *
  * This is an allowlist rather than a denylist of internal fields: anything
  * not listed here is stripped by zod during parsing, so a caller can't smuggle
@@ -127,3 +129,22 @@ export const personEditSchema = z.object({
 >;
 
 export type PersonEditRequest = z.infer<typeof personEditSchema>;
+
+/** Fields a user may propose for a place node, on the same allowlist terms as
+ * `personEditSchema`.
+ *
+ * `isPublic` is here because the scrapers cannot always answer it: KRS does not
+ * list the shareholders of a spółka akcyjna, and an institution outside KRS has
+ * no entry to read at all. Whoever submits an answer is recorded in
+ * `isPublicSource`, which is what stops a later ingest from overwriting it.
+ */
+export const companyEditSchema = z.object({
+  name: z.string().min(1, "Nazwa jest wymagana"),
+  content: z.string().optional(),
+  krsNumber: z.string().optional(),
+  isPublic: z.boolean().optional(),
+}) satisfies z.ZodType<
+  Pick<Company, "name" | "content" | "krsNumber" | "isPublic">
+>;
+
+export type CompanyEditRequest = z.infer<typeof companyEditSchema>;

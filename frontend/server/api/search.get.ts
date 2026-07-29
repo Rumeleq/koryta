@@ -13,7 +13,6 @@ type node = {
   id: string;
   name: string;
   type: string;
-  krsNumber?: string;
   teryt?: string;
   visibility: boolean;
 };
@@ -38,8 +37,11 @@ export default authCachedEventHandler(async (event) => {
     size: results.length,
   });
   return results.map((node) => {
+    // The query that opens the table on this hit. A place is named by its node
+    // id rather than by its KRS number, so that a ministry or an urząd - which
+    // has none - opens filtered rather than on the whole table.
     const query: Record<string, string> = {};
-    if (node.krsNumber) query.krs = node.krsNumber;
+    if (node.type === "place") query.place = node.id;
     if (node.teryt) query.teryt = node.teryt;
 
     return {
