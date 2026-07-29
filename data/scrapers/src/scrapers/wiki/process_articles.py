@@ -14,17 +14,10 @@ from tqdm import tqdm
 from entities.company import Wikipedia as Company
 from entities.person import Wikipedia as People
 from scrapers.stores import Context, Pipeline
-from scrapers.stores.file import DownloadableFile
+from scrapers.wiki.dump import dump_bytes, wiki_dump, wiki_workers
 from scrapers.wiki.util import parse_date
 from util.lists import WIKI_POLITICAL_LINKS
 from util.polish import LOWER, UPPER
-
-WIKI_DUMP = DownloadableFile(
-    "https://dumps.wikimedia.org/plwiki/latest/plwiki-latest-pages-articles-multistream.xml.bz2",
-    "plwiki-latest-articles.xml.bz2",
-)
-
-DUMP_SIZE = 12314670146  # TODO remove it and look it up
 
 SAVE_ARTICLES = [
     "Stefan Wilkanowicz",
@@ -375,13 +368,15 @@ def scrape_wiki(ctx: Context):
     and uploads individual XML files to GCS.
     """
 
+    dump = wiki_dump()
+
     # Use bz2 to decompress the file on the fly
-    with ctx.io.read_data(WIKI_DUMP).read_zip().read_file() as f:
+    with ctx.io.read_data(dump).read_zip().read_file() as f:
         # Use iterparse for memory-efficient XML parsing
         # We only care about the 'end' event of a 'page' tag
-        print(f"🗂️  Starts processing dump file: {WIKI_DUMP.filename}")
+        print(f"🗂️  Starts processing dump file: {dump.filename}")
 
-        tq = tqdm(total=DUMP_SIZE, unit_scale=True, smoothing=0.1)
+        tq = tqdm(total=dump_bytes(), unit_scale=True, smoothing=0.1)
         prev = 0
 
         def article_generator():
@@ -415,7 +410,7 @@ def scrape_wiki(ctx: Context):
         people = []
         companies = []
 
-        with multiprocessing.Pool(processes=8) as pool:
+        with multiprocessing.Pool(processes=wiki_workers()) as pool:
             for pair in pool.imap_unordered(
                 process_article_worker, article_generator(), chunksize=1000
             ):

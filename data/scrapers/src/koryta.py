@@ -12,6 +12,7 @@ from scrapers.stores import (
     ProcessPolicy,
     iterate_pipeline_dict,
 )
+from scrapers.wiki import dump as wiki_dump_args
 
 
 class Printer:
@@ -56,6 +57,17 @@ def get_args():
         "(also settable via DISABLE_BACKUP in the environment or .env)",
     )
     parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Run every pipeline except ScrapeRejestrIO, which bills per query.",
+    )
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        help="Pipeline name to skip running. Repeatable, and applies to --all.",
+    )
+    parser.add_argument(
         "pipeline",
         help="Pipeline to be run - available are "
         + " ".join(pt.__name__ for pt in PIPELINES),
@@ -69,6 +81,9 @@ def get_args():
         default="file",
         help="Output channel (file or stdout)",
     )
+    # Read by scrapers.wiki.dump, registered here so their values are not
+    # mistaken for pipeline names by the positional below.
+    wiki_dump_args.add_arguments(parser)
     args, _ = parser.parse_known_args()
     return args
 
@@ -89,24 +104,32 @@ def main():
     policy = ProcessPolicy.with_default(refresh, exclude_refresh=exclude_refresh)
     ctx, dumper = setup_context(False, policy=policy)
 
-    no_pipeline = len(args.pipeline) == 0 or args.pipeline is None
-    if no_pipeline:
-        raise ValueError("No pipeline specified, use koryta PipelineName")
     pipeline_names = set(pt.__name__ for pt in PIPELINES)
-    for p_name in args.pipeline:
-        if p_name not in pipeline_names:
-            print(f"Error: pipeline {p_name} not found")
-            raise ValueError(
-                f"Pipeline {p_name} not found. Available: {' '.join(pipeline_names)}"
-            )
+    exclude = set(args.exclude)
+    unknown = (exclude | set(args.pipeline)) - pipeline_names
+    if unknown:
+        raise ValueError(
+            f"Pipeline(s) not found: {' '.join(sorted(unknown))}. "
+            f"Available: {' '.join(sorted(pipeline_names))}"
+        )
+
+    if args.all:
+        if args.pipeline:
+            raise ValueError("--all runs everything, so it takes no pipeline names")
+        # ScrapeRejestrIO bills per query -- never part of a bulk run.
+        selected = pipeline_names - {"ScrapeRejestrIO"} - exclude
+    elif args.pipeline:
+        selected = set(args.pipeline) - exclude
+    else:
+        raise ValueError("No pipeline specified, use koryta PipelineName or --all")
+
+    for p_name in sorted(selected):
         print(f"Will run pipeline: {p_name}")
 
     printer = Printer(args)
     try:
         for p_type in PIPELINES:
-            if p_type.__name__ in args.pipeline or (
-                no_pipeline and p_type.__name__ != "ScrapeRejestrIO"
-            ):
+            if p_type.__name__ in selected:
                 print(f"Processing {p_type.__name__}")
                 p: Pipeline = Pipeline.create(p_type)
                 res = p.read_or_process(ctx)

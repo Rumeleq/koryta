@@ -2,6 +2,7 @@ import io
 import logging
 import os
 import typing
+from functools import cached_property
 
 import duckdb
 from duckdb.sqltypes import VARCHAR
@@ -32,18 +33,25 @@ from stores.web import WebImpl
 
 
 class Conductor(IO):
-    storage: CloudStorageClient
-
     def __init__(self, dumper: EntityDumper, batch_upload=False):
         self.firestore = FirestoreIO()
         self.dumper = dumper
-        if batch_upload:
-            self.storage = BatchClient()
-        else:
-            self.storage = CloudStorageClient()
+        # Not `batch_upload`, which is already a method on this class.
+        self._batch_upload = batch_upload
         self.mirror = CompressedMirror()
         self.progress_bar: tqdm | None = None
         self.continous_download = False
+
+    @cached_property
+    def storage(self) -> CloudStorageClient:
+        """The GCS client, built on first use.
+
+        Constructing it calls google.auth.default(), so building it eagerly
+        made every run need credentials -- including ones that only touch
+        public sources, like a wiki-only pass. FirestoreIO is already lazy for
+        the same reason.
+        """
+        return BatchClient() if self._batch_upload else CloudStorageClient()
 
     def read_data(self, fs: DataRef) -> File:
         if isinstance(fs, DownloadableFile):
