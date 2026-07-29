@@ -115,7 +115,9 @@
           />
         </div>
 
-        <!-- Comment: never advances on its own, so a verdict is still needed. -->
+        <!-- Comment: opened by the button above and never by a verdict, so the
+             card the reviewer is commenting on is one they asked to hold. The
+             verdict that follows saves it and moves on. -->
         <div v-if="commentOpen" class="comment-section mx-auto mt-4">
           <v-textarea
             v-model="comment"
@@ -128,16 +130,7 @@
             autofocus
           />
           <div class="d-flex justify-end mt-2">
-            <v-btn
-              v-if="verdictGiven"
-              color="primary"
-              variant="tonal"
-              :append-icon="mdiArrowRight"
-              @click="advance()"
-            >
-              Dalej
-            </v-btn>
-            <span v-else class="text-caption text-medium-emphasis py-2">
+            <span class="text-caption text-medium-emphasis py-2">
               Wybierz jeszcze ocenę powyżej.
             </span>
           </div>
@@ -183,7 +176,6 @@
 import { ref, computed, watch, onMounted } from "vue";
 import {
   mdiArrowLeft,
-  mdiArrowRight,
   mdiCheckAll,
   mdiCheckCircleOutline,
   mdiCloseCircleOutline,
@@ -352,15 +344,13 @@ const relatedFacts = computed<ExtractionFact[]>(() => {
 
 type Verdict = "correct" | "incorrect" | "insufficient";
 
-// The comment box is opt-in per card: either the reviewer asks for it, or an
-// "incorrect" verdict opens it, since that is the one worth explaining. It never
-// advances by itself — a verdict is always required.
+// The comment box is opt-in per card, and only the comment button opens it: a
+// verdict that held the card back instead of advancing read as a dead button —
+// "klikam i swipuje i nic się nie dzieje" — since on a phone the box it opened
+// was below the fold. Whatever is typed here is saved by the verdict that
+// follows.
 const comment = ref("");
 const commentOpen = ref(false);
-// Whether a verdict was cast on the card on screen. Tracked separately from
-// `votedIds`, which also counts other reviewers' verdicts and would offer
-// "Dalej" on a deep-linked card this reviewer has not judged.
-const verdictGiven = ref(false);
 
 function recordVote(verdict: Verdict) {
   const fact = currentFact.value;
@@ -380,14 +370,6 @@ function recordVote(verdict: Verdict) {
   }
 
   sessionVotedIds.value = new Set(sessionVotedIds.value).add(fact.id);
-  verdictGiven.value = true;
-
-  if (verdict === "incorrect") {
-    // Hold the card so the reviewer can say what is wrong with it; "Dalej"
-    // moves on whether or not they write anything.
-    commentOpen.value = true;
-    return;
-  }
   advance();
 }
 
@@ -398,7 +380,6 @@ function advance() {
 
   comment.value = "";
   commentOpen.value = false;
-  verdictGiven.value = false;
 
   // Stay in context: if related facts remain, review one of those next so the
   // surrounding facts stay on screen; otherwise take the next unreviewed fact.
