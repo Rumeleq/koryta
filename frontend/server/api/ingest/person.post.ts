@@ -2,7 +2,7 @@ import { getFirestore } from "firebase-admin/firestore";
 import { getApp } from "firebase-admin/app";
 import { getUser } from "~~/server/utils/auth";
 import { createRevisionTransaction } from "~~/server/utils/revisions";
-import { edgeDocumentId, edgeIdentity, findEdge } from "~~/server/utils/edges";
+import { edgeDocumentId, edgeIdentity, findEdges } from "~~/server/utils/edges";
 import { electionPositions } from "~~/shared/misc";
 import type { Edge, Article, Person, ElectionPosition } from "~~/shared/model";
 import {
@@ -140,16 +140,16 @@ function createPerson(body: Partial<Person>): Person {
 }
 
 class Context {
-  /** Edges found or written during this request, by `edgeIdentity`.
+  /** How many edges of each `edgeIdentity` this request has placed so far.
    *
-   * A payload routinely carries several ties between the same pair - two posts
-   * at one company, two elections in one region - and the employments are even
-   * resolved concurrently. Since nothing is committed until the end, a lookup
-   * cannot see what an earlier one just added, so without this each of them
-   * writes its own copy. That is where the bulk of the duplicate edges in the
-   * database came from.
+   * A payload routinely carries several ties between the same pair - two spells
+   * at one company, two candidacies in one region - and the employments are
+   * resolved concurrently. Nothing is committed until the end, so a lookup
+   * cannot see what an earlier row just added; counting is what lets the second
+   * row be placed as the second edge rather than either colliding with the
+   * first or being mistaken for it.
    */
-  readonly edgeIds = new Map<string, string>();
+  readonly edgeOccurrences = new Map<string, number>();
 
   constructor(
     readonly db: FirebaseFirestore.Firestore,
@@ -373,23 +373,34 @@ async function lookupNode(
 
 /** The edge recording this fact, creating it if the database has no such edge.
  *
- * Matched on everything that distinguishes one edge from another, not just on
- * the pair it joins: two posts at the same company are two edges, and the
- * previous `(source, target)` lookup collapsed them - returning an unrelated
- * edge between the same two nodes and quietly dropping the second fact.
+ * Matched on what the edge type says identifies it, not on the pair alone: two
+ * spells at the same company are two edges, and the previous `(source, target)`
+ * lookup collapsed them - returning an unrelated edge between the same two
+ * nodes and quietly dropping the second fact.
+ *
+ * Where the payload states the same thing twice, that is taken as two facts
+ * rather than as a repeat. It has to be: for an `election` the pipeline strips
+ * the office, the committee and the run-off round before the ingest sees them,
+ * so a burmistrz bid and a rada bid in one town in 2024 arrive as two
+ * indistinguishable rows, and keeping only one loses a candidacy. The n-th such
+ * row is matched against the n-th stored edge, so re-sending the payload maps
+ * each row back onto the edge it made last time and the collection stops at
+ * `max(rows in the payload, edges already stored)` - never fewer, never more.
  */
 async function findEdgeOrCreate(ctx: Context, edge: Edge) {
+  // Counted before the first await, so the concurrent employments dispatched
+  // through Promise.all cannot interleave between the read and the write.
   const identity = edgeIdentity(edge);
-  const seen = ctx.edgeIds.get(identity);
-  if (seen) return seen;
+  const occurrence = ctx.edgeOccurrences.get(identity) ?? 0;
+  ctx.edgeOccurrences.set(identity, occurrence + 1);
 
-  const existing = await findEdge(ctx.db, edge);
-  if (existing) {
-    ctx.edgeIds.set(identity, existing);
-    return existing;
-  }
+  const stored = await findEdges(ctx.db, edge);
+  const existing = stored[occurrence];
+  if (existing) return existing;
 
-  const edgeRef = ctx.db.collection("edges").doc(edgeDocumentId(edge));
+  const edgeRef = ctx.db
+    .collection("edges")
+    .doc(edgeDocumentId(edge, occurrence));
   createRevisionTransaction(
     ctx.db,
     ctx.batch,
@@ -399,6 +410,5 @@ async function findEdgeOrCreate(ctx: Context, edge: Edge) {
     true,
     ctx.autoapprove,
   );
-  ctx.edgeIds.set(identity, edgeRef.id);
   return edgeRef.id;
 }
