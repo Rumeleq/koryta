@@ -12,7 +12,9 @@ uv sync --all-groups   # creates .venv and installs everything in uv.lock
 ```
 
 Leave out `--all-groups` to skip the `ml` group (torch, spacy and the nvidia
-runtimes, 4.5 GB) if you are not touching the extraction models.
+runtimes, 4.5 GB) if you are not touching the extraction models. The model
+weights themselves are not dependencies: `stores.textmodel.ner` fetches each
+one into `models/` the first time it is asked for.
 
 Dependencies live in `pyproject.toml` and are pinned in `uv.lock`; run
 `uv lock` after editing the former and commit both.
