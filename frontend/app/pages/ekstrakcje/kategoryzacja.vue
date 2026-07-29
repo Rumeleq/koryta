@@ -27,6 +27,14 @@
       <v-progress-circular indeterminate color="primary" size="48" />
     </div>
 
+    <!-- A failed fetch leaves the same empty list as a cleared backlog, and the
+         SSR one never reaches the network tab — so say which it was. -->
+    <div v-else-if="error" class="py-8 text-center">
+      <v-alert type="error" variant="tonal">
+        Nie udało się załadować faktów do kategoryzacji.
+      </v-alert>
+    </div>
+
     <!-- A shared card is worth showing even when nothing is left to review. -->
     <div
       v-else-if="!currentFact && allFacts.length === 0"
@@ -206,7 +214,7 @@ useHead({
 // sittings reach the end of it — and `total` says what waits behind.
 const PAGE_SIZE = 200;
 const page = ref(0);
-const { data, pending } = useExtractions({
+const { data, pending, error } = useExtractions({
   reviewed: "no",
   limit: PAGE_SIZE,
   page,
