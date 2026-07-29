@@ -24,6 +24,8 @@
     "test:e2e:prod": "start-server-and-test dev:prod-data http://127.0.0.1:3000 'cypress run -s cypress/e2e/prod'",
     "test:e2e:open": "start-server-and-test dev:local http://127.0.0.1:3000 'cypress open'",
     "test:e2e:build": "start-server-and-test dev:build http://127.0.0.1:3000 'cypress run'",
+    "backstop:test": "backstop test",
+    "backstop:approve": "backstop approve",
     "test:visual": "cross-env PLAYWRIGHT_NO_REUSE=1 PLAYWRIGHT_SERVER_COMMAND='npm run dev:build' playwright test --project=visual-desktop --project=visual-mobile",
     "test:visual:update": "cross-env PLAYWRIGHT_NO_REUSE=1 PLAYWRIGHT_SERVER_COMMAND='npm run dev:build' playwright test --project=visual-desktop --project=visual-mobile --update-snapshots",
     "test:playwright": "cross-env PLAYWRIGHT_SERVER_COMMAND='npm run dev:prod-data' playwright test --project=chromium",
