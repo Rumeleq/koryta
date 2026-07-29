@@ -484,7 +484,7 @@ describe("api/ingest/company", () => {
     expect(createRevisionTransaction).toHaveBeenCalledTimes(1);
   });
 
-  it("still writes the edge when the stored one says something else", async () => {
+  it("skips the edge even when the stored one carries stray fields", async () => {
     mockReadBody.mockResolvedValue({
       krs: "123456",
       name: "Regional Company",
@@ -497,8 +497,8 @@ describe("api/ingest/company", () => {
       id: "teryt1061",
       get: vi.fn().mockResolvedValue({ exists: true }),
     });
-    // Same pair and type, but the stored edge carries dates - a different fact,
-    // which the old (source, target, type) lookup would have collapsed onto.
+    // `owns` is a state edge: the region either seats the company or it does
+    // not, so a date somebody once put on the link does not make a second one.
     mockGet.mockResolvedValueOnce({
       empty: false,
       docs: [
@@ -516,8 +516,8 @@ describe("api/ingest/company", () => {
 
     const result = await handler({} as any);
 
-    expect(result).toMatchObject({ region: "added" });
-    // Node revision and the new edge's.
-    expect(createRevisionTransaction).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({ region: "existing" });
+    // Node revision only; no second link.
+    expect(createRevisionTransaction).toHaveBeenCalledTimes(1);
   });
 });

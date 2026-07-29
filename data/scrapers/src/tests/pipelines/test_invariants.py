@@ -59,6 +59,13 @@ EDGE_ENDPOINT_TYPES: dict[str, set[tuple[str, str]]] = {
     "owns": {("place", "place"), ("region", "place"), ("region", "region")},
 }
 
+# Edge types that assert a relationship rather than an occurrence: the pair and
+# the type are the whole of what they say, so there is nothing to count and a
+# second document is always redundant. `employed` and `election` are the other
+# kind - one bounded episode, which can legitimately repeat between the same two
+# nodes. Kept in step with EDGE_SEMANTICS in `frontend/server/utils/edges.ts`.
+STATE_EDGE_TYPES = {"owns", "mentions", "comment", "source"}
+
 VOTE_CATEGORIES = {"interesting", "quality", "correct", "insufficient"}
 
 EXTRACTION_FACT_TYPES = {"employment", "party_membership", "personal_relation"}
@@ -663,47 +670,81 @@ def test_edges_join_the_node_types_they_are_defined_for(edges, snapshot):
 
 
 @pytest.mark.integration
-def test_no_edge_is_stored_twice(edges):
-    """The same fact must not be recorded by two edge documents.
+def test_a_state_edge_is_not_stored_twice(edges):
+    """A tie that either holds or does not may only be recorded once.
 
-    Two identical `employed` edges are two jobs as far as the graph and the
-    experience calculation are concerned. Duplicates are not merely (source,
-    target, type) collisions - a person can genuinely hold the same post twice -
-    so this compares everything that distinguishes one edge from another.
+    `owns`, `mentions` and `comment` assert a relationship rather than an
+    occurrence - a region seats a company, an article names a person - so the
+    pair and the type are the whole of what they say and a second document adds
+    nothing. This is the only edge duplication that can be judged from the
+    stored data alone; see `test_occurrence_edges_may_repeat` for why the rest
+    cannot. The rule this mirrors lives in `frontend/server/utils/edges.ts`.
     """
-    # 549 redundant documents, mostly `election` edges re-imported from PKW
-    # before the ingest derived its edge ids from the triple they represent.
-    # Still creeping up - 541 a month earlier - so a failure here means another
-    # import wrote edges it should have recognised as already present.
-    KNOWN_DUPLICATES = 549
+    # 64 region->company links written twice by one company ingest, before the
+    # edge id was derived from the pair. Goes to zero once
+    # scripts/migrate/dedupe-edges.ts has been run against production.
+    DUPLICATED_STATE_EDGES = 64
 
-    distinguishing = (
-        "source",
-        "target",
-        "type",
-        "name",
-        "start_date",
-        "end_date",
-        "party",
-        "committee",
-        "position",
-        "term",
-        "elected",
-        "by_election",
-    )
     groups: dict[tuple, list[str]] = collections.defaultdict(list)
     for edge in edges:
-        groups[tuple(str(edge.get(field)) for field in distinguishing)].append(
-            edge["id"]
-        )
+        if edge.get("type") not in STATE_EDGE_TYPES:
+            continue
+        groups[(edge["source"], edge["target"], edge["type"])].append(edge["id"])
 
     duplicated = {key: ids for key, ids in groups.items() if len(ids) > 1}
     redundant = sum(len(ids) - 1 for ids in duplicated.values())
+    by_type = collections.Counter(key[2] for key in duplicated)
 
-    assert redundant <= KNOWN_DUPLICATES, (
-        f"{redundant} edge documents duplicate another one exactly, across "
-        f"{len(duplicated)} groups, up from the {KNOWN_DUPLICATES} known ones. "
-        f"Sample groups: {sample(list(duplicated.values()), 5)}"
+    assert redundant <= DUPLICATED_STATE_EDGES, (
+        f"{redundant} state edges duplicate another one across "
+        f"{len(duplicated)} pairs ({dict(by_type)}), up from the "
+        f"{DUPLICATED_STATE_EDGES} known ones. "
+        f"Sample: {sample(list(duplicated.values()), 5)}"
+    )
+
+
+@pytest.mark.integration
+def test_occurrence_edges_may_repeat(edges):
+    """Two identical `election` or `employed` edges are not a defect to fix.
+
+    They are how the database says a person stood twice or was employed twice,
+    and for `election` the fields that would tell two candidacies apart are
+    destroyed before the ingest sees them: the office collapses into the
+    "Samorząd" bucket, the gmina TERYT is truncated to its powiat, `committee`
+    is dropped at the API boundary, and the run-off round is discarded by the
+    scraper. Standing for burmistrz and for that town's rada in 2024 is stored
+    as two byte-identical documents - and so is one mayoral bid that went to a
+    second round.
+
+    So this test asserts nothing about how many there are. What it does check is
+    that the *reason* they cannot be judged still holds: if a duplicated
+    candidacy ever turns up for an office nobody can stand for twice - Sejm,
+    Senat, the European Parliament - then the repeats are a write bug after all
+    and the whole question is worth reopening.
+    """
+    single_seat = {"Sejm", "Senat", "Parlament Europejski"}
+
+    groups: dict[tuple, list[str]] = collections.defaultdict(list)
+    for edge in edges:
+        if edge.get("type") != "election":
+            continue
+        if edge.get("position") not in single_seat:
+            continue
+        groups[
+            (
+                edge["source"],
+                edge["target"],
+                edge.get("position"),
+                edge.get("start_date"),
+            )
+        ].append(edge["id"])
+
+    duplicated = {key: ids for key, ids in groups.items() if len(ids) > 1}
+
+    assert not duplicated, (
+        f"{len(duplicated)} candidacies are recorded twice for an office that "
+        f"can only be stood for once, so the repeats are not two real "
+        f"candidacies after all: {sample(list(duplicated.items()), 5)}"
     )
 
 
