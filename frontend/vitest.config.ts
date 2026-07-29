@@ -7,6 +7,12 @@ export default defineVitestConfig({
     // Booting the Nuxt environment costs well over vitest's 10s default; the
     // suites that only skip tests still pay for it in beforeAll.
     hookTimeout: 60_000,
+    // The test bodies here are milliseconds of work each — auth.test.ts runs in
+    // 7ms — sitting behind seconds of Nuxt environment per file. What trips
+    // vitest's 5s default is not slow test code but the machine stalling, so a
+    // failure says nothing about the test. Raised to match hookTimeout, on the
+    // same reasoning: a genuine hang is still caught, just reported later.
+    testTimeout: 60_000,
     setupFiles: ["./tests/polyfill.ts", "./tests/setup.ts"],
     exclude: [
       "node_modules",
