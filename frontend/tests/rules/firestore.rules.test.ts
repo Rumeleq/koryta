@@ -19,7 +19,7 @@ import { beforeAll, afterAll, beforeEach, describe, expect, it } from "vitest";
  *
  * Run with the emulator around it:
  *
- *   devlock npm run test:rules
+ *   npm run test:rules
  */
 const RULES = readFileSync(
   fileURLToPath(new URL("../../../firestore.rules", import.meta.url)),
@@ -103,14 +103,20 @@ describe("nodes", () => {
     await assertFails(getDoc(doc(db, "nodes/region-1")));
   });
 
-  it("refuses direct node creation even from a signed in user", async () => {
-    // The create rule reads `resource.data.revision_id`, and on a create there
-    // is no `resource` yet - so it denies every client write. Nodes are only
-    // ever written by the server through the admin SDK, so this is currently
-    // harmless; the test is here so that changing the rule to
-    // `request.resource` is a visible decision rather than an accident.
+  it("refuses direct node writes from a signed in user", async () => {
+    // Nodes reach Firestore only through the server, which uses the admin SDK
+    // and bypasses rules. Anything a user contributes goes via a revision.
     const db = testEnv.authenticatedContext("alice").firestore();
     await assertFails(setDoc(doc(db, "nodes/person-2"), { type: "person" }));
+  });
+
+  it("refuses to let a signed in user rewrite an existing node", async () => {
+    await seed("nodes/person-3", { type: "person", name: "Jan Kowalski" });
+
+    const db = testEnv.authenticatedContext("alice").firestore();
+    await assertFails(
+      setDoc(doc(db, "nodes/person-3"), { type: "person", name: "Not Jan" }),
+    );
   });
 });
 
@@ -142,6 +148,34 @@ describe("notes", () => {
       setDoc(doc(db, "notes/note-4"), { userUid: "alice", body: "anon" }),
     );
   });
+
+  it("lets a user edit and remove their own note", async () => {
+    await seed("notes/note-5", { userUid: "alice", body: "first" });
+
+    const db = testEnv.authenticatedContext("alice").firestore();
+    await assertSucceeds(
+      setDoc(doc(db, "notes/note-5"), { userUid: "alice", body: "second" }),
+    );
+    await assertSucceeds(deleteDoc(doc(db, "notes/note-5")));
+  });
+
+  it("does not let a user overwrite somebody else's note by claiming it", async () => {
+    await seed("notes/note-6", { userUid: "bob", body: "bob's" });
+
+    // Checking only the incoming payload would allow this: the write says it
+    // belongs to alice, and alice is who is asking.
+    const db = testEnv.authenticatedContext("alice").firestore();
+    await assertFails(
+      setDoc(doc(db, "notes/note-6"), { userUid: "alice", body: "hijacked" }),
+    );
+  });
+
+  it("does not let a user remove somebody else's note", async () => {
+    await seed("notes/note-7", { userUid: "bob", body: "bob's" });
+
+    const db = testEnv.authenticatedContext("alice").firestore();
+    await assertFails(deleteDoc(doc(db, "notes/note-7")));
+  });
 });
 
 describe("votes", () => {
@@ -164,6 +198,16 @@ describe("votes", () => {
     await assertFails(
       setDoc(doc(db, "votes/node1_alice"), { userUid: "bob", value: 1 }),
     );
+  });
+
+  it("lets a user change and withdraw their own vote", async () => {
+    await seed("votes/node1_alice", { userUid: "alice", value: 1 });
+
+    const db = testEnv.authenticatedContext("alice").firestore();
+    await assertSucceeds(
+      setDoc(doc(db, "votes/node1_alice"), { userUid: "alice", value: -1 }),
+    );
+    await assertSucceeds(deleteDoc(doc(db, "votes/node1_alice")));
   });
 
   it("does not let a user delete somebody else's vote", async () => {
