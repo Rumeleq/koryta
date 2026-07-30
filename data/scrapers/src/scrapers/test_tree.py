@@ -19,6 +19,9 @@ class MockIO(IO):
     def list_files(self, path):
         pass
 
+    def read_many(self, path):
+        return []
+
     def output_entity(self, entity, sort_by=[]):
         pass
 

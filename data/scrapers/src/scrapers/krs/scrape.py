@@ -493,10 +493,10 @@ class ScrapeRejestrIO(Pipeline[RejestrIOQuery]):
 
         starters = KRSSet(self.hardcoded_companies.all_companies_krs.values())
 
-        for blob_ref in ctx.io.list_files(CloudStorage(prefix="hostname=rejestr.io")):
-            blob_name = getattr(blob_ref, "url", str(blob_ref))
+        for blob_name, blob in ctx.io.read_many(
+            CloudStorage(prefix="hostname=rejestr.io")
+        ):
             if "osoby" in blob_name and "krs-powiazania" in blob_name:
-                blob = ctx.io.read_data(blob_ref)
                 try:
                     data = json.loads(blob.read_string())
                     for item in data:
