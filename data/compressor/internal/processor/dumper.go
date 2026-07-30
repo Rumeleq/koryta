@@ -54,22 +54,29 @@ func (d *Dumper) Run(ctx context.Context) error {
 	today := now.Format("2006-01-02")
 	yesterday := now.AddDate(0, 0, -1).Format("2006-01-02")
 
-	// Discover all hostnames using hierarchical listing
-	log.Println("Discovering hostnames...")
-	prefixes, err := d.client.ListPrefixes(ctx, d.cfg.SourcePrefix+"hostname=")
-	if err != nil {
-		return fmt.Errorf("failed to list hostnames: %w", err)
-	}
-
 	var hostnames []string
-	for _, p := range prefixes {
-		// p is like "hostname=example.com/"
-		parts := strings.Split(strings.TrimSuffix(p, "/"), "=")
-		if len(parts) == 2 {
-			hostnames = append(hostnames, parts[1])
+
+	if d.cfg.Hostname != "" {
+		// Discovery walks every hostname prefix in the bucket, which is most of
+		// the run when only one host is wanted. Named explicitly, skip it.
+		hostnames = []string{d.cfg.Hostname}
+		log.Printf("Restricted to hostname %s", d.cfg.Hostname)
+	} else {
+		log.Println("Discovering hostnames...")
+		prefixes, err := d.client.ListPrefixes(ctx, d.cfg.SourcePrefix+"hostname=")
+		if err != nil {
+			return fmt.Errorf("failed to list hostnames: %w", err)
 		}
+
+		for _, p := range prefixes {
+			// p is like "hostname=example.com/"
+			parts := strings.Split(strings.TrimSuffix(p, "/"), "=")
+			if len(parts) == 2 {
+				hostnames = append(hostnames, parts[1])
+			}
+		}
+		log.Printf("Found %d hostnames", len(hostnames))
 	}
-	log.Printf("Found %d hostnames", len(hostnames))
 
 	// Worker pool
 	numWorkers := d.cfg.HostWorkers

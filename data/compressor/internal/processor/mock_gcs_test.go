@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"cloud.google.com/go/storage"
 )
@@ -29,6 +30,7 @@ type MockStorageClient struct {
 	ErrRead      error
 	ErrWrite     error
 	WriteTracker []string
+	PrefixCalls  atomic.Int32
 }
 
 func NewMockStorageClient() *MockStorageClient {
@@ -63,6 +65,7 @@ func (m *MockStorageClient) ListObjects(ctx context.Context, prefix string) ([]*
 }
 
 func (m *MockStorageClient) ListPrefixes(ctx context.Context, prefix string) ([]string, error) {
+	m.PrefixCalls.Add(1)
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
