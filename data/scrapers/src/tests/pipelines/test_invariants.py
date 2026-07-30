@@ -704,6 +704,58 @@ def test_a_state_edge_is_not_stored_twice(edges):
 
 
 @pytest.mark.integration
+def test_nobody_stands_in_two_places_at_once(edges, nodes):
+    """One person, one election, one constituency.
+
+    Where that does not hold, the person is two people: `create_people_table`
+    merges namesakes of the same age on purpose - somebody who filed once as
+    "Donald Tusk" and once as "Donald Franciszek Tusk" is one man - and cannot
+    tell that apart from two strangers who happen to share a name and a year of
+    birth. Tomasz Wojciech Krasowski stands in Warszawa and in powiat sokólski
+    in the same election, four elections running.
+
+    A województwo that contains the powiat is not a second place: standing for
+    the sejmik and for a local council in the same region is ordinary, and the
+    two are recorded at different depths. Two kinds of election in one year are
+    two contests - 2024 held both the local and the european ones - so the
+    office has to match too.
+    """
+    # `drop_contradictory_candidacies` stops these being published; the stored
+    # ones go once the affected people are re-ingested.
+    KNOWN_CONTRADICTIONS = 135
+
+    nodes_by_id = {node["id"]: node for node in nodes}
+    regions: dict[tuple, set[str]] = collections.defaultdict(set)
+    for edge in edges:
+        if edge.get("type") != "election":
+            continue
+        teryt = nodes_by_id.get(edge["target"], {}).get("teryt")
+        if not teryt:
+            continue
+        key = (edge["source"], str(edge.get("start_date"))[:4], edge.get("position"))
+        regions[key].add(teryt)
+
+    def contradict(teryts: set[str]) -> bool:
+        ordered = sorted(teryts)
+        return any(
+            not (a.startswith(b) or b.startswith(a))
+            for i, a in enumerate(ordered)
+            for b in ordered[i + 1 :]
+        )
+
+    contradictory = {
+        key: teryts for key, teryts in regions.items() if contradict(teryts)
+    }
+
+    assert len(contradictory) <= KNOWN_CONTRADICTIONS, (
+        f"{len(contradictory)} candidacies put one person in two constituencies "
+        f"in the same election, up from the {KNOWN_CONTRADICTIONS} known ones, "
+        f"so the person is two people: "
+        f"{sample(list(contradictory.items()), 5)}"
+    )
+
+
+@pytest.mark.integration
 def test_occurrence_edges_may_repeat(edges):
     """Two identical `election` or `employed` edges are not a defect to fix.
 
