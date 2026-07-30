@@ -337,9 +337,12 @@ const apiQuery = computed(
     }) as Query,
 );
 
+// Same as /eksploruj/tabela: the template is a single <ClientOnly>, so nothing
+// this returns is rendered on the server.
 const { tableItems, totalItems, pending } = await useListWithStats(
   apiQuery,
   "nowe-data",
+  { server: false },
 );
 
 const focusedPerson = computed<PersonRich | undefined>(

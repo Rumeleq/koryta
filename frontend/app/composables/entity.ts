@@ -13,14 +13,26 @@ export type Filters = {
   sortDesc?: string | boolean;
 };
 
+export type UseEntitiesOptions = {
+  /** Set false where the result is only ever read behind a `<ClientOnly>`.
+   *
+   * `/api/nodes?type=` is unpaginated, so a collection fetched during SSR is
+   * serialised into __NUXT_DATA__ in full - and on a page that renders no
+   * markup on the server, every one of those bytes is shipped for nothing.
+   */
+  server?: boolean;
+};
+
 export function useEntities<N extends NodeType>(
   nodeType: N,
   filters: Filters | Ref<Filters> = {},
+  options: UseEntitiesOptions = {},
 ) {
   const { data: response, refresh } = authFetch<{
     nodes: Record<string, NodeTypeMap[N]>;
   }>(`/api/nodes?type=${nodeType}`, {
     query: filters,
+    ...options,
   });
 
   const entitiesRaw = computed(() => response?.value?.nodes ?? {});

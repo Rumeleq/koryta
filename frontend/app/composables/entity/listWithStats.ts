@@ -4,9 +4,16 @@ import type { Query } from "~~/server/api/nodes/index.get";
 
 import { useCurrentUser, useIsCurrentUserLoaded } from "vuefire";
 
+export type UseListWithStatsOptions = {
+  /** Set false where the result is only ever read behind a `<ClientOnly>`, so
+   * the server does not fetch and serialise a payload nothing will render. */
+  server?: boolean;
+};
+
 export async function useListWithStats(
   apiQuery: Ref<Query> | ComputedRef<Query>,
   cacheKey: string,
+  options: UseListWithStatsOptions = {},
 ) {
   const user = useCurrentUser();
   const isAuthReady = useIsCurrentUserLoaded();
@@ -75,7 +82,7 @@ export async function useListWithStats(
     },
     {
       watch: [apiQuery, user],
-      server: apiQuery.value.visibility !== "private",
+      server: options.server ?? apiQuery.value.visibility !== "private",
       // Use cached payload only while hydrating
       // and always fetch fresh for client-side param changes.
       //
