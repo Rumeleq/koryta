@@ -194,7 +194,25 @@ class CompressedMirror:
             default="gs://koryta-pl-compressed",
             help="GCS bucket URL or local path for the compressed HTML mirror.",
         )
+        parser.add_argument(
+            "--no-mirror",
+            action="store_true",
+            help="Read whole prefixes object by object from the source bucket "
+            "instead of from the compressed mirror. Far slower, but it sees "
+            "objects written since the last archive was built -- which is what "
+            "an iterative scrape wants.",
+        )
         return parser.parse_known_args()[0]
+
+    @property
+    def bulk_reads_enabled(self) -> bool:
+        """Whether read_many may serve a whole prefix from an archive.
+
+        Bulk reads only: the article path resolves single URLs through this
+        same mirror with nothing to fall back on, so --no-mirror must not
+        reach ensure_extracted or get.
+        """
+        return not self.args.no_mirror
 
     def _extract_dir(self, host: str) -> Path:
         return base_dir / "compressed" / host

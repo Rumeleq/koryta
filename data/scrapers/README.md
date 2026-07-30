@@ -47,6 +47,31 @@ You can run each script with `uv run scripts-name`.
 
 Refer to `pyproject.toml` for the most up-to-date list of the scripts available there.
 
+## The compressed mirror
+
+Pipelines that read a whole hostname prefix -- the KRS ones, off
+`hostname=rejestr.io` -- go through `gs://koryta-pl-compressed` rather than
+fetching each object. GCS gives about 5-7 small objects a second, so the ~29k
+rejestr.io responses took most of an hour; the same data is one 18 MB archive
+that reads in seconds. Each run prints which archives it used, dates included.
+
+That archive is a snapshot. To rebuild it for one host:
+
+```bash
+cd ../compressor
+go run ./cmd/compressor \
+  -in-bucket koryta-pl-crawled -out-bucket koryta-pl-compressed \
+  -incremental -hostname rejestr.io
+```
+
+Pass `--no-mirror` to skip it and read the bucket object by object instead.
+That is much slower, but it sees everything written since the last rebuild,
+which is what you want when iterating on a scrape:
+
+```bash
+uv run koryta ScrapeRejestrIO --no-mirror
+```
+
 ## The nightly pipeline run
 
 `.github/workflows/pipelines.yml` runs the pipelines on CI in two tiers.
