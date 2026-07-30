@@ -1,4 +1,6 @@
-FROM golang:1.22-alpine AS builder
+# Keep in step with the go directive in go.mod, which is what actually gates
+# the build.
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
 
