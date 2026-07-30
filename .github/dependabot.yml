@@ -44,7 +44,7 @@ updates:
       major:
         update-types: ["major"]
 
-  - package-ecosystem: "pip"
+  - package-ecosystem: "uv"
     directory: "/data/scrapers"
     schedule:
       interval: "monthly"
