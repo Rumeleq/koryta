@@ -21,7 +21,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: "1.22"
+          go-version-file: "data/compressor/go.mod"
           cache-dependency-path: "data/compressor/go.sum"
 
       - name: Run unit tests
