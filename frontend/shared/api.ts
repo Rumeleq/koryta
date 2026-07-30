@@ -45,6 +45,12 @@ export type EmploymentRequest = {
 
 const electionRequestSchema = z.object({
   party: z.string().optional(),
+  /** The electoral committee, as the scrapers read it off the PKW listing
+   * ("Komitet Wyborczy Prawo i Sprawiedliwość"), as opposed to `party`, which
+   * is the abbreviation those get mapped onto. It has to be accepted here or
+   * zod strips it: the pipeline has emitted it all along, which is why no
+   * stored candidacy carries one. */
+  committee: z.string().optional(),
   election_year: z.string().optional(),
   election_type: z.enum([
     "Samorząd",
@@ -64,6 +70,7 @@ const electionRequestSchema = z.object({
 
 export type ElectionRequest = {
   party?: string;
+  committee?: string;
   election_year?: string;
   election_type: ElectionPosition;
   teryt?: string;

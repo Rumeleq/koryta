@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from analysis.payloads import PeoplePayloads, RegionPayloads
+from analysis.payloads.person import _extract_elections
 from scrapers.stores import Context, Pipeline, ProcessPolicy
 
 
@@ -110,6 +111,31 @@ def test_upload_payloads_person_shape(mock_ctx):
     assert len(payload["elections"]) == 1
     assert payload["elections"][0]["committee"] == "Test Party"
     assert payload["elections"][0]["teryt"] == "1465"
+
+
+def test_election_without_a_committee_sends_none(mock_ctx):
+    """A candidacy the PKW listing records no committee for sends null.
+
+    Not the string "None": the uploader drops null fields, so that would have
+    reached the frontend as a committee somebody stood for.
+    """
+    row = pd.Series(
+        {
+            "elections": [
+                {
+                    "election_type": "sejmu",
+                    "party": None,
+                    "election_year": 2023,
+                    "teryt_powiat": ["1465"],
+                }
+            ]
+        }
+    )
+
+    elections = _extract_elections(row)
+
+    assert len(elections) == 1
+    assert elections[0].committee is None
 
 
 def test_upload_payloads_region_shape(mock_ctx):

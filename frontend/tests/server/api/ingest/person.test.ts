@@ -162,4 +162,55 @@ describe("api/ingest/person", () => {
     );
     expect(result.elections).toHaveLength(1);
   });
+
+  it("stores the electoral committee a candidacy was run under", async () => {
+    // The pipeline has always sent `committee`; the schema used to strip it, so
+    // no stored candidacy has one - which is most of why two candidacies in one
+    // town in one year cannot be told apart.
+    mockReadBody.mockResolvedValue({
+      name: "Test Person",
+      parties: [],
+      companies: [],
+      elections: [
+        {
+          committee: "Komitet Wyborczy Prawo i Sprawiedliwość",
+          election_year: "2024",
+          election_type: "Samorząd",
+          teryt: "1465",
+        },
+      ],
+    });
+
+    // The test above queues more `...Once` results than it consumes, and
+    // clearAllMocks does not drain that queue.
+    mockGet.mockReset();
+    mockDoc.mockReset();
+    mockDoc.mockReturnValue({ id: "new-doc-id", ref: mockRef });
+
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
+    mockDoc.mockReturnValueOnce({ id: "person-id", ref: mockRef });
+    mockGet.mockResolvedValueOnce({
+      empty: false,
+      docs: [{ ref: { id: "teryt1465" }, id: "teryt1465" }],
+    });
+    const edgeRef = { id: "edge-id" };
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
+    mockDoc.mockReturnValueOnce(edgeRef);
+
+    await handler({} as any);
+
+    expect(createRevisionTransaction).toHaveBeenNthCalledWith(
+      2,
+      mockDb,
+      expect.anything(),
+      { uid: "test-user-id" },
+      edgeRef,
+      expect.objectContaining({
+        type: "election",
+        committee: "Komitet Wyborczy Prawo i Sprawiedliwość",
+      }),
+      true,
+      false,
+    );
+  });
 });

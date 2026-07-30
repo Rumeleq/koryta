@@ -1,3 +1,4 @@
+import math
 import typing
 from dataclasses import asdict
 
@@ -60,6 +61,10 @@ class PeoplePayloads(Pipeline[Person]):
         if len(m) == 1:
             return party_scores_to_list(m.iloc[0], "person_id")
         for e in elections:
+            if e.committee is None:
+                # Nothing to map a party from. This used to be the string
+                # "None", which simply matched no committee.
+                continue
             m = self.committee_to_party[
                 self.committee_to_party["subgroup_id"] == e.committee.lower()
             ]
@@ -162,6 +167,23 @@ def _extract_companies(row: pd.Series) -> list[Company]:
     return companies
 
 
+def _committee(value: typing.Any) -> str | None:
+    """The electoral committee a candidacy was run under, or None.
+
+    The column is called ``party`` in the PKW tables and holds the committee's
+    full name. It was previously passed through ``str()``, which turns a missing
+    one into the literal string ``"None"`` - a value that survives the
+    uploader's null-stripping and would have been stored on the edge as though
+    somebody had stood for a committee of that name.
+    """
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return None
+    text = str(value).strip()
+    if not text or text in {"None", "nan"}:
+        return None
+    return text
+
+
 def _extract_elections(row: pd.Series) -> list[Election]:
     elections = []
     elec_list = row.get("elections")
@@ -187,7 +209,7 @@ def _extract_elections(row: pd.Series) -> list[Election]:
 
                 election_payload = Election(
                     election_type=get_election_type(str(e.get("election_type"))),
-                    committee=str(e.get("party")),
+                    committee=_committee(e.get("party")),
                 )
                 if e.get("election_year"):
                     election_payload.election_year = str(e.get("election_year"))

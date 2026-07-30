@@ -302,6 +302,11 @@ async function createElection(
     position: election.election_type as ElectionPosition,
   };
   if (election.party) edgeData.party = election.party;
+  // The electoral committee the person stood for. The pipeline has always sent
+  // it and the schema has always dropped it, which is why no stored candidacy
+  // has one - and why two candidacies in one town in one year are so often
+  // indistinguishable. It is the strongest discriminator the payload carries.
+  if (election.committee) edgeData.committee = election.committee;
   if (election.election_year) {
     edgeData.start_date = `${election.election_year}-01-01`;
   }
