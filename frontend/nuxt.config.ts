@@ -96,6 +96,30 @@ export default defineNuxtConfig({
   sitemap: {
     sources: ["/api/_sitemap-urls"],
   },
+
+  // Without a `robots` key the module defaults to an empty `Disallow:`, i.e.
+  // every route is crawlable - including the admin and auth surface, and the
+  // query-string facets below, which render a fresh multi-megabyte response per
+  // distinct combination.
+  robots: {
+    disallow: [
+      "/admin",
+      "/edit",
+      "/login",
+      "/cli-login",
+      "/profil",
+      "/leads",
+      "/crawler",
+      "/ekstrakcje",
+      "/plik",
+      // Renders nothing server-side (the whole template is <ClientOnly>), so it
+      // has no indexable content to lose, and every entity URL 301s into it
+      // with its own ?krs=/?teryt=. That is the bulk of the crawl budget.
+      "/eksploruj/tabela",
+      // The bare page stays indexable; only the facet permutations are barred.
+      "/lista?",
+    ],
+  },
   plausible: {
     // Prevent tracking on localhost
     ignoredHostnames: ["localhost"],
@@ -108,7 +132,11 @@ export default defineNuxtConfig({
   fonts: {
     families: [{ name: "Roboto", provider: "fontsource" }],
     defaults: {
-      weights: [100, 300, 400, 500, 700, 900],
+      // The faces are self-hosted, so every declared weight x style x subset is
+      // a file we serve. Nothing in the app reaches for thin/light/black -
+      // the only weights used are body 400, font-weight-medium and
+      // font-weight-bold, plus a couple of raw 550/600 that round to those.
+      weights: [400, 500, 700],
       styles: ["normal", "italic"],
       subsets: ["latin", "latin-ext"],
     },
@@ -216,6 +244,26 @@ export default defineNuxtConfig({
   routeRules: {
     "/": { swr: 3600 },
     "/admin/**": { ssr: false },
+
+    // Nitro only injects a Cache-Control route rule for public assets mounted
+    // under a sub-path (it zeroes maxAge for anything at the site root), so
+    // these ship with no Cache-Control at all and Cloud CDN re-fetches them
+    // from the container every single time - logo.png is 1.4 MB of that.
+    // A week rather than `immutable`: the URLs are unhashed, so a replaced
+    // file has to be able to propagate.
+    "/logo.png": { headers: { "cache-control": "public, max-age=604800" } },
+    "/logo_horizontal.png": {
+      headers: { "cache-control": "public, max-age=604800" },
+    },
+    "/logo_small.png": {
+      headers: { "cache-control": "public, max-age=604800" },
+    },
+    "/favicon.ico": { headers: { "cache-control": "public, max-age=604800" } },
+
+    // ipx echoes the source file's maxAge, which is 60s, so every resized
+    // image re-enters the container roughly once a minute per edge POP and
+    // re-decodes a 5906x5906 source to do it.
+    "/_ipx/**": { headers: { "cache-control": "public, max-age=604800" } },
   },
   devServer: {
     host: "127.0.0.1",
