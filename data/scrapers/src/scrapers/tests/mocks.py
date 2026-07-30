@@ -126,6 +126,11 @@ class MockIO(IO):
         elif key in self.files:
             yield path
 
+    def read_many(self, path: DataRef) -> typing.Iterable[tuple[str, File]]:
+        # No mirror here, so the contract's slow path is the only path.
+        for ref in self.list_files(path):
+            yield getattr(ref, "url", str(ref)), self.read_data(ref)
+
     def output_entity(self, entity, sort_by=[]):
         self.output.append(entity)
 

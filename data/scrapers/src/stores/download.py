@@ -6,7 +6,7 @@ import tarfile
 import urllib.request
 from functools import cached_property
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterator
 
 import google.cloud.storage as gcs_lib
 import requests
@@ -199,42 +199,88 @@ class CompressedMirror:
     def _extract_dir(self, host: str) -> Path:
         return base_dir / "compressed" / host
 
-    def _resolve_tar_path(self, host: str) -> Path:
+    @staticmethod
+    def _pick_archives(names: list[str]) -> list[str]:
+        """Which of a host's archives together hold all of its data.
+
+        The compressor writes two shapes. `total/` is a full snapshot, so the
+        newest one on its own is everything. `from=X/date=Y` is a delta, and
+        the whole chain is needed -- taking only the last would silently drop
+        everything before the most recent run, which is what a host with no
+        `total/` (rejestr.io) used to get.
+        """
+        totals = sorted(n for n in names if "/total/" in n)
+        if totals:
+            return [totals[-1]]
+        return sorted(names)
+
+    def _download_blob(self, bucket_name: str, blob_name: str) -> Path:
+        df = FileSourceConfig(
+            url=f"gs://{bucket_name}/{blob_name}",
+            filename_fallback=blob_name.replace("/", "."),
+            download_lambda=lambda path: (
+                gcs_lib.Client()
+                .bucket(bucket_name)
+                .blob(blob_name)
+                .download_to_filename(str(path))
+            ),
+            binary=True,
+        )
+        fs = FileSource(df)
+        if not fs.downloaded():
+            fs.download()
+        return fs.downloaded_path
+
+    def _resolve_tar_paths(self, host: str) -> list[Path]:
         bucket = self.args.compressed_mirror_bucket
         if bucket.startswith("gs://"):
             bucket_name = bucket.removeprefix("gs://")
-            blobs = sorted(
+            blobs = [
                 b.name
                 for b in gcs_lib.Client()
                 .bucket(bucket_name)
                 .list_blobs(prefix=f"hostname={host}/")
                 if b.name.endswith(".tar.gz")
-            )
+            ]
             if not blobs:
                 raise NotInMirrorError(f"{host} has no snapshot in mirror")
-            blob_name = blobs[-1]
-            df = FileSourceConfig(
-                url=f"gs://{bucket_name}/{blob_name}",
-                filename_fallback=blob_name.replace("/", "."),
-                download_lambda=lambda path: (
-                    gcs_lib.Client()
-                    .bucket(bucket_name)
-                    .blob(blob_name)
-                    .download_to_filename(str(path))
-                ),
-                binary=True,
-            )
-            fs = FileSource(df)
-            if not fs.downloaded():
-                fs.download()
-            return fs.downloaded_path
-        else:
-            candidates = sorted(
-                Path(bucket).glob(f"hostname={host}/from=*/date=*.tar.gz")
-            )
-            if not candidates:
-                raise NotInMirrorError(f"{host} has no snapshot in mirror")
-            return candidates[-1]
+            return [
+                self._download_blob(bucket_name, name)
+                for name in self._pick_archives(blobs)
+            ]
+
+        candidates = [
+            str(p) for p in Path(bucket).glob(f"hostname={host}/**/date=*.tar.gz")
+        ]
+        if not candidates:
+            raise NotInMirrorError(f"{host} has no snapshot in mirror")
+        return [Path(p) for p in self._pick_archives(candidates)]
+
+    def _resolve_tar_path(self, host: str) -> Path:
+        return self._resolve_tar_paths(host)[-1]
+
+    def iter_objects(self, host: str) -> Iterator[tuple[str, bytes]]:
+        """Every object the mirror holds for a host, as (GCS name, contents).
+
+        Names are rebuilt to match the source bucket, so callers that parse the
+        object path -- which most of the KRS code does -- see what they would
+        have seen listing the bucket directly. Deliberately not routed through
+        ensure_extracted: that flattens `/` to `.` in filenames, and there is no
+        way back from that to the original path.
+        """
+        for tar_path in self._resolve_tar_paths(host):
+            with tarfile.open(tar_path) as tf:
+                for member in tf:
+                    if not member.isfile() or member.name == "index.txt":
+                        continue
+                    handle = tf.extractfile(member)
+                    if handle is None:
+                        continue
+                    rel = member.name
+                    prefix = f"{host}/"
+                    if rel.startswith(prefix):
+                        rel = rel[len(prefix) :]
+                    yield f"hostname={host}/{rel}", handle.read()
 
     def ensure_extracted(self, host: str) -> Path:
         extract_dir = self._extract_dir(host)

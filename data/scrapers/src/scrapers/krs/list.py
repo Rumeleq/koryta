@@ -103,10 +103,9 @@ def extract_people(ctx: Context):
     """
     outputs = []
 
-    for blob_ref in ctx.io.list_files(CloudStorage(prefix="hostname=rejestr.io")):
-        blob = ctx.io.read_data(blob_ref)
-        assert isinstance(blob_ref, DownloadableFile)
-        blob_name = blob_ref.url
+    for blob_name, blob in ctx.io.read_many(
+        CloudStorage(prefix="hostname=rejestr.io")
+    ):
         content = blob.read_string()
         if content == "":
             # Skipping files marking failures

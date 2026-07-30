@@ -19,14 +19,20 @@ from scrapers.stores import (
     LocalFile,
     ProcessPolicy,
 )
-from scrapers.stores.file import DownloadableFile, GCSBlob, MirrorRef, VersionedBackup
+from scrapers.stores.file import (
+    DownloadableFile,
+    GCSBlob,
+    MirrorRef,
+    NotInMirrorError,
+    VersionedBackup,
+)
 from stores import file
 from stores.config import PROJECT_ROOT
 from stores.download import CompressedMirror, FileSource
 from stores.duckdb import EntityDumper
 from stores.firestore import FirestoreIO
 from stores.rejestr import Rejestr
-from stores.storage import BatchClient
+from stores.storage import CRAWLED_BUCKET, BatchClient
 from stores.storage import Client as CloudStorageClient
 from stores.utils import UtilsImpl
 from stores.web import WebImpl
@@ -116,6 +122,36 @@ class Conductor(IO):
             raise NotImplementedError(
                 "list_files not implemented for " + str(type(path))
             )
+
+    def read_many(self, path: DataRef) -> typing.Iterable[tuple[str, File]]:
+        if isinstance(path, CloudStorage) and not path.max_namespaces:
+            host = path.prefix.removeprefix("hostname=").split("/")[0]
+            try:
+                # Resolved before yielding anything: once the caller has taken
+                # a single item we can no longer quietly restart on the slow
+                # path without handing out duplicates.
+                tar_paths = self.mirror._resolve_tar_paths(host)
+            except NotInMirrorError:
+                logging.info("%s not in the compressed mirror, reading blobs", host)
+            else:
+                # Named, not counted: the archive filenames carry the dates
+                # they cover, and a mirror that has not been rebuilt lately is
+                # otherwise a silent hole in the data rather than a slow read.
+                print(
+                    f"Reading {host} from the compressed mirror: "
+                    + ", ".join(p.name for p in tar_paths)
+                )
+                for name, data in self.mirror.iter_objects(host):
+                    # Spelled exactly as list_files spells it. Callers parse
+                    # these: add_company_source strips the gs:// prefix off to
+                    # decide provenance, and silently records the wrong source
+                    # rather than failing if it is not there.
+                    url = f"gs://{CRAWLED_BUCKET}/{name}"
+                    yield url, file.FromBytesIO(data, url)
+                return
+
+        for ref in self.list_files(path):
+            yield getattr(ref, "url", str(ref)), self.read_data(ref)
 
     def output_entity(self, entity, sort_by=[]):
         try:

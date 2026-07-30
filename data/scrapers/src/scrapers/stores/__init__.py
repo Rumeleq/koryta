@@ -71,6 +71,18 @@ class IO(metaclass=ABCMeta):
         raise NotImplementedError()
 
     @abstractmethod
+    def read_many(self, path: DataRef) -> typing.Iterable[tuple[str, File]]:
+        """Yields (object name, contents) for everything under a prefix.
+
+        The same set as list_files followed by read_data on each, but free to
+        get there another way. Reach for this over the pair whenever the whole
+        prefix is wanted: a host with a compressed snapshot is served from one
+        archive rather than one request per object, which for rejestr.io is an
+        18 MB download against 29k of them.
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
     # TODO remove this method, it fails if multiple pipelines use it
     def output_entity(self, entity, sort_by=[]):
         """
