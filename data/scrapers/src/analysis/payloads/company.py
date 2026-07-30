@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 
 from analysis.interesting import Companies
+from entities.company import display_name
 from scrapers.koryta.download import KorytaCompanies
 from scrapers.stores import Context, Pipeline
 
@@ -64,6 +65,9 @@ class CompaniesPayloads(Pipeline):
             name = row.get("name")
             if not isinstance(name, str) or not name:
                 name = krs
+            else:
+                city = row.get("city")
+                name = display_name(name, city if isinstance(city, str) else None)
 
             activity = row.get("activity")
             if not isinstance(activity, (list, np.ndarray)):
