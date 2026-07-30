@@ -51,11 +51,14 @@ vi.mock("../../../../server/utils/auth", () => ({
   getUser: vi.fn().mockResolvedValue({ uid: "test-user-id" }),
 }));
 
+const mockBaseNodeFields = vi.fn().mockResolvedValue({});
+
 vi.mock("../../../../server/utils/revisions", () => ({
   createRevisionTransaction: vi.fn(() => ({
     revisionRef: { id: "mock-revision-id", path: "mock/path" },
     targetRef: { id: "mock-target-id", path: "mock/target/path" },
   })),
+  baseNodeFields: (...args: unknown[]) => mockBaseNodeFields(...args),
 }));
 
 const { mockReadBody } = vi.hoisted(() => {
@@ -212,5 +215,91 @@ describe("api/ingest/person", () => {
       true,
       false,
     );
+  });
+
+  describe("a person the database already has", () => {
+    /** Queue a lookup that finds `nodes` already holding this person. */
+    function personExists(stored: Record<string, unknown>) {
+      mockGet.mockReset();
+      mockDoc.mockReset();
+      mockDoc.mockReturnValue({ id: "person-id", ref: mockRef });
+      mockGet.mockResolvedValueOnce({
+        empty: false,
+        docs: [{ id: "person-id", ref: mockRef }],
+      });
+      mockBaseNodeFields.mockResolvedValue(stored);
+    }
+
+    it("writes the party the pipeline has learned since", async () => {
+      // The whole point of mapping committees to parties: 6077 people are
+      // already stored, and until now nothing the pipeline learned about one
+      // of them was ever written back.
+      personExists({ name: "Test Person", type: "person", parties: [] });
+      mockReadBody.mockResolvedValue({
+        name: "Test Person",
+        parties: ["PiS"],
+        companies: [],
+        elections: [],
+      });
+
+      await handler({} as any);
+
+      expect(createRevisionTransaction).toHaveBeenCalledWith(
+        mockDb,
+        expect.anything(),
+        { uid: "test-user-id" },
+        expect.anything(),
+        expect.objectContaining({ parties: ["PiS"] }),
+        true,
+        false,
+      );
+    });
+
+    it("keeps what it already knew", async () => {
+      // A revision is written to the node wholesale, so anything the payload
+      // does not mention has to be carried over or it is deleted.
+      personExists({
+        name: "Test Person",
+        type: "person",
+        parties: ["PO"],
+        wikipedia: "https://pl.wikipedia.org/wiki/Test",
+      });
+      mockReadBody.mockResolvedValue({
+        name: "Test Person",
+        parties: ["PiS"],
+        companies: [],
+        elections: [],
+      });
+
+      await handler({} as any);
+
+      expect(createRevisionTransaction).toHaveBeenCalledWith(
+        mockDb,
+        expect.anything(),
+        { uid: "test-user-id" },
+        expect.anything(),
+        expect.objectContaining({
+          parties: ["PO", "PiS"],
+          wikipedia: "https://pl.wikipedia.org/wiki/Test",
+        }),
+        true,
+        false,
+      );
+    });
+
+    it("writes nothing when it has nothing new to say", async () => {
+      // Otherwise every nightly run leaves a revision on every person.
+      personExists({ name: "Test Person", type: "person", parties: ["PiS"] });
+      mockReadBody.mockResolvedValue({
+        name: "Test Person",
+        parties: ["PiS"],
+        companies: [],
+        elections: [],
+      });
+
+      await handler({} as any);
+
+      expect(createRevisionTransaction).not.toHaveBeenCalled();
+    });
   });
 });

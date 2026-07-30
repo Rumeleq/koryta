@@ -1,7 +1,10 @@
 import { getFirestore } from "firebase-admin/firestore";
 import { getApp } from "firebase-admin/app";
 import { getUser } from "~~/server/utils/auth";
-import { createRevisionTransaction } from "~~/server/utils/revisions";
+import {
+  baseNodeFields,
+  createRevisionTransaction,
+} from "~~/server/utils/revisions";
 import { edgeDocumentId, edgeIdentity, findEdges } from "~~/server/utils/edges";
 import { electionPositions } from "~~/shared/misc";
 import type { Edge, Article, Person, ElectionPosition } from "~~/shared/model";
@@ -45,16 +48,29 @@ export default defineEventHandler(async (event) => {
     if (!personId) {
       const personRef = db.collection("nodes").doc();
       personId = personRef.id;
-      const personData = createPerson(body);
       createRevisionTransaction(
         db,
         batch,
         user,
         personRef,
-        personData,
+        createPerson(body),
         true,
         ctx.autoapprove,
       );
+    } else {
+      const personRef = db.collection("nodes").doc(personId);
+      const revision = await updatedPerson(personRef, body);
+      if (revision) {
+        createRevisionTransaction(
+          db,
+          batch,
+          user,
+          personRef,
+          revision,
+          true,
+          ctx.autoapprove,
+        );
+      }
     }
 
     // Track results
@@ -122,6 +138,48 @@ function badRequest(message: string) {
     statusCode: 400,
     message: message,
   });
+}
+
+/** What to store for a person the database already has, or nothing to do.
+ *
+ * The edges of a re-ingested person were always updated; the person was not.
+ * Everything on the node itself - the parties, the Wikipedia link, the
+ * rejestr.io link - was written once when the node was created and never
+ * again, so a pipeline that learns something new about one of the 6077 people
+ * already stored had no way to say so.
+ *
+ * A payload carries only what the scrapers found, and a revision is written to
+ * the node wholesale, so the new fields are layered over what is there rather
+ * than replacing it - the same shape the company ingest uses. A field the
+ * payload does not mention keeps its stored value; `parties` is a set union,
+ * because two runs can each find a different half of somebody's career and
+ * neither is a correction of the other.
+ *
+ * Returns undefined when the payload says nothing the node does not already
+ * say, so an unchanged person does not accrue a revision per run.
+ */
+async function updatedPerson(
+  personRef: FirebaseFirestore.DocumentReference,
+  body: PersonRequest,
+): Promise<Record<string, unknown> | undefined> {
+  const stored = await baseNodeFields(personRef);
+  const learned: Record<string, unknown> = {};
+
+  const storedParties = Array.isArray(stored.parties)
+    ? (stored.parties as string[])
+    : [];
+  const parties = [...new Set([...storedParties, ...(body.parties ?? [])])];
+  parties.sort();
+  if (parties.length > storedParties.length) learned.parties = parties;
+
+  if (body.content) learned.content = body.content;
+  if (body.wikipedia) learned.wikipedia = body.wikipedia;
+  if (body.rejestrIo) learned.rejestrIo = body.rejestrIo;
+
+  const changed = Object.entries(learned).some(
+    ([key, value]) => JSON.stringify(value) !== JSON.stringify(stored[key]),
+  );
+  return changed ? { ...stored, ...learned } : undefined;
 }
 
 function createPerson(body: Partial<Person>): Person {
