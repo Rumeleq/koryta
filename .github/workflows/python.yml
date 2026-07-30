@@ -4,13 +4,20 @@ on:
   pull_request:
     paths:
       - "data/scrapers/src/**"
+      # A dependency bump touches neither of these under src/, so without them
+      # a Dependabot pull request ran no Python job at all.
+      - "data/scrapers/pyproject.toml"
+      - "data/scrapers/uv.lock"
+      - ".github/workflows/python.yml"
 
 permissions:
   contents: read
 
 # uv reads requires-python from pyproject.toml and fetches the interpreter
-# itself, so there is no setup-python step. `uv sync` installs exactly what
-# uv.lock pins; `--no-sync` on the run steps stops them re-resolving.
+# itself, so there is no setup-python step. `--locked` installs exactly what
+# uv.lock pins and fails if the lock has drifted from pyproject.toml, rather
+# than quietly re-resolving; `--no-sync` on the run steps stops them
+# re-resolving too.
 env:
   UV_VERSION: "0.11.33"
 
@@ -29,7 +36,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: data/scrapers
-        run: uv sync --group dev
+        run: uv sync --locked --group dev
 
       - name: Run ruff - static analysis
         working-directory: data/scrapers
@@ -49,7 +56,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: data/scrapers
-        run: uv sync --group dev
+        run: uv sync --locked --group dev
 
       - name: Run import linter
         working-directory: data/scrapers
@@ -71,7 +78,7 @@ jobs:
       # out: no test needs it. dev comes along as uv's default group.
       - name: Install dependencies
         working-directory: data/scrapers
-        run: uv sync --group test
+        run: uv sync --locked --group test
 
       - name: Run pytest
         working-directory: data/scrapers
@@ -91,7 +98,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: data/scrapers
-        run: uv sync --group test
+        run: uv sync --locked --group test
 
       - name: Run mypy
         working-directory: data/scrapers
