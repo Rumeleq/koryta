@@ -124,7 +124,11 @@ class Conductor(IO):
             )
 
     def read_many(self, path: DataRef) -> typing.Iterable[tuple[str, File]]:
-        if isinstance(path, CloudStorage) and not path.max_namespaces:
+        if (
+            isinstance(path, CloudStorage)
+            and not path.max_namespaces
+            and self.mirror.bulk_reads_enabled
+        ):
             host = path.prefix.removeprefix("hostname=").split("/")[0]
             try:
                 # Resolved before yielding anything: once the caller has taken
