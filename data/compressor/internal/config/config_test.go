@@ -20,6 +20,7 @@ func TestParse(t *testing.T) {
 		"-out-bucket", "my-dst-bucket",
 		"-incremental",
 		"-source-prefix", "raw/",
+		"-hostname", "rejestr.io",
 		"-dry-run",
 	}
 
@@ -36,6 +37,9 @@ func TestParse(t *testing.T) {
 	}
 	if cfg.SourcePrefix != "raw/" {
 		t.Errorf("expected source-prefix raw/, got %s", cfg.SourcePrefix)
+	}
+	if cfg.Hostname != "rejestr.io" {
+		t.Errorf("expected hostname rejestr.io, got %s", cfg.Hostname)
 	}
 	if !cfg.DryRun {
 		t.Errorf("expected DryRun to be true")

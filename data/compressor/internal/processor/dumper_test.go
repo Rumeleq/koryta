@@ -2,6 +2,7 @@ package processor
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/koryta/compressor/internal/config"
@@ -192,5 +193,53 @@ func TestProcessHostnameIncremental_OldDataException(t *testing.T) {
 	err := dumper.processHostnameIncremental(context.Background(), "example.com", "2026-05-28", "2026-05-27")
 	if err == nil {
 		t.Fatalf("Expected an error for files older than 2025-01-01, but got nil")
+	}
+}
+
+func TestRunHostnameFilter(t *testing.T) {
+	mockSrc := NewMockStorageClient()
+	mockDst := NewMockStorageClient()
+
+	data := []byte("data")
+	mockSrc.AddObject("hostname=site1.com/date=2026-05-01.json", int64(len(data)), data)
+	mockSrc.AddObject("hostname=rejestr.io/date=2026-05-01.json", int64(len(data)), data)
+	mockSrc.AddObject("hostname=site3.com/date=2026-05-01.json", int64(len(data)), data)
+
+	cfg := &config.Config{Incremental: true, Hostname: "rejestr.io"}
+
+	dumper := NewDumper(mockSrc, mockDst, cfg)
+	if err := dumper.Run(context.Background()); err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	mockDst.mu.RLock()
+	defer mockDst.mu.RUnlock()
+
+	if len(mockDst.WriteTracker) != 1 {
+		t.Fatalf("Expected 1 tarball, got %d: %v", len(mockDst.WriteTracker), mockDst.WriteTracker)
+	}
+	if !strings.Contains(mockDst.WriteTracker[0], "hostname=rejestr.io/") {
+		t.Errorf("Expected the rejestr.io dump, got %s", mockDst.WriteTracker[0])
+	}
+}
+
+// The point of the flag is cost: naming a host has to skip the prefix walk
+// over every other one, not merely filter its results afterwards.
+func TestRunHostnameFilterSkipsDiscovery(t *testing.T) {
+	mockSrc := NewMockStorageClient()
+	mockDst := NewMockStorageClient()
+
+	data := []byte("data")
+	mockSrc.AddObject("hostname=rejestr.io/date=2026-05-01.json", int64(len(data)), data)
+
+	cfg := &config.Config{Incremental: true, Hostname: "rejestr.io"}
+
+	dumper := NewDumper(mockSrc, mockDst, cfg)
+	if err := dumper.Run(context.Background()); err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	if got := mockSrc.PrefixCalls.Load(); got != 0 {
+		t.Errorf("Expected no hostname discovery, got %d ListPrefixes calls", got)
 	}
 }
