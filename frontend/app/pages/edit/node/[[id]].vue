@@ -225,6 +225,7 @@ import { useNodeEdit } from "~/composables/useNodeEdit";
 import FormEditEdge from "~/components/form/EditEdge.vue";
 import FormEditEdgePicker from "~/components/form/EditEdgePicker.vue";
 import type { edgeTypeExt } from "~/composables/useEdgeTypes";
+import type { NodeType } from "~~/shared/model";
 import { anyNode } from "~~/shared/empty";
 
 definePageMeta({
@@ -244,7 +245,14 @@ const {
 } = await useNodeEdit();
 const editEdgeForm = ref<InstanceType<typeof FormEditEdge> | null>(null);
 
-const current = ref(anyNode({}));
+// anyNode insists on a type, so the empty form has to be seeded with one:
+// whatever opened the page asked for - `/edit/node/new?type=person` from the
+// toolbar - and a person otherwise, which is what the type select defaults to
+// anyway. Without this the page threw on every render, including SSR, so
+// /edit/node/* answered 500.
+const current = ref(
+  anyNode({ type: (route.query.type as NodeType) || "person" }),
+);
 const loading = false;
 
 const activeEdgeTypeExt = ref<edgeTypeExt | undefined>(undefined);
