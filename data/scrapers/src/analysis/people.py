@@ -167,7 +167,16 @@ def people_merged(
             w.wiki_score,
         FROM krs_pkw kp
         LEFT JOIN wiki_people w
-            ON (kp.birth_date = w.birth_date OR w.birth_date IS NULL)
+            -- Match on the day where the article gives one, and on the year
+            -- where it does not. Without the second branch a biography that
+            -- says only "ur. 1959" cannot match anybody: KRS knows every
+            -- person's full date of birth, so equality always fails. With the
+            -- year dropped instead of the day, it would match every namesake
+            -- of any age.
+            ON (
+                kp.birth_date = w.birth_date
+                OR (w.birth_date IS NULL AND kp.birth_year = w.birth_year)
+            )
             AND kp.base_last_name = w.last_name
             AND jaro_winkler_similarity(kp.base_first_name, w.first_name) > 0.85
     ),
