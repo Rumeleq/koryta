@@ -1,10 +1,11 @@
 """What `extract_people` makes of a company crawled more than once."""
 
+import collections
 import json
 
 import pytest
 
-from scrapers.krs.list import extract_people
+from scrapers.krs.list import extract_people, posts_held
 from scrapers.stores import Context, ProcessPolicy
 from scrapers.stores.file import DownloadableFile
 from scrapers.test_tree import MockIO, MockNLP, MockRejestrIO, MockUtils, MockWeb
@@ -159,3 +160,106 @@ def test_blobs_that_are_not_connection_queries_are_never_downloaded(context):
     extract_people(ctx)
 
     assert io.read == [connections("0000030563", "aktualne", "2026-07-19")]
+
+
+# --------------------------------------------------------------------------- #
+# what rejestr.io's connection types mean                                      #
+# --------------------------------------------------------------------------- #
+
+
+def person(*connections: dict) -> dict:
+    return {
+        "typ": "osoba",
+        "id": 1387745,
+        "tozsamosc": {"imiona_i_nazwisko": "Krystyna Rozalia Gryglas"},
+        "krs_powiazania_kwerendowane": list(connections),
+    }
+
+
+def connection(typ: str, start: str | None = "2001-01-01", end: str | None = None):
+    return {"typ": typ, "data_start": start, "data_koniec": end}
+
+
+def test_a_board_seat_and_a_later_proxy_are_two_posts():
+    """The spell they used to be collapsed into was neither of them.
+
+    Krystyna Gryglas was on the board of KRS 0000076251 for twenty months and
+    its prokurent for the five years after that. Taking the earliest start and
+    the latest end of the two made her a board member for seven years.
+    """
+    posts = posts_held(
+        person(
+            connection("KRS_BOARD", "2001-12-27", "2003-08-04"),
+            connection("KRS_PROXY", "2003-08-04", "2008-08-29"),
+        )
+    )
+
+    assert [(p.role, p.start, p.end) for p in posts] == [
+        ("Zarząd", "2001-12-27", "2003-08-04"),
+        ("Prokurent", "2003-08-04", "2008-08-29"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("typ", "role"),
+    [
+        ("KRS_BOARD", "Zarząd"),
+        ("KRS_SUPERVISION", "Rada Nadzorcza"),
+        # Named the opposite way round from how they read - see
+        # KRS_RELATION_ROLES for the two register entries this was checked
+        # against.
+        ("KRS_PROXY", "Prokurent"),
+        ("KRS_PROCURATOR", "Pełnomocnik"),
+    ],
+)
+def test_every_kind_of_post_says_which_one_it_is(typ, role):
+    assert [p.role for p in posts_held(person(connection(typ)))] == [role]
+
+
+@pytest.mark.parametrize(
+    "typ",
+    [
+        "KRS_SHAREHOLDER",
+        "KRS_ONLY_SHAREHOLDER",
+        "BENEFICIARY",
+        "KRS_FOUNDER",
+        "KRS_RECEIVER",
+        "KRS_CURATOR",
+        "KRS_COMMISSIONER",
+        "KRS_RESTRUCTURIZATOR",
+    ],
+)
+def test_owning_a_company_or_being_put_over_it_is_not_a_job(typ):
+    """These used to be published as employment with no role and a stray date.
+
+    Tadeusz Krupiński left the board of ESV9 on 2026-06-19 and became its
+    prokurent the same day. The proxy registration was written as a nameless
+    job starting that day, so the company he had just left showed up among the
+    ones he had just joined.
+    """
+    assert posts_held(person(connection(typ))) == []
+
+
+def test_an_unclassified_connection_is_counted_not_guessed():
+    unknown: collections.Counter[str] = collections.Counter()
+
+    assert posts_held(person(connection("KRS_SOMETHING_NEW")), unknown) == []
+    assert unknown == {"KRS_SOMETHING_NEW": 1}
+
+
+def test_an_open_post_is_measured_up_to_today():
+    [post] = posts_held(person(connection("KRS_BOARD", "2020-01-01", None)))
+
+    assert float(post.years) > 5
+
+
+def test_a_closed_post_is_measured_by_its_own_dates():
+    """Not by the span of everything the person ever did at the company."""
+    posts = posts_held(
+        person(
+            connection("KRS_BOARD", "2001-12-27", "2003-08-04"),
+            connection("KRS_PROXY", "2003-08-04", "2008-08-29"),
+        )
+    )
+
+    assert [p.years for p in posts] == ["1.60", "5.07"]

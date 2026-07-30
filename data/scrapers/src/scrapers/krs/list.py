@@ -1,7 +1,8 @@
+import collections
 import dataclasses
 import json
 import typing
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Type
 
 from pandas import DataFrame
@@ -18,74 +19,81 @@ from scrapers.stores.file import DownloadableFile, latest_crawls
 curr_date = datetime.now().strftime("%Y-%m-%d")
 
 
-def min_none(a: int | None, b: int | None):
-    if a is None:
-        return b
-    if b is None:
-        return a
-    return min(a, b)
+#: What each kind of rejestr.io connection is, as a post somebody holds in a
+#: company - or None where it is not a post at all.
+#:
+#: The two names for a registered representative are the opposite way round from
+#: how they read, which is worth checking rather than guessing: KRS 0000106310
+#: lists exactly the two `KRS_PROXY` people under `prokurenci`, and KRS
+#: 0000012221 has no prokurenci at all and lists its `KRS_PROCURATOR` person
+#: under `pelnomocnicy`.
+#:
+#: The None ones are owners, beneficial owners and people a court put over the
+#: company. Each is worth having - a shareholder as ownership, a receiver as
+#: insolvency - and none of them is a job, which is the only thing this
+#: pipeline has anywhere to put.
+KRS_RELATION_ROLES: dict[str, str | None] = {
+    "KRS_BOARD": "Zarząd",
+    "KRS_SUPERVISION": "Rada Nadzorcza",
+    "KRS_PROXY": "Prokurent",
+    "KRS_PROCURATOR": "Pełnomocnik",
+    "KRS_SHAREHOLDER": None,
+    "KRS_ONLY_SHAREHOLDER": None,
+    "BENEFICIARY": None,
+    "KRS_FOUNDER": None,
+    "KRS_RECEIVER": None,
+    "KRS_CURATOR": None,
+    "KRS_COMMISSIONER": None,
+    "KRS_RESTRUCTURIZATOR": None,
+}
 
 
-def start_time(item):
-    min_start = None
-    for conn in item["krs_powiazania_kwerendowane"]:
-        assert isinstance(conn, dict)
-        v = conn.get("data_start", None)
-        min_start = min_none(min_start, v)
-    return min_start
+@dataclasses.dataclass(frozen=True)
+class Post:
+    """One thing one person did at one company, for as long as they did it."""
+
+    role: str
+    start: str | None
+    end: str | None
+
+    @property
+    def years(self) -> str:
+        """How long it lasted, in years, as `employed_for` has always read."""
+        if self.start is None:
+            return "0.00"
+        end = datetime.fromisoformat(self.end or curr_date)
+        return f"{(end - datetime.fromisoformat(self.start)).days / 365:.2f}"
 
 
-def end_time(item):
-    max_end = "1900-01-01"
-    has_ongoing = False
-    for conn in item["krs_powiazania_kwerendowane"]:
-        assert isinstance(conn, dict)
-        v = conn.get("data_koniec")
-        if v is None:
-            has_ongoing = True
-        else:
-            max_end = max(max_end, v)
+def posts_held(item: dict, unknown: typing.Counter[str] | None = None) -> list[Post]:
+    """The posts one rejestr.io person entry says the person held.
 
-    if has_ongoing:
-        return None
-    return max_end if max_end != "1900-01-01" else None
+    A person turns up once per company, with every connection they have ever had
+    to it listed together - and those are not all the same thing, nor all at the
+    same time. Krystyna Gryglas sat on the board of KRS 0000076251 from December
+    2001 to August 2003 and was its prokurent for the five years after that; 6.5%
+    of entries mix kinds like this, and rather more mix dates.
 
-
-def employment_duration(item) -> str:
-    result = timedelta()
-    for conn in item["krs_powiazania_kwerendowane"]:
-        assert isinstance(conn, dict)
-        if conn.get("typ") == "BENEFICIARY" and conn.get("data_start") is None:
-            continue
-        end = conn.get("data_koniec", curr_date)
-        if end is None:
-            end = curr_date
-        start = conn["data_start"]
-        try:
-            result = result + (
-                datetime.fromisoformat(end) - datetime.fromisoformat(start)
-            )
-        except TypeError as e:
-            print(f"Could not process {item}: end: {end}, start: {start}: {e}")
-            raise
-    days = result.days
-
-    return f"{days / 365:.2f}"
-
-
-# TODO we can't track if a person was employed in multiple roles
-def employment_role(item: dict) -> str | None:
+    Collapsing that into a single spell, as this used to, produced a person who
+    was on the board for seven years, and it produced them by taking the
+    earliest start of anything and the latest end of anything. Which is why one
+    row per connection: a post is what somebody held, and its dates are its own.
+    """
+    posts = []
     for conn in item.get("krs_powiazania_kwerendowane", []):
         assert isinstance(conn, dict)
         typ = conn.get("typ")
-        opis = conn.get("opis")
-        if typ == "KRS_BOARD" or (opis and "Zarząd" in opis):
-            return "Zarząd"
-        if typ == "KRS_SUPERVISION" or (opis and "Rada Nadzorcza" in opis):
-            return "Rada Nadzorcza"
-        if opis and "Prokurent" in opis:
-            return "Prokurent"
-    return None
+        if typ not in KRS_RELATION_ROLES:
+            if unknown is not None:
+                unknown[str(typ)] += 1
+            continue
+        role = KRS_RELATION_ROLES[typ]
+        if role is None:
+            continue
+        posts.append(
+            Post(role=role, start=conn.get("data_start"), end=conn.get("data_koniec"))
+        )
+    return posts
 
 
 class PeopleKRS(Pipeline):
@@ -126,6 +134,7 @@ def extract_people(ctx: Context):
     and extracts information about people.
     """
     outputs = []
+    unknown_relations: typing.Counter[str] = collections.Counter()
 
     # Deliberately not `ctx.io.read_many`, which would serve this prefix from
     # the compressed mirror in seconds: it hands back every object under the
@@ -151,24 +160,31 @@ def extract_people(ctx: Context):
             for item in data:
                 if item.get("typ") == "osoba":
                     identity = item.get("tozsamosc", {})
-                    outputs.append(
-                        KrsPerson(
-                            id=item["id"],
-                            first_name=identity.get("imie"),
-                            last_name=identity.get("nazwisko"),
-                            full_name=identity.get("imiona_i_nazwisko"),
-                            birth_date=identity.get("data_urodzenia"),
-                            second_names=identity.get("drugie_imiona"),
-                            sex=identity.get("plec"),
-                            employed_krs=KRS.from_blob_name(blob_name).id,
-                            employed_start=start_time(item),
-                            employed_end=end_time(item),
-                            employed_for=employment_duration(item),
-                            employed_role=employment_role(item),
+                    for post in posts_held(item, unknown_relations):
+                        outputs.append(
+                            KrsPerson(
+                                id=item["id"],
+                                first_name=identity.get("imie"),
+                                last_name=identity.get("nazwisko"),
+                                full_name=identity.get("imiona_i_nazwisko"),
+                                birth_date=identity.get("data_urodzenia"),
+                                second_names=identity.get("drugie_imiona"),
+                                sex=identity.get("plec"),
+                                employed_krs=KRS.from_blob_name(blob_name).id,
+                                employed_start=post.start,
+                                employed_end=post.end,
+                                employed_for=post.years,
+                                employed_role=post.role,
+                            )
                         )
-                    )
         except KeyError as e:
             print(f"  [ERROR] Could not process {blob_name}: {e}")
+
+    if unknown_relations:
+        # rejestr.io grew a kind of connection nobody has classified. Dropping
+        # it is the safe reading - the alternative is publishing it as a job -
+        # but it should not happen quietly.
+        print(f"Unclassified rejestr.io relations: {dict(unknown_relations)}")
 
     return DataFrame.from_records([dataclasses.asdict(d) for d in outputs])
 
