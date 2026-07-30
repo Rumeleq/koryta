@@ -108,6 +108,8 @@ jobs:
       DUMP_FILE: ${{ needs.resolve-dump.outputs.filename }}
       # Never write to the shared bucket from CI.
       DISABLE_BACKUP: "1"
+      # A same-repo pull request can mint an OIDC token; a fork's cannot.
+      HAVE_GCP: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     steps:
       - uses: actions/checkout@v7
 
@@ -127,16 +129,30 @@ jobs:
           path: data/scrapers/downloaded/${{ env.DUMP_FILE }}
           key: wikidump-${{ env.DUMP_FILE }}
 
+      # Everything else PeoplePKW and Teryt pull off pkw.gov.pl and
+      # stat.gov.pl. Separate from the dump because this one turns over: the
+      # rolling key always saves, and restore-keys takes the newest previous.
+      - name: Cache the other downloads
+        uses: actions/cache@v6
+        with:
+          path: |
+            data/scrapers/downloaded
+            !data/scrapers/downloaded/*.bz2
+          key: downloads-${{ env.TIER }}-${{ github.run_id }}
+          restore-keys: downloads-${{ env.TIER }}-
+
       # The ml group (torch, spacy, the nvidia runtimes -- 4.5 GB) is left out:
       # no pipeline this job runs needs it.
       - name: Install dependencies
         working-directory: data/scrapers
         run: uv sync --group test
 
-      # Sets up ADC, which google.auth.default() picks up. No key file, and no
-      # credentials at all on the slice tier -- a fork PR gets no OIDC token.
+      # Sets up ADC, which google.auth.default() picks up. No key file. Read
+      # access to gs://koryta-pl-crawled is all any of this needs -- what looks
+      # like Firestore in scrapers.koryta.download is a leveldb export sitting
+      # in that bucket, not the live database.
       - name: Authenticate to Google Cloud
-        if: env.TIER == 'full'
+        if: env.HAVE_GCP == 'true'
         uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
@@ -170,6 +186,33 @@ jobs:
             --assume-yes \
             --wiki-dump-url "$DUMP_URL" \
             --wiki-dump-file "$DUMP_FILE"
+
+      # src/tests/pipelines runs real pipelines through read_or_process, which
+      # is why the unit-test job ignores src/tests entirely (issue #196). Here
+      # the pipeline step has already written versioned/, so on the full tier
+      # they read that rather than reprocessing.
+      - name: Run pipeline tests
+        working-directory: data/scrapers
+        run: |
+          set -euo pipefail
+          if [ "$TIER" = "full" ]; then
+            # All but the RejestrIO scraper: with no versioned output and
+            # backups disabled, that test would not read a cached result -- it
+            # would run the scraper, which bills per query.
+            uv run --no-sync pytest src/tests/pipelines -v \
+              --ignore=src/tests/pipelines/test_scrape_rejestr_io.py
+          else
+            # Only PeoplePKW here, and the constraint is runtime rather than
+            # access: on this tier the pipeline step ran ProcessWiki alone, so
+            # any other module would execute its whole graph from scratch --
+            # a full run wearing a pull request's clothes. PKW is the cheapest
+            # of them and its chain (PeoplePKW -> Teryt) needs no credentials
+            # at all, so it also covers the fork case.
+            #
+            # To widen this, add modules here; with HAVE_GCP true they will
+            # have bucket access, they will just be slow.
+            uv run --no-sync pytest src/tests/pipelines/test_person_pkw.py -v
+          fi
 
       - name: Check the output
         working-directory: data/scrapers

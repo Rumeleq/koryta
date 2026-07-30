@@ -59,18 +59,39 @@ Refer to `pyproject.toml` for the most up-to-date list of the scripts available 
   `ScrapeRejestrIO` (bills per query) and `ProcessWikiNer` (its own extra pass
   over the dump), reprocessed from scratch.
 
+Both then run `src/tests/pipelines`, which the unit-test job cannot: those
+tests call `read_or_process` and so need real downloaded data, which is what
+issue #196 is about. On the full tier the pipeline step has already written
+`versioned/`, so they read that instead of reprocessing, and cost almost
+nothing.
+
+The slice tier runs only `test_person_pkw.py`, and the reason is runtime, not
+access: only `ProcessWiki` ran there, so any other module would execute its
+whole graph from scratch and turn a pull request into a full run. PKW is the
+cheapest, and `PeoplePKW -> Teryt` needs no credentials at all, so it works on
+a fork's pull request too. Widen the list in the workflow if you want more --
+a same-repo pull request does get bucket access, it will just be slow.
+
+`test_scrape_rejestr_io.py` is excluded from both. With no versioned output and
+backups disabled it would not read a cached result; it would run the scraper,
+and that one bills per query.
+
 Both pin a dated dump rather than `latest`, which rotates roughly twice a month
 -- on `latest` a red build cannot tell "the pipeline broke" from "Wikipedia
 changed", and the download cache key is never stable. The date is
 `DEFAULT_DUMP_DATE` in the workflow; wikimedia prunes old runs, so when the
 resolve step reports a 404 that variable needs bumping.
 
-The full tier needs two repository variables for Workload Identity Federation,
-which is how it reads GCS and Firestore without a key file:
-`GCP_WORKLOAD_IDENTITY_PROVIDER` and `GCP_PIPELINES_SERVICE_ACCOUNT`. Give the
-service account read-only access; the run passes `--no-backup` so it never
-writes to the shared bucket. Fork pull requests get no OIDC token, which is why
-the slice tier stays credential-free.
+CI reads GCS through Workload Identity Federation, so no key file: set the
+repository variables `GCP_WORKLOAD_IDENTITY_PROVIDER` and
+`GCP_PIPELINES_SERVICE_ACCOUNT`. `roles/storage.objectViewer` on
+`gs://koryta-pl-crawled` is the whole grant. Nothing here touches the live
+Firestore -- what `scrapers.koryta.download` calls a `FirestoreCollection` is a
+leveldb export of it sitting in that same bucket -- and the run passes
+`--no-backup`, so it never writes anywhere.
+
+A fork's pull request gets no OIDC token, so it runs without credentials. That
+is fine: the slice tier's pipelines do not need any.
 
 To reproduce a CI run locally:
 
