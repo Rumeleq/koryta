@@ -6,6 +6,7 @@ import pandas as pd
 
 from analysis.people import PeopleEnriched
 from analysis.utils import drop_duplicates, empty_list_if_nan
+from analysis.utils.elections import candidacy_teryt
 from scrapers.article.hardcoded.listawstydupo import hardcoded as listawstydu
 from scrapers.article.hardcoded.tlustekotypisu import hardcoded as tlustekoty
 from scrapers.krs.graph import CompanyGraph
@@ -244,11 +245,7 @@ class Extract(Pipeline):
             for election in elections:
                 election_ok = True
                 if self.region:
-                    teryt = (
-                        head_or_none(election["teryt_powiat"])
-                        or head_or_none(election["teryt_wojewodztwo"])
-                        or ""
-                    )
+                    teryt = candidacy_teryt(election) or ""
                     if teryt == "" or not teryt.startswith(self.args.region):
                         election_ok = False
 
