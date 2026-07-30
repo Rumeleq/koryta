@@ -265,8 +265,12 @@ const hiddenCount = computed(() => {
   return 0;
 });
 
-const { entities: places } = useEntities("place");
-const { entities: regions } = useEntities("region");
+// This page's whole template is a <ClientOnly>, so the server renders none of
+// it - but these two fetches still ran during SSR and their results were
+// serialised into __NUXT_DATA__, which is where most of an ~8 MB response came
+// from. Every reader waited on all of it before seeing anything.
+const { entities: places } = useEntities("place", {}, { server: false });
+const { entities: regions } = useEntities("region", {}, { server: false });
 
 const region = computed<[string, string] | undefined>(() => {
   const terytParam = route.query.teryt as string | undefined;
@@ -365,7 +369,8 @@ const apiQuery = computed(
       sortBy: sortBy.value[0]?.key,
       sortDesc: sortBy.value[0]
         ? ((sortBy.value[0].order === "desc" ? "true" : "false") as
-            "true" | "false")
+            | "true"
+            | "false")
         : undefined,
       parties:
         filterParty.value && filterParty.value.length > 0
@@ -399,6 +404,7 @@ const apiQuery = computed(
 const { tableItems, totalItems, pending } = await useListWithStats(
   apiQuery,
   "eksploruj-tabela-data",
+  { server: false },
 );
 
 const openDrawer = shallowRef(false);
