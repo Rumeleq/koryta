@@ -9,6 +9,7 @@ import requests
 
 from analysis.interesting import Companies
 from conductor import setup_context
+from entities.company import display_name
 from scrapers.stores import iterate_pipeline_dict
 from stores.auth import authenticate_user
 from util.firestore import Firestore
@@ -212,6 +213,10 @@ class CompanyUploader(Uploader):
         payload["owners"] = owners
         if "teryt_code" in payload and payload["teryt_code"]:
             payload["teryt"] = payload["teryt_code"]
+        # A company created because a person works there comes straight from
+        # the Companies pipeline rather than through CompaniesPayloads, so it
+        # needs the same disambiguation.
+        payload["name"] = display_name(payload.get("name"), payload.get("city"))
         return self.submit_payload(
             current_target_url,
             payload,

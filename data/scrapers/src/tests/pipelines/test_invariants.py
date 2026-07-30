@@ -534,6 +534,37 @@ def test_companies_are_not_duplicated_by_krs(nodes):
 
 
 @pytest.mark.integration
+def test_a_company_can_be_told_apart_from_the_others(nodes):
+    """No two companies go by the same name.
+
+    Municipal companies are named after what they do and every town has one:
+    24 are called "Przedsiębiorstwo Energetyki Cieplnej", and three separate
+    registrations are all called exactly "Zakład Utylizacji Odpadów". Nothing
+    is duplicated in the register - `test_companies_are_not_duplicated_by_krs`
+    covers that - but on a person's page two of them are the same line twice,
+    which is the "wypisany dwa razy" note on Marek Staniszewski.
+
+    `display_name` puts the town in the name where the name does not already
+    carry it, so this shrinks as companies are re-ingested.
+    """
+    KNOWN_SHARED_NAMES = 393
+
+    counts = collections.Counter(
+        (document.get("name") or "").strip().lower()
+        for document in nodes
+        if document.get("type") == "place" and (document.get("name") or "").strip()
+    )
+    shared = {name: count for name, count in counts.items() if count > 1}
+    affected = sum(shared.values())
+
+    assert affected <= KNOWN_SHARED_NAMES, (
+        f"{affected} companies across {len(shared)} names cannot be told apart "
+        f"from another company by name, up from the {KNOWN_SHARED_NAMES} known "
+        f"ones: {sample(shared, 5)}"
+    )
+
+
+@pytest.mark.integration
 def test_regions_are_identified_by_teryt(nodes):
     """Every region has a TERYT code, and no two regions share one.
 

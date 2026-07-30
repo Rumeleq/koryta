@@ -20,6 +20,33 @@ class Owner:
     teryt: Optional[str]
 
 
+def display_name(name: str | None, city: str | None) -> str | None:
+    """What to call a company, given that its name may not be its own.
+
+    Municipal companies are named after what they do, and every town has one:
+    24 companies are called "Przedsiębiorstwo Energetyki Cieplnej", 19 "Zakład
+    Gospodarki Komunalnej", and three separate registrations - 0000095420,
+    0000825316 and 0000030563 - are all called exactly "Zakład Utylizacji
+    Odpadów". 96 names are shared by more than one company. Nothing about them
+    is duplicated in the register; they simply cannot be told apart on a page,
+    which is what the note reading "Zakład utylizacji odpadów jest wypisany dwa
+    razy" is about.
+
+    The town settles it, so the town goes in the name where the name does not
+    already carry it. The check is a plain substring one, which catches the
+    common "... w Olsztynie" wording but not "... w Łodzi", where Polish
+    declension changes the stem. Getting that wrong repeats the town, which is
+    untidy rather than wrong.
+    """
+    if not name:
+        return name
+    if not city:
+        return name
+    if city.upper() in name.upper():
+        return name
+    return f"{name} ({city})"
+
+
 @dataclass
 class Company:
     """Represents a company entry from a KRS (National Court Register) search.
