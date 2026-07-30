@@ -16,6 +16,7 @@ import { authCachedEventHandler } from "~~/server/utils/handlers";
 import { getUser } from "~~/server/utils/auth";
 import { pageIsPublic } from "~~/shared/model";
 import { defineEventHandler } from "h3";
+import { logger } from "firebase-functions/logger";
 
 const queryValidator = z.object({
   // We use generic fetch options for pagination
@@ -51,23 +52,30 @@ const cachedHandler = authCachedEventHandler(async (event) => {
 
   const opts = { personParties: query.parties || query.party };
 
-  if (query.type) {
-    return { nodes: await fetchNodes(query.type, opts) };
-  }
-
-  const [people, places, articles, regions] = await Promise.all([
-    fetchNodes("person"),
-    fetchNodes("place"),
-    fetchNodes("article"),
-    fetchNodes("region"),
-  ]);
-
-  const nodes = { ...people, ...places, ...articles, ...regions };
-  return { nodes };
+  // The typeless caller is rejected before we get here, so there is always a
+  // type to fetch.
+  return { nodes: await fetchNodes(query.type!, opts) };
 });
 
 export default defineEventHandler(async (event) => {
   const query = await getValidatedQuery(event, (q) => queryValidator.parse(q));
+
+  // Without a type this merges all four collections into one ~16 MB response.
+  // Cloud CDN will not store anything over 10 MiB, so it can never be cached
+  // and every caller pays full origin egress for the entire database.
+  //
+  // Nothing in the app asks for it that way - every caller sets a type
+  // (app/composables/entity.ts, app/components/form/EntityPicker.vue) or goes
+  // through the paginated path below (app/composables/entity/listWithStats.ts).
+  // Logged rather than silently rejected so that a caller we have not accounted
+  // for shows up somewhere we will see it.
+  if (!query.type) {
+    logger.warn("[api/nodes] rejected typeless request", {
+      referer: getRequestHeader(event, "referer"),
+      userAgent: getRequestHeader(event, "user-agent"),
+    });
+    throw createError({ statusCode: 400, message: "Missing type" });
+  }
 
   // If pagination/sorting is requested, query Firestore directly for uncached results
   if (query.limit || query.sortBy) {
