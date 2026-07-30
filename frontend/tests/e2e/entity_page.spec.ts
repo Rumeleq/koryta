@@ -1,0 +1,44 @@
+import { test, expect } from "@playwright/test";
+
+/** Jan Kowalski, seeded as node 1: a PO politician working at Orlen who knows
+ * Anna Nowak. The assertions below are all about that seeded shape. */
+const PERSON = "/osoba/jan-kowalski-1";
+
+test.describe("Entity page", () => {
+  test("shows the person's own data", async ({ page }) => {
+    await page.goto(PERSON, { waitUntil: "domcontentloaded" });
+
+    await expect(page.getByText("Jan Kowalski").first()).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByText("Politician from PO").first()).toBeVisible();
+    await expect(page.getByText("PO", { exact: true }).first()).toBeVisible();
+  });
+
+  test("shows the entities it is connected to", async ({ page }) => {
+    await page.goto(PERSON, { waitUntil: "domcontentloaded" });
+
+    // Both ends of the seeded edges, under "Historia powiązań"
+    await expect(page.getByText("Orlen").first()).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByText("Anna Nowak").first()).toBeVisible({
+      timeout: 30_000,
+    });
+  });
+
+  test("the /entity url redirects to the readable one", async ({ page }) => {
+    // The Cypress specs addressed people as /entity/person/:id, which now
+    // 301s to the slug url. That redirect used to hang: it was issued from the
+    // page's setup, which does not stop the render, so the response never
+    // ended. Worth a test of its own - every indexed link is this shape.
+    await page.goto("/entity/person/1", { waitUntil: "domcontentloaded" });
+
+    await expect(page).toHaveURL(/\/osoba\/jan-kowalski-1/, {
+      timeout: 30_000,
+    });
+    await expect(page.getByText("Jan Kowalski").first()).toBeVisible({
+      timeout: 30_000,
+    });
+  });
+});
