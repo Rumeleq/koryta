@@ -4,6 +4,7 @@ from datetime import date, timedelta
 import numpy as np
 import pandas as pd
 
+from analysis.utils.elections import candidacy_teryt
 from scrapers.map.teryt import Teryt
 from scrapers.pkw.elections import committee_to_party
 from scrapers.pkw.sources import election_date
@@ -86,11 +87,13 @@ def append_nice_history(ctx: Context, df, company_names, teryt: Teryt):
             )
             elections.append(start_election)
             region_name = "nieznane"
-            for e in el["teryt_powiat"]:
-                if e in teryt.TERYT:
-                    region_name = str(teryt.TERYT[e])
+            # Where they stood, not where they lived - see `candidacy_teryt`.
+            where = candidacy_teryt(el)
+            if where is not None:
+                if where in teryt.TERYT:
+                    region_name = str(teryt.TERYT[where])
                 else:
-                    missing_teryt.add(e)
+                    missing_teryt.add(where)
 
             text = " ".join(
                 [

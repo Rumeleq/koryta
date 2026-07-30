@@ -8,6 +8,7 @@ import pandas as pd
 from analysis.extract import Extract, check_auto_approved
 from analysis.graph import CommitteeParties, PeopleParties
 from analysis.payloads.election import get_election_type
+from analysis.utils.elections import candidacy_teryt
 from entities.composite import Company, Election, Person
 from scrapers.stores import Context, Pipeline
 
@@ -190,22 +191,7 @@ def _extract_elections(row: pd.Series) -> list[Election]:
     if isinstance(elec_list, (list, np.ndarray)):
         for e in elec_list:
             if isinstance(e, dict):
-                teryt_powiat = e.get("teryt_powiat", [])
-                teryt_wojewodztwo = e.get("teryt_wojewodztwo", [])
-
-                teryt_val = None
-                if (
-                    isinstance(teryt_powiat, (list, np.ndarray))
-                    and len(teryt_powiat) > 0
-                ):
-                    teryt_val = str(teryt_powiat[0])
-                elif (
-                    isinstance(teryt_wojewodztwo, (list, np.ndarray))
-                    and len(teryt_wojewodztwo) > 0
-                ):
-                    teryt_val = str(teryt_wojewodztwo[0])
-                elif e.get("teryt"):
-                    teryt_val = str(e.get("teryt"))
+                teryt_val = candidacy_teryt(e)
 
                 election_payload = Election(
                     election_type=get_election_type(str(e.get("election_type"))),
