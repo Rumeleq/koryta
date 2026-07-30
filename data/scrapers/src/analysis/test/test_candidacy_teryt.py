@@ -106,3 +106,112 @@ def test_a_candidacy_with_no_recorded_residence_still_has_its_region(ctx):
 
     assert candidacy_teryt(election) == KLOBUCK
     assert list(election["teryt_powiat"]) == [KLOBUCK]
+
+
+# --------------------------------------------------------------------------- #
+# records that merged two people                                               #
+# --------------------------------------------------------------------------- #
+
+SOKOLKA = "2010"
+POWIAT_KLOBUCKI = "2404"
+WOJ_SLASKIE = "24"
+
+
+def candidacies(*rows: dict) -> pd.DataFrame:
+    """Several PKW rows for one name, differing only where a test says so."""
+    base = {
+        "first_name": "Tomasz",
+        "last_name": "Krasowski",
+        "middle_name": "wojciech",
+        "teryt_candidacy": f"{WARSZAWA}01",
+        "teryt_living": None,
+        "birth_year": 1970,
+        "pkw_name": "Tomasz Wojciech Krasowski",
+        "party": "KW PiS",
+        "election_year": 2024,
+        "election_type": "samorządu",
+        "candidacy_success": None,
+    }
+    return pd.DataFrame([base | row for row in rows])
+
+
+def test_standing_in_two_powiats_in_one_election_drops_both(ctx):
+    """Two people, one record, and no way to tell which is the KRS person.
+
+    Tomasz Wojciech Krasowski stands in Warszawa and in powiat sokólski in the
+    same election, four elections running. One of the two careers belongs to
+    somebody else and nothing here can say which.
+    """
+    merged = people_pkw_merged(
+        ctx,
+        candidacies(
+            {"teryt_candidacy": f"{WARSZAWA}01"},
+            {"teryt_candidacy": f"{SOKOLKA}01"},
+        ),
+    )
+
+    assert list(merged.iloc[0]["elections"]) == []
+    assert bool(merged.iloc[0]["elections_ambiguous"])
+
+
+def test_the_rest_of_the_record_survives(ctx):
+    """Dropping the match outright would cost four points of overall_score."""
+    merged = people_pkw_merged(
+        ctx,
+        candidacies(
+            {"teryt_candidacy": f"{WARSZAWA}01"},
+            {"teryt_candidacy": f"{SOKOLKA}01"},
+        ),
+    )
+
+    assert list(merged.iloc[0]["full_name"]) == ["Tomasz Wojciech Krasowski"]
+    assert merged.iloc[0]["birth_year"] == 1970
+
+
+def test_standing_in_two_powiats_in_different_years_is_ordinary(ctx):
+    """People move, and a career in two towns is not two people."""
+    merged = people_pkw_merged(
+        ctx,
+        candidacies(
+            {"teryt_candidacy": f"{WARSZAWA}01", "election_year": 2018},
+            {"teryt_candidacy": f"{SOKOLKA}01", "election_year": 2024},
+        ),
+    )
+
+    assert len(merged.iloc[0]["elections"]) == 2
+    assert not bool(merged.iloc[0]["elections_ambiguous"])
+
+
+def test_two_kinds_of_election_in_one_year_are_two_contests(ctx):
+    """2024 held both the local elections and the european ones."""
+    merged = people_pkw_merged(
+        ctx,
+        candidacies(
+            {"teryt_candidacy": f"{WARSZAWA}01", "election_type": "samorządu"},
+            {"teryt_candidacy": f"{SOKOLKA}01", "election_type": "europarlamentu"},
+        ),
+    )
+
+    assert len(merged.iloc[0]["elections"]) == 2
+    assert not bool(merged.iloc[0]["elections_ambiguous"])
+
+
+def test_a_sejmik_seat_does_not_contradict_a_council_seat_inside_it(ctx):
+    """The two are recorded at different depths, not in different places."""
+    merged = people_pkw_merged(
+        ctx,
+        candidacies(
+            {"teryt_candidacy": WOJ_SLASKIE},
+            {"teryt_candidacy": f"{POWIAT_KLOBUCKI}01"},
+        ),
+    )
+
+    assert len(merged.iloc[0]["elections"]) == 2
+    assert not bool(merged.iloc[0]["elections_ambiguous"])
+
+
+def test_one_person_standing_once_keeps_their_candidacy(ctx):
+    merged = people_pkw_merged(ctx, candidacies({}))
+
+    assert len(merged.iloc[0]["elections"]) == 1
+    assert not bool(merged.iloc[0]["elections_ambiguous"])
