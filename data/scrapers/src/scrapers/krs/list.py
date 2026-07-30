@@ -13,7 +13,7 @@ from scrapers.krs.data import CompaniesHardcoded
 from scrapers.krs.graph import QueryRelation
 from scrapers.map.postal_codes import PostalCodes
 from scrapers.stores import CloudStorage, Context, Pipeline
-from scrapers.stores.file import DownloadableFile
+from scrapers.stores.file import DownloadableFile, latest_crawls
 
 curr_date = datetime.now().strftime("%Y-%m-%d")
 
@@ -96,6 +96,30 @@ class PeopleKRS(Pipeline):
         return extract_people(ctx)
 
 
+def rejestrio_connection_blobs(ctx: Context) -> list[DownloadableFile]:
+    """The newest crawl of each rejestr.io connection query.
+
+    Every crawl is kept in the bucket under its own ``date=``, so listing the
+    prefix returns one blob per company per crawl. Reading all of them would
+    state each connection once per crawl it survived - the same board seat as
+    it stood in February, in May and in July - and those copies do not even
+    agree: a seat that ended between two crawls is open in the earlier blob and
+    closed in the later one, so the person ends up both still employed and
+    long gone.
+
+    Only the last crawl describes the register as it is now, which is what
+    every caller wants, so that is the only one worth reading. It also means
+    downloading a quarter of the blobs, which the per-GB egress makes worth
+    having on its own.
+    """
+    listing = [
+        blob_ref
+        for blob_ref in ctx.io.list_files(CloudStorage(prefix="hostname=rejestr.io"))
+        if isinstance(blob_ref, DownloadableFile) and "aktualnosc_" in blob_ref.url
+    ]
+    return latest_crawls(listing, lambda blob_ref: blob_ref.url)
+
+
 def extract_people(ctx: Context):
     """
     Iterates through GCS files from rejestr.io, parses them,
@@ -103,16 +127,22 @@ def extract_people(ctx: Context):
     """
     outputs = []
 
-    for blob_name, blob in ctx.io.read_many(
-        CloudStorage(prefix="hostname=rejestr.io")
-    ):
+    # Deliberately not `ctx.io.read_many`, which would serve this prefix from
+    # the compressed mirror in seconds: it hands back every object under the
+    # hostname, and which crawl a blob belongs to can only be decided from the
+    # listing, before anything is downloaded. Reconciling the two - a mirror
+    # read that is also crawl-aware - is worth doing and is not this change.
+    for blob_ref in rejestrio_connection_blobs(ctx):
+        blob = ctx.io.read_data(blob_ref)
+        blob_name = blob_ref.url
         content = blob.read_string()
         if content == "":
-            # Skipping files marking failures
+            # A failure marker. It is the newest crawl of this query, so there
+            # is nothing left to read it from - say so rather than losing the
+            # company's people to a silent `continue`.
+            print(f"  [WARN] Newest crawl of {blob_name} is empty, skipping")
             continue
         try:
-            if "aktualnosc_" not in blob_name:
-                continue
             data = json.loads(content)
         except json.JSONDecodeError as e:
             print(f"  [ERROR] Could not process {blob_name}: {e}")
@@ -209,9 +239,23 @@ class CompaniesKRS(Pipeline[KrsCompany]):
             self.add_awaiting(parent, (parent, child))
 
     def iterate_blobs(self, ctx: Context, hostname: str):
-        for blob_ref in ctx.io.list_files(CloudStorage(prefix=f"hostname={hostname}")):
+        """Every crawled object under ``hostname``, as it was crawled last.
+
+        `add_company` merges each blob into what it already knows field by
+        field, keeping the first non-empty value, so re-reading a company's
+        older crawls is not harmful the way it is for people - but it is not
+        free either, and the ownership edges it replays are the *old* ones. The
+        newest crawl is the answer to "who owns this company", so read that.
+        """
+        listing = [
+            blob_ref
+            for blob_ref in ctx.io.list_files(
+                CloudStorage(prefix=f"hostname={hostname}")
+            )
+            if isinstance(blob_ref, DownloadableFile)
+        ]
+        for blob_ref in latest_crawls(listing, lambda ref: ref.url):
             blob = ctx.io.read_data(blob_ref)
-            assert isinstance(blob_ref, DownloadableFile)
             content = blob.read_string()
             if content == "":
                 # Skipping files marking failures

@@ -749,6 +749,50 @@ def test_occurrence_edges_may_repeat(edges):
 
 
 @pytest.mark.integration
+def test_one_spell_of_employment_is_stored_once(edges):
+    """A person may hold the same role at the same company twice - not at once.
+
+    Unlike a candidacy, an employment carries the fields that tell two spells
+    apart, and `EDGE_SEMANTICS` in `frontend/server/utils/edges.ts` names them:
+    the role and the day it began. `end_date` is deliberately not one of them,
+    because it is learned after the fact - so one spell recorded twice, once
+    while it was still open and once since closed, is one spell and not two.
+
+    That is exactly the shape the pipeline used to produce. Every crawl of a
+    company was kept in the bucket and every one of them was read, so a board
+    seat held across four crawls arrived four times, disagreeing with itself
+    about whether it had ended. `rejestrio_connection_blobs` now reads only the
+    last crawl, and the ingest refuses the duplicate even if one is offered.
+    """
+    # Written before either guard existed. Goes to zero once
+    # scripts/migrate/dedupe-edges.ts has been run against production.
+    DUPLICATED_SPELLS = 205
+
+    groups: dict[tuple, list[str]] = collections.defaultdict(list)
+    for edge in edges:
+        if edge.get("type") != "employed":
+            continue
+        groups[
+            (
+                edge["source"],
+                edge["target"],
+                edge.get("name"),
+                edge.get("start_date"),
+            )
+        ].append(edge["id"])
+
+    duplicated = {key: ids for key, ids in groups.items() if len(ids) > 1}
+    redundant = sum(len(ids) - 1 for ids in duplicated.values())
+
+    assert redundant <= DUPLICATED_SPELLS, (
+        f"{redundant} employment edges repeat a spell already stored across "
+        f"{len(duplicated)} (person, company, role, start) groups, up from the "
+        f"{DUPLICATED_SPELLS} known ones. "
+        f"Sample: {sample(list(duplicated.values()), 5)}"
+    )
+
+
+@pytest.mark.integration
 def test_employment_does_not_end_before_it_starts(edges):
     """`start_date <= end_date` on every edge that has both.
 
