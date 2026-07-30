@@ -26,6 +26,13 @@ const PUBLIC_ROUTES = [
   // the chunks - the detail view and the graph - and two specs land on one
   // straight after submitting a revision, with no time to spare for a build.
   "/osoba/jan-kowalski-1",
+  // The /entity/:type/:id form of the same page, which redirects to the slug
+  // url above - one spec follows that redirect on purpose.
+  "/entity/person/1",
+  // Orlen, seeded as node 2: the place whose "Graf połączeń" button the local
+  // graph spec follows into /graf.
+  "/graf?miejsce=2",
+  "/pomoc",
 ];
 
 const LOGGED_IN_ROUTES = [
@@ -35,6 +42,13 @@ const LOGGED_IN_ROUTES = [
   // The id does not have to resolve; the route's own chunk is what we want
   // compiled before a spec follows a revision link into it.
   "/admin/rewizje/warmup",
+  // The edit form, in both the shapes the specs open it in. It is the worst
+  // offender: `string-similarity` is only reachable from AlreadyExisting.vue,
+  // so the first spec to open the form makes vite discover a new dependency
+  // and force a full reload - which aborts whatever navigation the other
+  // worker had in flight.
+  "/edit/node/new?type=person",
+  "/edit/node/1",
 ];
 
 /** Seeded by scripts/seed-emulator.ts, the same account the specs log in as. */
