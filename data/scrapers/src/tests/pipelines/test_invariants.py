@@ -793,6 +793,38 @@ def test_one_spell_of_employment_is_stored_once(edges):
 
 
 @pytest.mark.integration
+def test_employment_says_what_the_person_did(edges):
+    """Every `employed` edge carries a role.
+
+    The role is half of what tells two spells apart - `EDGE_SEMANTICS` keys an
+    employment on the pair, the role and the start - so an edge without one
+    cannot be distinguished from any other spell at that company, and the site
+    has nothing to print next to it but the company's name.
+
+    They came from the kinds of rejestr.io connection that are not employment:
+    an owner, a beneficial owner, a receiver appointed by a court. Those used
+    to be published as jobs with no role, dated to whenever the registration
+    was recorded - so Tadeusz Krupiński, who left the board of ESV9 on
+    2026-06-19 and became its prokurent the same day, appeared to have *joined*
+    ESV9 that day. `KRS_RELATION_ROLES` now decides which connections are posts
+    and what each one is called.
+    """
+    # Written before KRS_RELATION_ROLES existed.
+    KNOWN_ROLELESS = 240
+
+    roleless = [
+        edge["id"]
+        for edge in edges
+        if edge.get("type") == "employed" and not edge.get("name")
+    ]
+
+    assert len(roleless) <= KNOWN_ROLELESS, (
+        f"{len(roleless)} employment edges say nothing about what the person "
+        f"did, up from the {KNOWN_ROLELESS} known ones: {sample(roleless)}"
+    )
+
+
+@pytest.mark.integration
 def test_employment_does_not_end_before_it_starts(edges):
     """`start_date <= end_date` on every edge that has both.
 
