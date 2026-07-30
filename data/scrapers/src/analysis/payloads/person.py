@@ -1,3 +1,4 @@
+import collections
 import math
 import typing
 from dataclasses import asdict
@@ -6,13 +7,15 @@ import numpy as np
 import pandas as pd
 
 from analysis.extract import Extract, check_auto_approved
-from analysis.graph import CommitteeParties, PeopleParties
 from analysis.payloads.election import get_election_type
 from analysis.utils.elections import candidacy_teryt
 from entities.composite import Company, Election, Person
+from scrapers.pkw.elections import parties_of_committee
 from scrapers.stores import Context, Pipeline
 
-PARTY_CONFIDENCE_TRESHOLD = 0.8
+#: How many unrecognised committees to name when reporting what the party
+#: mapping is missing. Enough to act on, short enough to read.
+UNMAPPED_COMMITTEES_REPORTED = 20
 
 
 class PeoplePayloads(Pipeline[Person]):
@@ -20,10 +23,6 @@ class PeoplePayloads(Pipeline[Person]):
     volatile = True
 
     people: Extract
-    people_parties: PeopleParties
-    committee_parties: CommitteeParties
-    person_to_party: pd.DataFrame | None = None
-    committee_to_party: pd.DataFrame | None = None
 
     @property
     def output_class(self) -> typing.Type:
@@ -32,9 +31,12 @@ class PeoplePayloads(Pipeline[Person]):
     def process(self, ctx: Context):
         people_df = self.people.read_or_process(ctx)
         result = []
+        unmapped: typing.Counter[str] = collections.Counter()
         for _, row in people_df.iterrows():
             person = self.map_person_payload(ctx, row)
+            unmapped.update(unmapped_committees(person.elections))
             result.append(person)
+        report_unmapped_committees(unmapped)
         return (
             pd.DataFrame.from_records([asdict(p) for p in result])
             if result
@@ -43,36 +45,12 @@ class PeoplePayloads(Pipeline[Person]):
                     "name",
                     "companies",
                     "elections",
-                    "party",
+                    "parties",
                     "wikipedia_url",
                     "rejestrIo",
                 ]
             )
         )
-
-    def lookup_party(self, ctx, name, elections: list[Election]) -> list[str]:
-        if self.person_to_party is None:
-            self.person_to_party = self.people_parties.read_or_process(ctx)
-        if self.committee_to_party is None:
-            self.committee_to_party = self.committee_parties.read_or_process(ctx)
-
-        name = name.lower()
-        m = self.person_to_party[self.person_to_party["person_id"] == name]
-
-        if len(m) == 1:
-            return party_scores_to_list(m.iloc[0], "person_id")
-        for e in elections:
-            if e.committee is None:
-                # Nothing to map a party from. This used to be the string
-                # "None", which simply matched no committee.
-                continue
-            m = self.committee_to_party[
-                self.committee_to_party["subgroup_id"] == e.committee.lower()
-            ]
-            if len(m) == 1:
-                # TODO aggregate the scores here
-                return party_scores_to_list(m.iloc[0], "subgroup_id")
-        return []
 
     def map_person_payload(self, ctx: Context, row: pd.Series) -> Person:
         def get_scalar(key):
@@ -95,6 +73,10 @@ class PeoplePayloads(Pipeline[Person]):
         companies = _extract_companies(row)
         elections = _extract_elections(row)
         count, sources, content, party = _hardcoded_sources_content_parties(row)
+        # The two hardcoded lists name a few hundred people between them; the
+        # committees name everybody who ever stood for one. Both are evidence,
+        # so keep both.
+        party = sorted(set(party) | set(parties_from_committees(elections)))
 
         wiki_name = get_scalar("wiki_name")
         wikipedia_url = get_scalar("wikipedia") or get_scalar("wiki_url")
@@ -109,14 +91,6 @@ class PeoplePayloads(Pipeline[Person]):
         rejestr_id = rejestr_ids[0]
         rejestrIo = f"https://rejestr.io/osoby/{rejestr_id}"
 
-        # TODO reenable after mapping is better
-        # if len(elections) > 0:
-        #     party = self.lookup_party(
-        #         ctx,
-        #         get_scalar("pkw_name"),
-        #         elections,
-        #     )
-
         return Person(
             name=name,
             content=content,
@@ -128,13 +102,6 @@ class PeoplePayloads(Pipeline[Person]):
             rejestrIo=rejestrIo,
             autoapprove=count > 0,
         )
-
-
-def party_scores_to_list(
-    row: pd.Series, remove: typing.Literal["person_id", "subgroup_id"]
-) -> list[str]:
-    row = row.drop(remove)
-    return row[row > PARTY_CONFIDENCE_TRESHOLD].index.tolist()
 
 
 auto_approved = check_auto_approved()
@@ -206,3 +173,49 @@ def _extract_elections(row: pd.Series) -> list[Election]:
 
                 elections.append(election_payload)
     return elections
+
+
+def parties_from_committees(elections: list[Election]) -> list[str]:
+    """Which parties a person's candidacies put them with.
+
+    The committee a candidacy was run under is the only party evidence PKW
+    records, and until now the pipeline threw it away: `parties` came entirely
+    from two hand-copied press lists of a few hundred names, which is why only
+    864 of 6077 people had one and why reviewers keep leaving notes that say
+    nothing but "PIS".
+
+    A coalition counts as both of its parties. The candidate stood on a joint
+    list, which is what PKW recorded and all anybody can say from it.
+    """
+    parties: set[str] = set()
+    for election in elections:
+        parties.update(parties_of_committee(election.committee))
+    return sorted(parties)
+
+
+def unmapped_committees(elections: list[Election]) -> list[str]:
+    """Committees on a person's candidacies that no party is known for."""
+    return [
+        election.committee
+        for election in elections
+        if election.committee and not parties_of_committee(election.committee)
+    ]
+
+
+def report_unmapped_committees(unmapped: typing.Counter[str]) -> None:
+    """Name the committees whose absence from the map costs the most people.
+
+    Most of the tail is genuinely local - a KWW put together for one gmina
+    stands for no national party and never will. But the tail is where a
+    misspelt or newly-worded national committee hides too, and the only way to
+    tell is to look at the ones that come up often.
+    """
+    if not unmapped:
+        return
+    total = sum(unmapped.values())
+    print(
+        f"{total} candidacies ran under {len(unmapped)} committees no party is "
+        f"known for. The most common:"
+    )
+    for committee, count in unmapped.most_common(UNMAPPED_COMMITTEES_REPORTED):
+        print(f"  {count:6d}  {committee}")

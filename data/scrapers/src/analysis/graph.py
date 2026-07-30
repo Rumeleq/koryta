@@ -4,7 +4,7 @@ import networkx as nx
 import pandas as pd
 
 from analysis.people_pkw_merged import PeoplePKWMerged
-from analysis.utils import committee_to_party
+from scrapers.pkw.elections import committee_to_party
 from scrapers.stores import Context, Pipeline
 
 
@@ -57,7 +57,11 @@ class PeopleParties(Pipeline):
         print(df[:10])
 
         committes_to_parties = pd.DataFrame.from_records(
-            [(committee, party) for committee, party in committee_to_party.items()],
+            [
+                (committee, party)
+                for committee, parties in committee_to_party.items()
+                for party in parties
+            ],
             columns=["subgroup_id", "group_id"],
         )
         print(committes_to_parties[:10])
@@ -80,7 +84,11 @@ class CommitteeParties(Pipeline):
         print(df[:10])
 
         committes_to_parties = pd.DataFrame.from_records(
-            [(committee, party) for committee, party in committee_to_party.items()],
+            [
+                (committee, party)
+                for committee, parties in committee_to_party.items()
+                for party in parties
+            ],
             columns=["subgroup_id", "group_id"],
         )
         print(committes_to_parties[:10])

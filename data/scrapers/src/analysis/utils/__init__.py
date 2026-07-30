@@ -6,7 +6,7 @@ import pandas as pd
 
 from analysis.utils.elections import candidacy_teryt
 from scrapers.map.teryt import Teryt
-from scrapers.pkw.elections import committee_to_party
+from scrapers.pkw.elections import parties_of_committee
 from scrapers.pkw.sources import election_date
 from scrapers.stores import Context
 
@@ -77,10 +77,7 @@ def append_nice_history(ctx: Context, df, company_names, teryt: Teryt):
 
         elections = []
         for el in empty_list_if_nan(row["elections"]):
-            if el["party"] is not None:
-                party = committee_to_party.get(el["party"].lower().strip(), None)
-                if party is not None:
-                    parties_simplified.add(party)
+            parties_simplified.update(parties_of_committee(el["party"]))
 
             start_election: date = election_date.get(
                 el["election_year"], date(year=int(el["election_year"]), month=1, day=1)

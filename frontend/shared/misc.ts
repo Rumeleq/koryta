@@ -1,11 +1,22 @@
 import type { Article, ElectionPosition } from "./model";
 
+/** The parties a person can be filtered by, and the only strings that get a
+ * chip. Anything else is stored and then invisible: no colour, no dropdown
+ * entry, and bucketed as "inne / brak partii" in the statistics.
+ *
+ * Kept in step with `committee_to_party` in
+ * `data/scrapers/src/scrapers/pkw/elections.py`, which is where the pipeline
+ * decides what to call a party. SLD is separate from Nowa Lewica on purpose:
+ * they are the same party renamed in 2021, but somebody who stood on an SLD
+ * list in 2001 was not a member of a party that did not exist yet, and the
+ * election it comes from is the whole of the evidence. */
 export const parties = [
   "PO",
   "PiS",
   "PSL",
   "Polska 2050",
   "Nowa Lewica",
+  "SLD",
   "Konfederacja",
   "Razem",
 ];
@@ -16,7 +27,7 @@ export const partyColors: Record<string, string> = {
   PSL: "#2ed396",
   "Polska 2050": "#FFCB03",
   "Nowa Lewica": "#D40E20",
-  // SLD: "#D40E20",
+  SLD: "#D40E20",
   Konfederacja: "#102440",
   // Razem: "#871057",
 };
