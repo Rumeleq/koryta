@@ -14,7 +14,10 @@ class Company:
 class Election:
     # TODO we need a proper typing of the election types
     election_type: typing.Any
-    committee: str
+    # None when the PKW listing records no committee, which is the usual case
+    # for a small-town candidacy. Nullable rather than the string "None": the
+    # uploader drops null fields, and the frontend stores what it is sent.
+    committee: str | None = None
     election_year: str | None = None
     teryt: str | None = None
 

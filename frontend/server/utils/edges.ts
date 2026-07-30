@@ -49,15 +49,19 @@ export const EDGE_SEMANTICS: Record<string, EdgeSemantics> = {
     identicalMeansSame: true,
   },
 
-  // A candidacy, and the one type where identical fields prove nothing. What
-  // would tell two candidacies apart is destroyed before the ingest sees them:
-  // the office collapses into the "Samorząd" bucket (all six 2024 PKW candidate
-  // files map onto it), the gmina TERYT is truncated to its powiat, `committee`
-  // is dropped at the API boundary because shared/api.ts accepts only `party`,
-  // and the run-off round is discarded by the scraper. So standing for
-  // burmistrz and for that gmina's rada in 2024 stores two byte-identical
-  // documents - and so does one mayoral bid that went to a second round.
-  // Nothing stored separates the two cases, so nothing may merge them.
+  // A candidacy, and the one type where identical fields prove nothing. Much of
+  // what would tell two apart is destroyed before the ingest sees them: the
+  // office collapses into the "Samorząd" bucket (all six 2024 PKW candidate
+  // files map onto it), the gmina TERYT is truncated to its powiat, and the
+  // run-off round is discarded by the scraper. So standing for burmistrz and
+  // for that gmina's rada in 2024 can store two identical documents, and so can
+  // one mayoral bid that went to a second round.
+  //
+  // `committee` is now accepted and stored, which separates two candidacies run
+  // under different committees - but every stored candidacy predates that, and
+  // two bids under the same committee still look alike. So this stays false:
+  // equal fields are not evidence of one fact here, and a migration may not
+  // merge on them.
   election: {
     kind: "occurrence",
     discriminators: ["position", "start_date", "party", "committee", "term"],
