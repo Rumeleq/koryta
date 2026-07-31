@@ -80,22 +80,34 @@ def stopwatch():
         stats.duration = time.perf_counter() - start
 
 
-# Per each hostname we do on-worker rate limiting.
+# Per each hostname we do on-worker rate limiting with a token bucket. A domain
+# refills at 1 token per `rate_limit` seconds (i.e. the configured qpm) and a
+# request costs one token. The bucket may hold up to _BURST_WINDOW_S seconds'
+# worth of tokens, so when a backlog of top-priority URLs for one domain shows
+# up they can fire back-to-back (draining what accumulated while the domain was
+# idle) instead of being released/re-locked one interval at a time. The long-run
+# average still can't exceed the configured qpm.
+_BURST_WINDOW_S = 60.0
 _next_req_lock = threading.Lock()
-_next_request_time: dict[str, float] = {}
+# domain -> (tokens_available, last_refill_monotonic)
+_token_buckets: dict[str, tuple[float, float]] = {}
 
 
 def _can_crawl(parsed: NormalizedParse, rate_limit: float) -> bool:
     if rate_limit <= 0:
         return True
+    refill_per_s = 1.0 / rate_limit
+    capacity = max(1.0, _BURST_WINDOW_S * refill_per_s)
     with _next_req_lock:
         domain = parsed.hostname_normalized
-        next_time = _next_request_time.get(domain, 0)
         now = time.monotonic()
-        if now < next_time:
-            return False
-        _next_request_time[domain] = now + rate_limit
-        return True
+        tokens, last = _token_buckets.get(domain, (capacity, now))
+        tokens = min(capacity, tokens + (now - last) * refill_per_s)
+        if tokens >= 1.0:
+            _token_buckets[domain] = (tokens - 1.0, now)
+            return True
+        _token_buckets[domain] = (tokens, now)
+        return False
 
 
 _HASH_SUFFIX_LEN = 10  # chars taken from md5 hexdigest
