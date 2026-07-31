@@ -24,6 +24,58 @@ logger = logging.getLogger(__name__)
 
 warsaw_tz = ZoneInfo("Europe/Warsaw")
 
+# Number of hash buckets URLs are spread across by domain. The claim
+# (get_batch) fans out one indexed probe per bucket so a single refill returns
+# URLs from up to this many distinct domains at once, instead of a contiguous
+# run of the same hot domain. Keep this a power of two: host_bucket is the low
+# bits of hashtext(host) via `& (_HOST_BUCKETS - 1)`.
+_HOST_BUCKETS = 64
+_HOST_BUCKET_INDEX = "idx_wi_host_bucket_prio"
+
+# Postgres btree (the url UNIQUE index) rejects index entries larger than
+# ~2704 bytes; a single over-long discovered URL otherwise aborts the whole
+# insert batch and crashes the coordinator. URLs this long are never real
+# articles (tracking blobs, data URIs, encoded payloads), so drop them on
+# insert. Kept well under the hard limit for UTF-8 headroom.
+_MAX_URL_BYTES = 2000
+
+
+def _bucket_expr(url_sql: str) -> str:
+    """SQL expression mapping a URL column/param to its host bucket.
+
+    host = first path segment after stripping any scheme (stored URLs are
+    normalized scheme-less, but strip defensively). Must stay identical
+    everywhere it is used (insert, backfill, index) so the value is consistent.
+    """
+    return (
+        f"(hashtext(split_part(regexp_replace({url_sql}, '^https?://', ''), "
+        f"'/', 1)) & {_HOST_BUCKETS - 1})"
+    )
+
+
+def _host_of(url: str) -> str:
+    return url.split("://", 1)[-1].split("/", 1)[0]
+
+
+def _interleave_by_host(items: list[CrawlQueueItem]) -> list[CrawlQueueItem]:
+    """Round-robin a claimed batch by host so the work queue that HTTP workers
+    drain FIFO hands consecutive workers different domains."""
+    from collections import defaultdict, deque
+
+    groups: dict[str, deque] = defaultdict(deque)
+    for item in items:
+        groups[_host_of(item.url)].append(item)
+    queues = list(groups.values())
+    out: list[CrawlQueueItem] = []
+    while queues:
+        still: list[deque] = []
+        for q in queues:
+            out.append(q.popleft())
+            if q:
+                still.append(q)
+        queues = still
+    return out
+
 
 class PostgresClient:
     def __init__(
@@ -144,10 +196,41 @@ class PostgresCrawlQueue(CrawlQueue):
                     locked_at TIMESTAMP WITH TIME ZONE,
                     storage_path TEXT,
                     mined_from_url TEXT,
-                    metadata JSONB DEFAULT '{}'::jsonb
+                    metadata JSONB DEFAULT '{}'::jsonb,
+                    host_bucket SMALLINT
                 );
                 """
             )
+            # Existing tables predate host_bucket; adding a nullable column is a
+            # metadata-only change (no table rewrite / long lock).
+            transaction.execute(
+                "ALTER TABLE website_index "
+                "ADD COLUMN IF NOT EXISTS host_bucket SMALLINT;"
+            )
+            transaction.execute("SELECT EXISTS (SELECT 1 FROM website_index);")
+            has_rows = bool(transaction.fetchone()[0])
+            transaction.execute(
+                "SELECT 1 FROM pg_indexes WHERE indexname = %s;",
+                (_HOST_BUCKET_INDEX,),
+            )
+            has_bucket_index = transaction.fetchone() is not None
+            if not has_bucket_index:
+                if has_rows:
+                    # Building the index inline would take an ACCESS EXCLUSIVE lock
+                    # for minutes on the live queue, and old rows still need their
+                    # host_bucket backfilled. Defer to the online migration script.
+                    logger.warning(
+                        "website_index has rows but no %s and possibly NULL "
+                        "host_bucket values. Domain-diversified claiming will "
+                        "under-serve until you run scripts/migrate_host_bucket.py "
+                        "(backfills host_bucket and builds the index CONCURRENTLY).",
+                        _HOST_BUCKET_INDEX,
+                    )
+                else:
+                    transaction.execute(
+                        f"CREATE INDEX {_HOST_BUCKET_INDEX} ON website_index "
+                        "(host_bucket, priority, id) WHERE done = FALSE;"
+                    )
             transaction.execute(
                 """
                 CREATE TABLE IF NOT EXISTS blocked_domains (
@@ -243,20 +326,34 @@ class PostgresCrawlQueue(CrawlQueue):
         max_retries: int = 3,
         timeout_seconds: float = 60,
     ) -> list[CrawlQueueItem]:
-        """Atomically claim up to batch_size URLs in a single query."""
+        """Atomically claim up to ~batch_size URLs, spread across domains.
+
+        Instead of taking the globally lowest-priority contiguous run (which is
+        dominated by one hot domain, so all workers then contend on that single
+        domain's rate limit), fan out one indexed probe per host bucket and take
+        the best few from each. The result is interleaved by host so the FIFO
+        work queue hands consecutive HTTP workers different domains.
+        """
         now = datetime.now(warsaw_tz)
+        per_bucket = max(1, -(-batch_size // _HOST_BUCKETS))  # ceil division
         with self.pg.transaction() as transaction:
             transaction.execute(
-                """
+                f"""
                 WITH candidates AS (
-                    SELECT wi.id
-                    FROM website_index wi
-                    WHERE wi.done = FALSE
-                      AND wi.num_retries < %s
-                      AND (wi.locked_by_worker_id IS NULL OR wi.locked_at <= %s)
-                    ORDER BY wi.priority ASC, wi.id ASC
-                    LIMIT %s
-                    FOR UPDATE SKIP LOCKED
+                    SELECT c.id
+                    FROM generate_series(0, {_HOST_BUCKETS - 1}) AS b(bucket)
+                    CROSS JOIN LATERAL (
+                        SELECT wi.id
+                        FROM website_index wi
+                        WHERE wi.host_bucket = b.bucket
+                          AND wi.done = FALSE
+                          AND wi.num_retries < %s
+                          AND (wi.locked_by_worker_id IS NULL
+                               OR wi.locked_at <= %s)
+                        ORDER BY wi.priority ASC, wi.id ASC
+                        LIMIT %s
+                        FOR UPDATE SKIP LOCKED
+                    ) c
                 )
                 UPDATE website_index wi
                 SET locked_by_worker_id = %s, locked_at = %s
@@ -267,13 +364,13 @@ class PostgresCrawlQueue(CrawlQueue):
                 (
                     max_retries,
                     now - timedelta(seconds=timeout_seconds),
-                    batch_size,
+                    per_bucket,
                     worker_id,
                     now,
                 ),
             )
             rows = transaction.fetchall()
-        return [CrawlQueueItem(r[0], r[1], r[2]) for r in rows]
+        return _interleave_by_host([CrawlQueueItem(r[0], r[1], r[2]) for r in rows])
 
     def mark_done(
         self,
@@ -351,6 +448,15 @@ class PostgresCrawlQueue(CrawlQueue):
             url = new_url.url
             priority = int(new_url.priority)
             normalized = self._normalize_url(url)
+            n_bytes = len(normalized.encode("utf-8"))
+            if n_bytes > _MAX_URL_BYTES:
+                logger.warning(
+                    "Dropping over-long URL (%d bytes > %d, unindexable): %s...",
+                    n_bytes,
+                    _MAX_URL_BYTES,
+                    normalized[:200],
+                )
+                continue
             rows.append((normalized, priority, now))
         self._insert_urls(rows)
 
@@ -362,11 +468,11 @@ class PostgresCrawlQueue(CrawlQueue):
         if not rows:
             return
         prepared: list[
-            tuple[str, str, int, bool, list[str], int, datetime, None, None]
+            tuple[str, str, int, bool, list[str], int, datetime, None, None, str]
         ] = [
             (
                 str(uuid4()),
-                self._normalize_url(url),
+                normalized,
                 priority,
                 False,
                 [],
@@ -374,14 +480,16 @@ class PostgresCrawlQueue(CrawlQueue):
                 date_added,
                 None,
                 None,
+                normalized,  # feeds host_bucket expression below
             )
             for url, priority, date_added in rows
+            for normalized in (self._normalize_url(url),)
         ]
         sql = (
             "INSERT INTO website_index ("
             "id, url, priority, done, errors, num_retries, "
-            "date_added, date_finished, mined_from_url) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
+            "date_added, date_finished, mined_from_url, host_bucket) "
+            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, {_bucket_expr('%s')}) "
             "ON CONFLICT(url) DO NOTHING"
         )
         max_attempts = 5
