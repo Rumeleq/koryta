@@ -251,7 +251,12 @@ const editEdgeForm = ref<InstanceType<typeof FormEditEdge> | null>(null);
 // anyway. Without this the page threw on every render, including SSR, so
 // /edit/node/* answered 500.
 const current = ref(
-  anyNode({ type: (route.query.type as NodeType) || "person" }),
+  anyNode({
+    type:
+      typeof route.query.type === "string"
+        ? (route.query.type as NodeType)
+        : "person",
+  }),
 );
 const loading = false;
 
