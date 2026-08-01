@@ -100,7 +100,7 @@ async function waitForAuthReady() {
  */
 export async function authRequest<T>(
   url: string,
-  options: { method?: string; body?: unknown } = {},
+  options: { method?: string; body?: unknown; query?: unknown } = {},
 ): Promise<T> {
   await waitForAuthReady();
 
@@ -113,6 +113,7 @@ export async function authRequest<T>(
   return await $fetch<T>(url, {
     method: (options.method || "POST") as "POST",
     body: options.body as Record<string, unknown>,
+    query: options.query as Record<string, unknown>,
     headers,
   });
 }
