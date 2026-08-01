@@ -76,11 +76,22 @@ test.describe("Admin notes queue", () => {
     // The author is resolved by name rather than left as a raw uid.
     await expect(rows.first()).toContainText("Normal User");
 
-    // Narrowing to one node type drops the person's entries. Addressed by role
-    // rather than by label: the select is clearable, and its clear button
-    // carries the field's label too, so getByLabel matches both of them.
-    await page.getByRole("combobox", { name: "Typ węzła" }).click();
-    await page.getByRole("option", { name: "Instytucja" }).click();
+    // Narrowing to one node type drops the person's entries. The field is
+    // opened by clicking the whole .v-select rather than the input inside it,
+    // because vuetify lays a .v-field__input over that input which swallows
+    // the click - and not via getByLabel either, since a clearable field gives
+    // its clear button the same label.
+    const typeSelect = page.locator('.v-select:has-text("Typ węzła")');
+    await typeSelect.click();
+    // The option is taken by role and clicked unforced: forcing lands the
+    // click wherever the box sits mid-animation, which closes the menu without
+    // choosing anything and leaves no trace that the filter never applied.
+    const option = page.getByRole("option", { name: "Instytucja" });
+    await expect(option).toBeVisible({ timeout: 5000 });
+    await option.click();
+    // Asserted before the url, so a click that misses reads as "nothing was
+    // selected" rather than as a broken filter.
+    await expect(typeSelect).toContainText("Instytucja");
     await expect(page).toHaveURL(/nodeType=place/);
     // Asserted on the content, not just the count - an empty table renders a
     // single "Brak notatek" row, so toHaveCount(1) alone would also pass on a
@@ -118,6 +129,12 @@ test.describe("Admin notes queue", () => {
       timeout: 30000,
     });
     await expect(drawer).toContainText("Notatki");
-    await expect(drawer).toContainText(`nowa notatka ${stamp}`);
+    // The note itself is asserted on the field's value, not on the drawer's
+    // text: NoteSourceCard renders it into a readonly v-textarea, and a
+    // textarea's text is its value rather than part of its text content, so
+    // toContainText looks straight past it and only sees the labels around it.
+    await expect(drawer.locator("textarea").first()).toHaveValue(
+      `nowa notatka ${stamp}`,
+    );
   });
 });
