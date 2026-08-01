@@ -311,25 +311,45 @@ class KRSNeedsRefresh(Pipeline):
         )
 
 
-def get_osoby_scraped(ctx: Context) -> dict[str, list[QueryType]]:
-    osoby_scraped: dict[str, list[QueryType]] = {}
+PEOPLE_QUERIES = [
+    QueryType.REJESTRIO_OSOBY_KRS_POWIAZANIA_AKTUALNE,
+    QueryType.REJESTRIO_OSOBY_KRS_POWIAZANIA_HISTORYCZNE,
+]
+
+# How upload_result spells each person endpoint in the blob path: the
+# ?aktualnosc= query parameter is folded into the path before the upload.
+OSOBY_QUERY_BY_PATH = {
+    "aktualnosc_aktualne": QueryType.REJESTRIO_OSOBY_KRS_POWIAZANIA_AKTUALNE,
+    "aktualnosc_historyczne": QueryType.REJESTRIO_OSOBY_KRS_POWIAZANIA_HISTORYCZNE,
+}
+
+
+def get_osoby_scraped(ctx: Context) -> dict[str, set[QueryType]]:
+    """Person endpoints that already have a response in the bucket.
+
+    Keyed by the rejestr.io person id as a string, the spelling RejestrIOKey
+    uses. A person is fetched once and never refreshed: nothing in the free
+    feeds says when their connections changed -- the KRS bulletin covers
+    companies, which is what KRSNeedsRefresh is for -- so a refresh would mean
+    paying for every person on every run to find out.
+    """
+    osoby_scraped: dict[str, set[QueryType]] = {}
     for blob_name in ctx.io.list_files(CloudStorage(prefix="hostname=rejestr.io")):
         assert isinstance(blob_name, DownloadableFile)
-        split = blob_name.url.split("osoby/", 1)
-        if len(split) < 2:
+        split = blob_name.url.split("/osoby/", 1)
+        if len(split) < 2 or "krs-powiazania" not in blob_name.url:
+            # Anything else under /osoby/ is not an endpoint we pay for here.
             continue
 
         person_id = split[1].split("/", 1)[0]
-        if "aktualnosc_aktualne" in blob_name.url:
-            osoby_scraped[person_id] = osoby_scraped.get(person_id, []) + [
-                QueryType.REJESTRIO_ORG_KRS_POWIAZANIA_AKTUALNE
-            ]
-        elif "aktualnosc_historyczne" in blob_name.url:
-            osoby_scraped[person_id] = osoby_scraped.get(person_id, []) + [
-                QueryType.REJESTRIO_ORG_KRS_POWIAZANIA_HISTORYCZNE
-            ]
+        for path_marker, query in OSOBY_QUERY_BY_PATH.items():
+            if path_marker in blob_name.url:
+                osoby_scraped.setdefault(person_id, set()).add(query)
+                break
         else:
-            raise ValueError("Unknown url: ${blob_name.url}")
+            # Left loud on purpose: a person endpoint we fail to recognise here
+            # is one we go on paying for, run after run.
+            raise ValueError(f"Unknown url: {blob_name.url}")
 
     return osoby_scraped
 
@@ -341,7 +361,7 @@ def series_to_list(s: pd.Series) -> list[str]:
 def save_org_connections(
     already_scraped_krs: pd.DataFrame,
     needs_refresh_krs: pd.DataFrame,
-    already_scraped_people: dict[str, list[QueryType]],
+    already_scraped_people: dict[str, set[QueryType]],
     connections: typing.Iterable[KRS],
     names: typing.Iterable[KRS],
     people: typing.Iterable[RejestrIOKey],
@@ -424,21 +444,20 @@ def save_org_connections(
             ],
         )
 
+    people_to_fetch = 0
     for person in people:
-        people_methods: list[QueryType] = already_scraped_people.get(person.id, [])
+        # str(): the ids read out of a pipeline come back as whatever pandas
+        # made of the column, and the keys here are always strings.
+        people_methods = already_scraped_people.get(str(person.id), set())
         query = RejestrIOQuery(
             person=person,
-            queries=[
-                q
-                for q in [
-                    QueryType.REJESTRIO_OSOBY_KRS_POWIAZANIA_AKTUALNE,
-                    QueryType.REJESTRIO_OSOBY_KRS_POWIAZANIA_HISTORYCZNE,
-                ]
-                if q not in people_methods
-            ],
+            queries=[q for q in PEOPLE_QUERIES if q not in people_methods],
         )
         if len(list(query.urls())) > 0:
+            people_to_fetch += 1
             yield query
+
+    print(f"People: {len(people)} of interest, {people_to_fetch} not yet scraped")
 
 
 class ScrapeRejestrIO(Pipeline[RejestrIOQuery]):
