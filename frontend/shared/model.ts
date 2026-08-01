@@ -315,6 +315,26 @@ export type Note = {
   sources?: NoteSource[];
 };
 
+/** One reviewable entry - a single source inside a note, joined with the node
+ * it hangs off and flattened out of the array it is stored in. Admins triage
+ * each of these separately, so it is the unit a review queue lists. */
+export type NoteRow = {
+  /** Stable identity of the entry, which is what a table keys rows on. */
+  key: string;
+  noteId: string;
+  sourceIndex: number;
+  nodeId: string;
+  nodeName: string | null;
+  nodeType: NodeType | null;
+  userUid: string;
+  updatedAt: string | null;
+  note: string;
+  url: string | null;
+  kind: NoteEntryKind;
+  adminStatus: NoteAdminStatus | null;
+  adminType: string | null;
+};
+
 export type ExtractionFactType =
   "employment" | "party_membership" | "personal_relation";
 
