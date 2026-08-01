@@ -16,17 +16,12 @@
           v-if="entity && type === 'person'"
           :entity="entity"
         />
-        <ButtonVoteWidget
+        <ButtonVoteNumber
           v-if="entity"
           :id="entity.id ?? ''"
-          :key="(entity.id ?? '') + '-interesting'"
+          :key="entity.id ?? ''"
           category="interesting"
-        />
-        <ButtonVoteWidget
-          v-if="entity"
-          :id="entity.id ?? ''"
-          :key="(entity.id ?? '') + '-quality'"
-          category="quality"
+          show-label
         />
       </div>
     </v-card-title>
