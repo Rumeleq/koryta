@@ -34,7 +34,11 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI && !process.env.PLAYWRIGHT_NO_REUSE,
     // dev:build starts the emulators, runs a full production build, seeds and
     // then serves — comfortably past the 120s default, more so on cold CI.
-    timeout: 600_000,
+    // The build alone is ~3 minutes here and CI has two cores, and readiness
+    // is judged by a request to `/` succeeding: anything short of a real page
+    // keeps the poll going (playwright wants 200..403), so the budget has to
+    // cover the whole build rather than just the listen.
+    timeout: 900_000,
     stdout: "pipe",
     stderr: "pipe",
   },
