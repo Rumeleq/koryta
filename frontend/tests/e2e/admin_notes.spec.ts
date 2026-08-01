@@ -76,15 +76,24 @@ test.describe("Admin notes queue", () => {
     // The author is resolved by name rather than left as a raw uid.
     await expect(rows.first()).toContainText("Normal User");
 
-    // Narrowing to one node type drops the person's entries.
-    await page.getByLabel("Typ węzła").click();
+    // Narrowing to one node type drops the person's entries. Addressed by role
+    // rather than by label: the select is clearable, and its clear button
+    // carries the field's label too, so getByLabel matches both of them.
+    await page.getByRole("combobox", { name: "Typ węzła" }).click();
     await page.getByRole("option", { name: "Instytucja" }).click();
-    await expect(rows).toHaveCount(1);
     await expect(page).toHaveURL(/nodeType=place/);
+    // Asserted on the content, not just the count - an empty table renders a
+    // single "Brak notatek" row, so toHaveCount(1) alone would also pass on a
+    // filter that wrongly matched nothing.
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText(`nowa notatka ${stamp}`);
 
     // Filters survive a reload, so a queue can be shared or come back to.
     await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(rows).toHaveCount(1, { timeout: 30000 });
+    await expect(rows.first()).toContainText(`nowa notatka ${stamp}`, {
+      timeout: 30000,
+    });
+    await expect(rows).toHaveCount(1);
 
     // Clearing the type filter and asking for what is still open hides the
     // entry an admin already signed off.
