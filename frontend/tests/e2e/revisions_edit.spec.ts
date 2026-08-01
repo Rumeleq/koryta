@@ -3,7 +3,7 @@ import { waitForLoginFormHydrated } from "./helpers/login";
 
 test.describe("Suggest node edits", () => {
   test("User can suggest an edit and admin can see it", async ({ page }) => {
-    test.setTimeout(60000); // This test goes through a long flow
+    test.setTimeout(240_000); // Registers, proposes an edit, waits out a Cloud Function
     // 1. Go to login page
     await page.goto("/login");
 
@@ -94,7 +94,7 @@ test.describe("Suggest node edits", () => {
       });
       await expect(
         page.locator(`.comparison-table:has-text("${newContent}")`),
-      ).toBeVisible({ timeout: 3000 });
-    }).toPass({ timeout: 60_000 });
+      ).toBeVisible({ timeout: 5000 });
+    }).toPass({ timeout: 120_000 });
   });
 });
