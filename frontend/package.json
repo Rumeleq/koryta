@@ -107,5 +107,18 @@
     "nuxt-vuefire": {
       "firebase-admin": "$firebase-admin"
     }
+  },
+  "allowScripts": {
+    "better-sqlite3": true,
+    "cypress": true,
+    "esbuild": true,
+    "protobufjs": true,
+    "re2": true,
+    "sharp": true,
+    "unrs-resolver": true,
+    "vue-demi": true,
+    "@firebase/util": true,
+    "@parcel/watcher": true,
+    "@sentry/cli": true
   }
 }
