@@ -187,6 +187,16 @@ export type NodeMaybeRich = {
 export interface Company extends Omit<Node, "type"> {
   type: "place";
   krsNumber?: string;
+  /** REGON, from the statistical register: nine digits, or fourteen for a
+   * local unit of an entity.
+   *
+   * KRS only covers entities that register with a court, so a ministry, an
+   * urząd or a wojewódzki fundusz has no `krsNumber` at all. REGON and `nip`
+   * are what is left to name one by - see `shared/identifiers.ts`. */
+  regonNumber?: string;
+  /** NIP, the tax identifier: ten digits. The other identifier an institution
+   * outside KRS still has. */
+  nipNumber?: string;
   // TODO populate this field
   location?: string;
   /** PKD codes from KRS, e.g. "86.10.Z" */

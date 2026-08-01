@@ -101,6 +101,22 @@
                 persistent-hint
                 class="mb-2"
               />
+              <v-text-field
+                v-model="editData.regonNumber"
+                label="Numer REGON"
+                hint="9 lub 14 cyfr. Mają go też ministerstwa, urzędy i fundusze, których nie ma w KRS"
+                persistent-hint
+                :rules="[identifierRule(isValidRegon, 'REGON')]"
+                class="mb-2"
+              />
+              <v-text-field
+                v-model="editData.nipNumber"
+                label="Numer NIP"
+                hint="10 cyfr"
+                persistent-hint
+                :rules="[identifierRule(isValidNip, 'NIP')]"
+                class="mb-2"
+              />
               <v-select
                 v-model="editData.isPublic"
                 :items="ownershipOptions"
@@ -144,6 +160,7 @@ import { authRequest } from "@/composables/auth";
 import { generateEntityUrl } from "~/composables/slugs";
 import { parties } from "~~/shared/misc";
 import { publicSectorKnown, type NodeType } from "~~/shared/model";
+import { isValidNip, isValidRegon } from "~~/shared/identifiers";
 
 const props = defineProps<{
   /** Omitted when proposing a brand new node instead of an edit. */
@@ -215,9 +232,22 @@ const editData = reactive({
   wikipedia: "",
   rejestrIo: "",
   krsNumber: "",
+  regonNumber: "",
+  nipNumber: "",
   isPublic: null as boolean | null,
   ktomaco: "",
 });
+
+/** Says so before the request rather than after it, since both numbers carry a
+ * check digit and the server rejects a wrong one anyway. */
+const identifierRule =
+  (isValid: (value: string) => boolean, register: string) => (value: string) =>
+    !value || isValid(value) || `Numer ${register} jest niepoprawny`;
+
+/** Identifiers are sent as typed, so clearing a wrong number really clears it -
+ * but only once there is something to say, or an institution outside a register
+ * would gain a blank field it never had. */
+const identifierFields = ["krsNumber", "regonNumber", "nipNumber"] as const;
 
 watch(dialog, (val) => {
   if (!val) return;
@@ -230,6 +260,8 @@ watch(dialog, (val) => {
   editData.wikipedia = entity.wikipedia || "";
   editData.rejestrIo = entity.rejestrIo || "";
   editData.krsNumber = entity.krsNumber || "";
+  editData.regonNumber = entity.regonNumber || "";
+  editData.nipNumber = entity.nipNumber || "";
   // A scraped `false` prefills as "nie wiem": it means KRS had nothing to say,
   // so offering it back as an answer would launder a gap into a fact.
   editData.isPublic = publicSectorKnown(entity) ? !!entity.isPublic : null;
@@ -266,11 +298,10 @@ async function submit() {
     }
 
     if (type.value === "place") {
-      // Sent as typed, so clearing a wrong number really clears it - but not
-      // when it was empty all along, or an institution outside KRS would gain a
-      // blank field it never had.
-      if (editData.krsNumber || props.entity?.krsNumber) {
-        body.krsNumber = editData.krsNumber;
+      for (const field of identifierFields) {
+        if (editData[field] || props.entity?.[field]) {
+          body[field] = editData[field];
+        }
       }
       // Left out when unanswered, so that "nie wiem" does not get recorded as
       // somebody having decided the place is private.

@@ -9,8 +9,9 @@
           </div>
 
           <div class="d-flex flex-wrap align-center ga-4 text-body-2">
-            <span v-if="company.krsNumber">
-              <strong>KRS:</strong> {{ company.krsNumber }}
+            <span v-for="identifier in identifiers" :key="identifier.register">
+              <strong>{{ identifier.register }}:</strong>
+              {{ identifier.value }}
             </span>
             <span v-if="location">
               <strong>Lokalizacja:</strong> {{ location }}
@@ -92,6 +93,7 @@ import { computed, ref } from "vue";
 import { useAuthState } from "~/composables/auth";
 import { useNotes } from "~/composables/notes";
 import { generateEntityUrl } from "~/composables/slugs";
+import { companyIdentifiers } from "~~/shared/identifiers";
 import type { Company } from "~~/shared/model";
 
 const props = defineProps<{
@@ -99,6 +101,8 @@ const props = defineProps<{
   /** Region the company sits in, resolved by the caller from the owns edge. */
   location: string | undefined;
 }>();
+
+const identifiers = computed(() => companyIdentifiers(props.company));
 
 // The notes are the tallest thing on the card and most visitors only want to
 // read the company's details, so they stay behind a button.

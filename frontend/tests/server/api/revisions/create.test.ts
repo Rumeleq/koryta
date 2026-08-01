@@ -108,6 +108,51 @@ describe("api/revisions/create, place edits", () => {
     expect(writtenRevision().data).not.toHaveProperty("isPublicSource");
   });
 
+  it("stores REGON and NIP for a place that is not in KRS", async () => {
+    // The only identifiers a wojewódzki fundusz, a ministry or an urząd has:
+    // none of them register with a court, so `krsNumber` stays empty forever.
+    vi.mocked(baseNodeFields).mockResolvedValueOnce({
+      type: "place",
+      name: "WFOŚiGW Zielona Góra",
+    });
+    mockReadBody.mockResolvedValue({
+      node_id: "wfosigw",
+      name: "WFOŚiGW Zielona Góra",
+      // Accepted as printed, stored as bare digits.
+      regonNumber: "123 456 785",
+      nipNumber: "PL 526-025-02-74",
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await handler({} as any);
+
+    expect(writtenRevision().data).toMatchObject({
+      regonNumber: "123456785",
+      nipNumber: "5260250274",
+    });
+  });
+
+  it("rejects an identifier whose check digit does not match", async () => {
+    // Both registers checksum their numbers, so a typo is caught here rather
+    // than stored as a plausible number that resolves to nobody.
+    vi.mocked(baseNodeFields).mockResolvedValueOnce({
+      type: "place",
+      name: "WFOŚiGW Zielona Góra",
+    });
+    mockReadBody.mockResolvedValue({
+      node_id: "wfosigw",
+      name: "WFOŚiGW Zielona Góra",
+      regonNumber: "123456784",
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect(handler({} as any)).rejects.toMatchObject({
+      statusCode: 400,
+      message: "Numer REGON jest niepoprawny",
+    });
+    expect(mockCommit).not.toHaveBeenCalled();
+  });
+
   it("keeps the fields it was not given", async () => {
     // A revision is a whole snapshot written with `set`, so anything the form
     // does not carry has to come from the stored node.

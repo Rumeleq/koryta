@@ -40,8 +40,8 @@
       </h2>
     </v-card-title>
     <v-card-text class="px-0">
-      <div v-if="company?.krsNumber" class="text-caption mb-2">
-        KRS: {{ company?.krsNumber }}
+      <div v-if="identifiers.length > 0" class="text-caption mb-2">
+        {{ identifiers.join(" · ") }}
       </div>
       {{ entity?.content }}
     </v-card-text>
@@ -85,6 +85,7 @@ import {
   mdiOfficeBuildingOutline,
 } from "@mdi/js";
 import type { Person, Company, Article, Region } from "~~/shared/model";
+import { companyIdentifiers } from "~~/shared/identifiers";
 
 const props = defineProps<{
   entity: Company | Person | Article | Region;
@@ -93,6 +94,12 @@ const props = defineProps<{
 
 const company = computed(() =>
   props.type === "place" ? (props.entity as Company) : undefined,
+);
+
+const identifiers = computed(() =>
+  companyIdentifiers(company.value ?? {}).map(
+    ({ register, value }) => `${register}: ${value}`,
+  ),
 );
 const article = computed(() =>
   props.type === "article" ? (props.entity as Article) : undefined,

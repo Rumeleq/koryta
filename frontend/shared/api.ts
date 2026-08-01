@@ -1,4 +1,10 @@
 import type { Company, ElectionPosition, Person } from "./model";
+import {
+  isValidNip,
+  isValidRegon,
+  normalizeNip,
+  normalizeRegon,
+} from "./identifiers";
 import { z } from "zod";
 
 export const companyRequestSchema = z.object({
@@ -130,6 +136,27 @@ export const personEditSchema = z.object({
 
 export type PersonEditRequest = z.infer<typeof personEditSchema>;
 
+/** A REGON or a NIP as typed, stored as bare digits.
+ *
+ * Both are checksummed, so a mistyped one can be rejected here instead of
+ * being written to a node that nobody can then look up in the register. An
+ * empty string is left alone: it is how the form clears a number that turned
+ * out to be wrong.
+ */
+function identifierField(
+  normalize: (raw: string) => string,
+  isValid: (value: string) => boolean,
+  register: string,
+) {
+  return z
+    .string()
+    .optional()
+    .transform((value) => (value === undefined ? undefined : normalize(value)))
+    .refine((value) => !value || isValid(value), {
+      message: `Numer ${register} jest niepoprawny`,
+    });
+}
+
 /** Fields a user may propose for a place node, on the same allowlist terms as
  * `personEditSchema`.
  *
@@ -142,9 +169,14 @@ export const companyEditSchema = z.object({
   name: z.string().min(1, "Nazwa jest wymagana"),
   content: z.string().optional(),
   krsNumber: z.string().optional(),
+  regonNumber: identifierField(normalizeRegon, isValidRegon, "REGON"),
+  nipNumber: identifierField(normalizeNip, isValidNip, "NIP"),
   isPublic: z.boolean().optional(),
 }) satisfies z.ZodType<
-  Pick<Company, "name" | "content" | "krsNumber" | "isPublic">
+  Pick<
+    Company,
+    "name" | "content" | "krsNumber" | "regonNumber" | "nipNumber" | "isPublic"
+  >
 >;
 
 export type CompanyEditRequest = z.infer<typeof companyEditSchema>;
