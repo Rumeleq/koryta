@@ -1,5 +1,12 @@
 <template>
-  <v-row v-if="person?.birthDate || person?.wikipedia || person?.rejestrIo">
+  <v-row
+    v-if="
+      person?.birthDate ||
+      person?.wikipedia ||
+      person?.rejestrIo ||
+      person?.ktomaco
+    "
+  >
     <v-col v-if="person?.birthDate" cols="12" sm="4">
       <v-list-subheader
         class="px-0 text-uppercase font-weight-bold"
@@ -37,6 +44,22 @@
         class="text-primary text-decoration-none d-inline-flex align-center"
       >
         Profil w rejestrze
+        <v-icon :icon="mdiOpenInNew" size="small" class="ml-1" />
+      </a>
+    </v-col>
+
+    <v-col v-if="person?.ktomaco" cols="12" sm="4">
+      <v-list-subheader
+        class="px-0 text-uppercase font-weight-bold"
+        style="min-height: 24px"
+        >Kto ma co</v-list-subheader
+      >
+      <a
+        :href="person.ktomaco"
+        target="_blank"
+        class="text-primary text-decoration-none d-inline-flex align-center"
+      >
+        Profil w Kto ma co
         <v-icon :icon="mdiOpenInNew" size="small" class="ml-1" />
       </a>
     </v-col>
