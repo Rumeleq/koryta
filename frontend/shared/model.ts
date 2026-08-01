@@ -155,6 +155,8 @@ export interface Person extends Omit<Node, "type"> {
   birthDate?: string;
   wikipedia?: string;
   rejestrIo?: string;
+  /** Profile on ktomaco.pl, another public registry of company connections. */
+  ktomaco?: string;
 }
 
 export interface ElectionRich {
@@ -275,7 +277,9 @@ export type Note = {
 };
 
 export type ExtractionFactType =
-  "employment" | "party_membership" | "personal_relation";
+  | "employment"
+  | "party_membership"
+  | "personal_relation";
 
 export interface ExtractionFact {
   id?: string;

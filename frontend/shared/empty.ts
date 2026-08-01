@@ -22,6 +22,7 @@ export function anyNode(node: Partial<EditableNode>): EditableNode {
     shortName: node.shortName || "",
     wikipedia: node.wikipedia || "",
     rejestrIo: node.rejestrIo || "",
+    ktomaco: node.ktomaco || "",
     teryt: node.teryt || "",
   };
 }

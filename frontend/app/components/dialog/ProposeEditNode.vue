@@ -66,6 +66,12 @@
                 class="mb-2"
               />
               <v-text-field
+                v-model="editData.birthDate"
+                label="Data urodzenia"
+                type="date"
+                class="mb-2"
+              />
+              <v-text-field
                 v-model="editData.wikipedia"
                 label="Link do Wikipedii"
                 hint="Pełny link do artykułu"
@@ -76,6 +82,13 @@
                 v-model="editData.rejestrIo"
                 label="Link do Rejestr.io"
                 hint="Pełny link do profilu"
+                persistent-hint
+                class="mb-2"
+              />
+              <v-text-field
+                v-model="editData.ktomaco"
+                label="Link do Kto ma co"
+                hint="Pełny link do profilu w ktomaco.pl"
                 persistent-hint
                 class="mb-2"
               />
@@ -173,8 +186,10 @@ const editData = reactive({
   name: "",
   content: "",
   parties: [] as string[],
+  birthDate: "",
   wikipedia: "",
   rejestrIo: "",
+  ktomaco: "",
 });
 
 watch(dialog, (val) => {
@@ -184,8 +199,10 @@ watch(dialog, (val) => {
   editData.name = entity.name || props.initialName || "";
   editData.content = entity.content || "";
   editData.parties = Array.isArray(entity.parties) ? [...entity.parties] : [];
+  editData.birthDate = entity.birthDate || "";
   editData.wikipedia = entity.wikipedia || "";
   editData.rejestrIo = entity.rejestrIo || "";
+  editData.ktomaco = entity.ktomaco || "";
 });
 
 async function submit() {
@@ -211,8 +228,10 @@ async function submit() {
 
     if (type.value === "person") {
       body.parties = editData.parties;
+      body.birthDate = editData.birthDate;
       body.wikipedia = editData.wikipedia;
       body.rejestrIo = editData.rejestrIo;
+      body.ktomaco = editData.ktomaco;
     }
 
     const response = await authRequest<{ id: string; node_id: string }>(

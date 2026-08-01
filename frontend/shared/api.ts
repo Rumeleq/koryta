@@ -109,10 +109,21 @@ export const personEditSchema = z.object({
   name: z.string().min(1, "Nazwa jest wymagana"),
   content: z.string().optional(),
   parties: z.array(z.string()).optional(),
+  birthDate: z.string().optional(),
   wikipedia: z.string().optional(),
   rejestrIo: z.string().optional(),
+  ktomaco: z.string().optional(),
 }) satisfies z.ZodType<
-  Pick<Person, "name" | "content" | "parties" | "wikipedia" | "rejestrIo">
+  Pick<
+    Person,
+    | "name"
+    | "content"
+    | "parties"
+    | "birthDate"
+    | "wikipedia"
+    | "rejestrIo"
+    | "ktomaco"
+  >
 >;
 
 export type PersonEditRequest = z.infer<typeof personEditSchema>;
