@@ -12,6 +12,8 @@ vi.mock("vuefire", async (importOriginal) => {
     useFirestore: vi.fn(() => ({})),
     useCollection: vi.fn(() => ref([])), // Return a ref with an empty array
     useFirebaseAuth: vi.fn(() => ({ currentUser: null })),
+    useCurrentUser: vi.fn(() => ref(null)),
+    useIsCurrentUserLoaded: vi.fn(() => ref(true)),
   };
 });
 
