@@ -7,6 +7,12 @@
 dist
 .eslintcache
 
+# Written by @nuxt/test-utils, which stamps its own version into it and
+# rewrites it whenever the installed copy disagrees with the stamp. It carries
+# nothing package-lock.json does not already pin, so tracking it only produced
+# a file that flips back and forth between checkouts with different installs.
+.nuxtrc
+
 # Logs
 logs*.txt
 cypress_debug_*.txt
