@@ -304,6 +304,13 @@ export type Note = {
   userUid: string;
   nodeId: string;
 
+  /** When the author last saved the note, as an ISO string once it has been
+   * read back. Admin triage deliberately leaves it alone, so a review queue
+   * stays ordered by when people wrote rather than by when it was reviewed.
+   * Absent on notes written before the field existed - readers fall back to
+   * the document's own write time. */
+  updatedAt?: string;
+
   // Users can easily add sources they encounter and annotate what they found interesting in them.
   sources?: NoteSource[];
 };
