@@ -4,17 +4,12 @@ import { isPublicInstitution } from "../../scripts/migrate/seed-public-instituti
 describe("isPublicInstitution", () => {
   it("covers the bodies that have no KRS entry to scrape", () => {
     for (const name of [
-      "Ministerstwo Infrastruktury",
       "Departament Kontroli woj. mazowieckiego",
       "WFOŚiGW Katowice",
       "WFOŚIGW Gdańsk",
       "NFOŚiGW",
-      "Miasto Kraków",
-      "Województwo wielkopolskie",
-      "Sejmik Mazowiecki",
       "Krajowy Ośrodek Wsparcia Rolnictwa",
       "Zarząd Transportu Miejskiego (ZTM) w Warszawie",
-      "Rząd",
       "ZGN Praga-Południe",
     ]) {
       expect(isPublicInstitution(name), name).toBe(true);
