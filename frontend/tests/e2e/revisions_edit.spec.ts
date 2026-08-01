@@ -46,6 +46,9 @@ test.describe("Suggest node edits", () => {
     const firstPersonCard = page
       .locator(".v-card[href^='/entity/person/']")
       .first();
+    // /admin/rewizje/:id is keyed on the node, so remember which one this is
+    // rather than going hunting for it in the list later.
+    const nodeId = (await firstPersonCard.getAttribute("href"))!.split("/")[3]!;
     await firstPersonCard.click();
 
     // Wait to navigate to the person page (which might redirect to /osoba/...)
@@ -78,30 +81,20 @@ test.describe("Suggest node edits", () => {
     // Wait for dialog to close
     await page.waitForSelector(".v-dialog", { state: "hidden" });
 
-    // Wait a bit for the Cloud Function to update the node's `revisions` map
-    await page.waitForTimeout(3000);
-
-    // 7. Go to admin revisions page
-    await page.goto("/admin/rewizje");
-
-    // Wait for the table to load
-    await page.waitForSelector(".v-data-table");
-    await page.waitForSelector("tbody tr:first-child");
-
-    // Check that the edited node is in the list (most recent)
-    const firstRow = page.locator("tbody tr").first();
-
-    // Get the link to the revision
-    const totalCell = firstRow.locator("td").nth(2);
-    await totalCell.locator("a").click();
-
-    // 8. Verify the suggested changes on the revisions page
-    await page.waitForURL(/\/admin\/rewizje\/[a-zA-Z0-9_-]+(?:\?.*)?$/);
-    await page.waitForSelector(".comparison-table");
-
-    // Check if the new content is visible
-    await expect(
-      page.locator(`.comparison-table:has-text("${newContent}")`),
-    ).toBeVisible();
+    // 7. Read the edit back on the node's revisions page.
+    //
+    // Addressed by node rather than by walking /admin/rewizje and clicking the
+    // first row: that list is not ordered by recency, so "first row" was the
+    // seeded revision as often as not. The retry is for onRevisionWritten -
+    // the revision only joins the node's map once that Cloud Function has run,
+    // and there is no event to wait for from here.
+    await expect(async () => {
+      await page.goto(`/admin/rewizje/${nodeId}`, {
+        waitUntil: "domcontentloaded",
+      });
+      await expect(
+        page.locator(`.comparison-table:has-text("${newContent}")`),
+      ).toBeVisible({ timeout: 3000 });
+    }).toPass({ timeout: 60_000 });
   });
 });
