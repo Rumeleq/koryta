@@ -83,6 +83,12 @@
                 hint="Pełny link do profilu"
                 persistent-hint
               />
+              <v-text-field
+                v-model="current.ktomaco"
+                label="Link do Kto ma co"
+                hint="Pełny link do profilu w ktomaco.pl"
+                persistent-hint
+              />
             </template>
             <template v-if="current.type === 'place'">
               <v-text-field
