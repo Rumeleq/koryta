@@ -11,7 +11,7 @@ const COMPANY_VIEW = `/eksploruj/tabela?krs=${COMPANY_KRS}`;
 
 test.describe("Company notes", () => {
   test("lets a logged in user add a source to a company", async ({ page }) => {
-    test.setTimeout(90000); // Logs in, saves a note and revisits the page
+    test.setTimeout(180_000); // Logs in, saves a note and waits out a Cloud Function
 
     await page.goto(`/login?redirect=${encodeURIComponent(COMPANY_VIEW)}`);
     await waitForLoginFormHydrated(page);
@@ -50,12 +50,19 @@ test.describe("Company notes", () => {
     ).toBeHidden({ timeout: 15000 });
     await expect(companyCard).toContainText(url);
 
-    // The note is attached to the company, so it is there on a fresh visit
-    // The dev server keeps live listeners open, so "load" never settles here
-    await page.goto(COMPANY_VIEW, { waitUntil: "domcontentloaded" });
-    await companyCard
-      .getByRole("button", { name: "Notatki" })
-      .click({ timeout: 30000 });
-    await expect(companyCard).toContainText(url, { timeout: 30000 });
+    // The note is attached to the company, so it is there on a fresh visit -
+    // once onNoteWritten has folded it into the company. That is a Cloud
+    // Function firing on a write with no event to wait for from here, so the
+    // whole revisit is what gets retried rather than the assertion alone: a
+    // page loaded too early shows the notes panel with no sources in it, and
+    // waiting on that one longer will not make the note appear.
+    // "load" never settles here, the app keeps live listeners open.
+    await expect(async () => {
+      await page.goto(COMPANY_VIEW, { waitUntil: "domcontentloaded" });
+      await companyCard
+        .getByRole("button", { name: "Notatki" })
+        .click({ timeout: 30000 });
+      await expect(companyCard).toContainText(url, { timeout: 5000 });
+    }).toPass({ timeout: 90_000 });
   });
 });
