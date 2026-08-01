@@ -6,6 +6,7 @@ import {
   where,
   collection,
   query,
+  serverTimestamp,
 } from "firebase/firestore";
 import { useCollection, useFirebaseApp } from "vuefire";
 import {
@@ -86,6 +87,10 @@ export function useNotes(nodeID: MaybeRef<string>) {
       ...data,
       userUid: user.value.uid,
       nodeId: nodeRef.value,
+      // Stamped by firestore rather than by the browser, so a wrong clock on
+      // one contributor's machine cannot pin their note to the top of the
+      // admin queue forever. Reads normalise it back to an ISO string.
+      updatedAt: serverTimestamp() as unknown as string,
     };
     await setDoc(doc(db, "notes", docId), dataTyped, {
       merge: true,
