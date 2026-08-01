@@ -175,6 +175,15 @@ export type PersonRich = Person & {
   latestEmploymentStart?: string | null;
 };
 
+/** A node identified on the graph, carrying the extra fields a person has when
+ * it happens to be one. What a view needs to show any node it is handed
+ * without knowing its kind up front. */
+export type NodeMaybeRich = {
+  id: string;
+  name: string;
+  type: NodeType;
+} & Partial<Omit<PersonRich, "id" | "name" | "type">>;
+
 export interface Company extends Omit<Node, "type"> {
   type: "place";
   krsNumber?: string;
