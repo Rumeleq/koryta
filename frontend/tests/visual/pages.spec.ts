@@ -6,6 +6,10 @@ const pages = [
   { name: "zrodla", path: "/zrodla" },
   { name: "o-nas", path: "/o-nas" },
   { name: "pomoc", path: "/pomoc" },
+  // Not a page: the path is deliberately unroutable, so this captures
+  // app/error.vue's 404 branch. Keep it single-segment - two segments would
+  // match pages/[seoType]/[slug].vue and render an entity instead.
+  { name: "not-found", path: "/nie-ma-takiej-strony" },
 ];
 
 for (const { name, path } of pages) {
