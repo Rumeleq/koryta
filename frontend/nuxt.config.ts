@@ -1,4 +1,5 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
+import { bundleSharpBinaries } from "./build/sharp-binaries";
 
 // Force IPv4 for emulators to avoid Node 17+ IPv6 issues
 process.env.FIRESTORE_EMULATOR_HOST = "127.0.0.1:8080";
@@ -232,6 +233,19 @@ export default defineNuxtConfig({
   ogImage: {
     defaults: {
       extension: "png",
+    },
+  },
+
+  hooks: {
+    // Wired as a hook rather than as a Nuxt module. A locally authored module -
+    // scanned out of modules/ or named here, it makes no difference - lands in
+    // the server transpile set along with everything else under the project
+    // root, and firebase-admin is then transformed instead of externalised: its
+    // named exports come back undefined and vuefire's ensureAdminApp throws
+    // "getApps is not a function" on every server rendered page. See
+    // build/sharp-binaries.ts for what this does and why.
+    "nitro:init"(nitro) {
+      bundleSharpBinaries(nitro);
     },
   },
 
