@@ -97,6 +97,18 @@
                 hint="Numer w Krajowym Rejestrze Sądowym"
                 persistent-hint
               />
+              <v-text-field
+                v-model="current.regonNumber"
+                label="Numer REGON"
+                hint="9 lub 14 cyfr. Ministerstwa, urzędy i fundusze spoza KRS mają tylko ten numer i NIP"
+                persistent-hint
+              />
+              <v-text-field
+                v-model="current.nipNumber"
+                label="Numer NIP"
+                hint="10 cyfr"
+                persistent-hint
+              />
             </template>
             <v-textarea
               v-model="current.content"

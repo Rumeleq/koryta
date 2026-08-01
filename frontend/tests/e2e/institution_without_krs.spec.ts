@@ -26,6 +26,12 @@ test("filters the table to an institution with no KRS number", async ({
   // ...and given the summary card that is a place's page on this site
   const card = page.locator(".v-card", { hasText: "Firma Testowa" }).first();
   await expect(card).toBeVisible();
+  // Named by the registers it *is* in. KRS has no entry for a ministry, an
+  // urząd or a wojewódzki fundusz, so REGON and NIP are all a reader has to
+  // check who the institution is.
+  await expect(card).toContainText("REGON: 123456785");
+  await expect(card).toContainText("NIP: 5260250274");
+  await expect(card).not.toContainText("KRS:");
   // Nothing is known about who owns it, and the card says exactly that rather
   // than calling it private on the register's behalf.
   await expect(card).toContainText("Właściciel nieustalony");

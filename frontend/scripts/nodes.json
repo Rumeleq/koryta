@@ -357,6 +357,8 @@
   "chain-company": {
     "name": "Firma Testowa",
     "type": "place",
+    "regonNumber": "123456785",
+    "nipNumber": "5260250274",
     "revision_id": "rev-chain-company",
     "nameChunksLower": [
       "a",
