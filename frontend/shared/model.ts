@@ -277,9 +277,7 @@ export type Note = {
 };
 
 export type ExtractionFactType =
-  | "employment"
-  | "party_membership"
-  | "personal_relation";
+  "employment" | "party_membership" | "personal_relation";
 
 export interface ExtractionFact {
   id?: string;
