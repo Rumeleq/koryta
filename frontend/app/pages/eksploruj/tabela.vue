@@ -1,48 +1,12 @@
 <template>
   <ClientOnly>
-    <v-navigation-drawer
+    <ExploreNodeDrawer
       v-model="openDrawer"
-      location="end"
-      temporary
-      :width="$vuetify.display.mdAndUp ? 600 : 280"
-    >
-      <v-card-item>
-        <template #append>
-          <v-btn
-            density="compact"
-            icon="$close"
-            variant="text"
-            @click="openDrawer = false"
-          />
-        </template>
-      </v-card-item>
-
-      <CardExplorePerson
-        :key="focusedPerson?.id"
-        :person="focusedPerson"
-        :region="region"
-        :company="company"
-      />
-
-      <div v-if="focusedPerson" class="pa-4 pt-0">
-        <ExploreProposeChange :key="focusedPerson.id" :person="focusedPerson">
-          <ButtonVoteNumber
-            :id="focusedPerson.id"
-            :key="focusedPerson.id"
-            category="interesting"
-            show-label
-          />
-        </ExploreProposeChange>
-
-        <NoteEditor
-          :key="focusedPerson.id"
-          :node-id="focusedPerson.id"
-          single-column
-        />
-        <v-divider class="my-4" />
-        <CardEmploymentHistory :edges="focusedEdges" />
-      </div>
-    </v-navigation-drawer>
+      :node="focusedPerson"
+      :edges="focusedEdges"
+      :region="region"
+      :company="company"
+    />
     <div class="pa-4">
       <h1 class="text-h4 mb-4">
         Eksploruj powiązania dla
