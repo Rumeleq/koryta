@@ -524,6 +524,7 @@ class Context:
     nlp: NLP
     crawl_queue: CrawlQueue | None = None
     refresh_policy: ProcessPolicy = field(default_factory=ProcessPolicy.with_default)
+    llm: LLM | None = None
 
 
 Output = typing.TypeVar("Output")

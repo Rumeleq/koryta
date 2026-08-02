@@ -31,6 +31,7 @@ from stores.config import PROJECT_ROOT
 from stores.download import CompressedMirror, FileSource
 from stores.duckdb import EntityDumper
 from stores.firestore import FirestoreIO
+from stores.llm import OpenAICompatibleConfig, OpenAICompatibleMultiPortLLM
 from stores.rejestr import Rejestr
 from stores.storage import CRAWLED_BUCKET, BatchClient
 from stores.storage import Client as CloudStorageClient
@@ -39,9 +40,10 @@ from stores.web import WebImpl
 
 
 class Conductor(IO):
-    def __init__(self, dumper: EntityDumper, batch_upload=False):
+    def __init__(self, dumper: EntityDumper, llm=None, batch_upload=False):
         self.firestore = FirestoreIO()
         self.dumper = dumper
+        self.llm = llm
         # Not `batch_upload`, which is already a method on this class.
         self._batch_upload = batch_upload
         self.mirror = CompressedMirror()
@@ -222,6 +224,7 @@ class Conductor(IO):
 def setup_context(
     use_rejestr_io: bool = False,
     use_nlp: bool = False,
+    use_llm: bool = False,
     policy: ProcessPolicy | None = None,
     crawl_queue: CrawlQueue | None = None,
     batch_upload: bool = False,
@@ -229,7 +232,8 @@ def setup_context(
     if policy is None:
         policy = ProcessPolicy.with_default()
     dumper = EntityDumper()
-    conductor = Conductor(dumper, batch_upload=batch_upload)
+    llm = _build_llm() if use_llm else None
+    conductor = Conductor(dumper, llm=llm, batch_upload=batch_upload)
     rejestr_io = None
     if use_rejestr_io:
         print("Initializing RejestrIO as a data source")
@@ -252,12 +256,37 @@ def setup_context(
         crawl_queue=crawl_queue,
         nlp=nlp,  # type: ignore
         refresh_policy=policy,
+        llm=llm,
     )
 
     ctx.con.create_function("parse_hostname", parse_hostname, [VARCHAR], VARCHAR)  # type: ignore
     ctx.con.create_function("uuid7str", uuid7, [], VARCHAR)  # type: ignore
 
     return ctx, dumper
+
+
+def _build_llm() -> OpenAICompatibleMultiPortLLM:
+    """Build the shared LLM client from the article pipelines' CLI flags.
+
+    The config lives with the pipelines (scrapers layer); the concrete client is
+    constructed here because scrapers must not import stores.llm directly.
+    """
+    from scrapers.article.pipelines import pipeline_utils as a  # noqa: PLC0415
+
+    return OpenAICompatibleMultiPortLLM(
+        OpenAICompatibleConfig(
+            model=a.llm_model(),
+            ports=tuple(a.llm_ports() or list(range(6000, 6016))),
+            per_port_concurrency=a.llm_per_port_concurrency(),
+            request_timeout_seconds=a.llm_request_timeout_seconds(),
+            base_url=a.llm_base_url(),
+            api_key=(
+                a.llm_api_key()
+                or os.environ.get("OPENROUTER_APIKEY")
+                or os.environ.get("OPENAI_API_KEY")
+            ),
+        )
+    )
 
 
 def make_reader_conductor() -> Conductor:

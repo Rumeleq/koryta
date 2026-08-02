@@ -109,9 +109,9 @@ class ArticleAnalyzed(Pipeline[ArticleAnalyzedRecord]):
 
             # Prefer the parse-time date; fall back to re-deriving it from the
             # stored ld+json blob (older rows / @graph pages missed it at parse).
-            publication_date = parsed_row.get("publication_date") or date_iso_from_ld_json(
-                parsed_row.get("ld_json")
-            )
+            publication_date = parsed_row.get(
+                "publication_date"
+            ) or date_iso_from_ld_json(parsed_row.get("ld_json"))
 
             # Keep only verified facts and stamp each with the article date.
             # The verifier's bookkeeping fields stay in article_facts_verified;

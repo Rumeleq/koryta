@@ -1,6 +1,5 @@
 import argparse
 import io
-import os
 import tarfile
 from collections import defaultdict
 from functools import cache
@@ -11,7 +10,6 @@ import pandas as pd
 from entities.util import NormalizedParse
 from scrapers.stores import Context, DoneUrl
 from scrapers.stores.file import GCSBlob
-from stores.llm import OpenAICompatibleConfig, OpenAICompatibleMultiPortLLM
 
 _GCS_PREFIX = "gs://koryta-pl-crawled/"
 
@@ -240,29 +238,31 @@ def _parse_ports(raw_ports: str) -> list[int]:
     return ports
 
 
-@cache
-def get_llm() -> OpenAICompatibleMultiPortLLM:
-    """The shared LLM client, configured from the CLI flags. Built on first use."""
-    args = _args()
-    return OpenAICompatibleMultiPortLLM(
-        OpenAICompatibleConfig(
-            model=args.llm_model,
-            ports=tuple(_parse_ports(args.llm_ports) or list(range(6000, 6016))),
-            per_port_concurrency=args.llm_per_port_concurrency,
-            request_timeout_seconds=args.llm_request_timeout_seconds,
-            base_url=args.llm_base_url,
-            api_key=(
-                args.llm_api_key
-                or os.environ.get("OPENROUTER_APIKEY")
-                or os.environ.get("OPENAI_API_KEY")
-            ),
-        )
-    )
-
-
+# The concrete LLM client is built by conductor.setup_context (the stores layer)
+# from these plain-value accessors; scrapers must not import stores.llm itself.
 def llm_model() -> str:
     model = _args().llm_model
     return model if isinstance(model, str) and model.strip() else "Qwen/Qwen3-14B"
+
+
+def llm_ports() -> list[int]:
+    return _parse_ports(_args().llm_ports)
+
+
+def llm_per_port_concurrency() -> int:
+    return _args().llm_per_port_concurrency
+
+
+def llm_request_timeout_seconds() -> int:
+    return _args().llm_request_timeout_seconds
+
+
+def llm_base_url() -> str | None:
+    return _args().llm_base_url
+
+
+def llm_api_key() -> str | None:
+    return _args().llm_api_key
 
 
 def article_workers() -> int:
