@@ -24,7 +24,7 @@ from tqdm import tqdm
 
 from entities.article import ArticleFactsVerified as ArticleFactsVerifiedRecord
 from scrapers.article.pipelines.facts_pipeline import ArticleExtractedFacts
-from scrapers.article.pipelines.pipeline_utils import get_llm, llm_model
+from scrapers.article.pipelines.pipeline_utils import llm_model
 from scrapers.stores import VERSIONED_DIR, Context, LLMRequest, Pipeline
 
 VERIFY_VERSION = 1
@@ -366,8 +366,8 @@ async def _verify_rows(
     *,
     model: str,
 ) -> None:
-    assert get_llm() is not None
-    await get_llm().check_health()
+    assert ctx.llm is not None
+    await ctx.llm.check_health()
 
     # Reuse cache and collect fact-level tasks for the rest.
     to_judge: list[dict[str, Any]] = []
@@ -384,7 +384,12 @@ async def _verify_rows(
             _emit_row(ctx, row, [], model)  # nothing to verify
             continue
         to_judge.append(
-            {"row": row, "facts": facts, "results": [None] * len(facts), "pending": len(facts)}
+            {
+                "row": row,
+                "facts": facts,
+                "results": [None] * len(facts),
+                "pending": len(facts),
+            }
         )
     if reused:
         print(f"Reused cached verifications: {reused}")
@@ -402,7 +407,7 @@ async def _verify_rows(
     ]
 
     with tqdm(total=total_facts, desc="Verifying facts", unit="fact") as bar:
-        async with get_llm().response_pool() as pool:
+        async with ctx.llm.response_pool() as pool:
             for state, idx in tasks:
                 while pool.is_full():
                     await _drain_one(ctx, pool, inflight, model, bar)
@@ -430,7 +435,7 @@ async def _drain_one(ctx, pool, inflight, model, bar) -> None:
 
 
 def _print_llm_usage(ctx: Context) -> None:
-    llm = get_llm()
+    llm = ctx.llm
     if llm is None:
         return
     print(

@@ -15,7 +15,6 @@ from scrapers.article.pipelines.common import hash_bytes, is_html
 from scrapers.article.pipelines.done_urls_pipeline import ArticleDoneUrls
 from scrapers.article.pipelines.pipeline_utils import (
     article_workers,
-    get_llm,
     iter_done_urls,
     llm_model,
     read_html_from_storage,
@@ -187,8 +186,8 @@ async def _generate_selectors(
     *,
     model: str,
 ) -> list[dict[str, Any]]:
-    assert get_llm() is not None
-    await get_llm().check_health()
+    assert ctx.llm is not None
+    await ctx.llm.check_health()
     rows: list[dict[str, Any]] = []
     domain_concurrency = max(
         1,
@@ -286,7 +285,7 @@ async def _generate_selector_prompt_rows(
     *,
     model: str,
 ) -> list[dict[str, Any]]:
-    assert get_llm() is not None
+    assert ctx.llm is not None
     pending: dict[int, str] = {}
     responses_by_domain: dict[str, list[str]] = {
         str(row["domain"]): [] for row in prompt_rows
@@ -302,7 +301,7 @@ async def _generate_selector_prompt_rows(
         mininterval=1.0,
         smoothing=0.05,
     ) as bar:
-        async with get_llm().response_pool() as pool:
+        async with ctx.llm.response_pool() as pool:
             for row in prompt_rows:
                 domain = str(row["domain"])
                 for prompt in row.get("prompts") or []:

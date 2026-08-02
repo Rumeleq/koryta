@@ -15,6 +15,17 @@ from scrapers.stores import (
 )
 from scrapers.wiki import dump as wiki_dump_args
 
+# Pipelines that need the LLM client on the Context.
+ARTICLE_PIPELINES = {
+    "ArticleAnalyzed",
+    "ArticleDoneUrls",
+    "ArticleDomainSelectors",
+    "ArticleExtractedFacts",
+    "ArticleFactsVerified",
+    "ArticleKoryciarskiScores",
+    "ArticleParsed",
+}
+
 
 class Printer:
     def __init__(self, args):
@@ -104,7 +115,6 @@ def main():
                 refresh.append(r)
 
     policy = ProcessPolicy.with_default(refresh, exclude_refresh=exclude_refresh)
-    ctx, dumper = setup_context(False, policy=policy)
 
     pipeline_names = set(pt.__name__ for pt in PIPELINES)
     exclude = set(args.exclude)
@@ -124,6 +134,10 @@ def main():
         selected = set(args.pipeline) - exclude
     else:
         raise ValueError("No pipeline specified, use koryta PipelineName or --all")
+
+    ctx, dumper = setup_context(
+        False, use_llm=bool(selected & ARTICLE_PIPELINES), policy=policy
+    )
 
     for p_name in sorted(selected):
         print(f"Will run pipeline: {p_name}")

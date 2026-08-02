@@ -25,7 +25,6 @@ from scrapers.article.pipelines.pipeline_utils import (
     article_facts_max_tokens,
     article_facts_min_koryciarski_score,
     article_facts_text_limit,
-    get_llm,
     llm_model,
 )
 from scrapers.stores import VERSIONED_DIR, Context, LLMRequest, Pipeline
@@ -373,8 +372,8 @@ async def _extract_records(
     model: str,
     min_score: int | None,
 ) -> None:
-    assert get_llm() is not None
-    await get_llm().check_health()
+    assert ctx.llm is not None
+    await ctx.llm.check_health()
     pending: dict[int, dict[str, Any]] = {}
     uncached = _filter_uncached_fact_records(
         _emit_cached_facts(ctx, records, existing, model),
@@ -389,7 +388,7 @@ async def _extract_records(
         mininterval=1.0,
         smoothing=0.05,
     ) as bar:
-        async with get_llm().response_pool() as pool:
+        async with ctx.llm.response_pool() as pool:
             for record in uncached:
                 while pool.is_full():
                     request_id, response = await pool.get_response()
@@ -956,7 +955,7 @@ def _normalize_markdown_response(
 
 
 def _print_llm_usage(ctx: Context) -> None:
-    llm = get_llm()
+    llm = ctx.llm
     if llm is None:
         return
     print(

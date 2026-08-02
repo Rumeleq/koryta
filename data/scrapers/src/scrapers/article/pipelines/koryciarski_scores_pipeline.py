@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 from entities.article import KoryciarskiScore
 from scrapers.article.pipelines.parsed_pipeline import ArticleParsed
-from scrapers.article.pipelines.pipeline_utils import get_llm, llm_model
+from scrapers.article.pipelines.pipeline_utils import llm_model
 from scrapers.stores import VERSIONED_DIR, Context, LLMRequest, Pipeline
 
 PROMPT_VERSION = 1
@@ -194,8 +194,8 @@ async def _score_records(
     *,
     model: str,
 ) -> list[dict[str, Any]]:
-    assert get_llm() is not None
-    await get_llm().check_health()
+    assert ctx.llm is not None
+    await ctx.llm.check_health()
     pending: dict[int, dict[str, Any]] = {}
     uncached = _emit_cached_scores(ctx, records, existing, model)
 
@@ -207,7 +207,7 @@ async def _score_records(
         mininterval=1.0,
         smoothing=0.05,
     ) as bar:
-        async with get_llm().response_pool() as pool:
+        async with ctx.llm.response_pool() as pool:
             for record in uncached:
                 while pool.is_full():
                     request_id, response = await pool.get_response()
@@ -438,7 +438,7 @@ def _normalize_scoring_result(parsed: dict[str, Any]) -> tuple[bool, int | None,
 
 
 def _print_llm_usage(ctx: Context) -> None:
-    llm = get_llm()
+    llm = ctx.llm
     if llm is None:
         return
     requests = int(getattr(llm, "request_count", 0) or 0)
