@@ -20,6 +20,22 @@ const pages: {
   // match pages/[seoType]/[slug].vue and render an entity instead.
   { name: "not-found", path: "/nie-ma-takiej-strony" },
   {
+    name: "statystyki",
+    path: "/eksploruj/statystyki",
+    // Two fetches feed this page and only one of them is server rendered. The
+    // state of the base arrives with the document; the activity section is
+    // fetched from the browser, because it carries names for admins and so has
+    // to go out with the caller's token. Its tiles replace a skeleton when it
+    // lands, so waiting for a tile label is what stops the capture racing it.
+    //
+    // Against the seeded world every chart on the page draws its empty state:
+    // the fixtures seed no votes, notes or comments, and the newest revision in
+    // them is from 2023, so the rolling activity window is always empty. That
+    // is what makes the shot stable day to day - and it does mean this baseline
+    // covers the layout, the copy and the empty states rather than the charts.
+    settled: ["Ocena ekstrakcji", "Opublikowane:"],
+  },
+  {
     // A place's page is the table filtered to it. `chain-company` is the seeded
     // institution with no KRS number, so this is where the identifiers a
     // ministry, an urząd or a wojewódzki fundusz does have - REGON and NIP -
