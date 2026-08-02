@@ -201,6 +201,29 @@
         </v-card>
       </v-col>
     </v-row>
+
+    <!-- Who has been working -->
+    <div class="d-flex align-center mt-8 mb-3">
+      <h2 class="text-h6">Aktywni w tym tygodniu</h2>
+      <v-spacer />
+      <v-btn
+        variant="text"
+        color="primary"
+        size="small"
+        to="/eksploruj/statystyki"
+        :append-icon="mdiChevronRight"
+      >
+        Pełne statystyki
+      </v-btn>
+    </div>
+
+    <StatsContributorTable
+      :contributors="weekly?.contributors ?? []"
+      :identified="weekly?.identified ?? false"
+      :contributor-count="weekly?.contributorCount ?? 0"
+      :window-days="WEEKLY_DAYS"
+      :loading="pending"
+    />
   </v-container>
 </template>
 
@@ -210,12 +233,14 @@ import {
   mdiHistory,
   mdiNoteEditOutline,
   mdiTextBoxSearchOutline,
+  mdiChartLine,
   mdiChevronRight,
   mdiCheckCircleOutline,
   mdiRefresh,
 } from "@mdi/js";
 import { authRequest } from "~/composables/auth";
 import type { AdminSummary } from "~~/server/api/admin/summary.get";
+import type { ActivityStats } from "~~/server/api/stats/activity.get";
 
 definePageMeta({
   middleware: "admin",
@@ -244,6 +269,12 @@ const subpages = [
     icon: mdiTextBoxSearchOutline,
     desc: "Ekstrakcje faktów ze źródeł.",
   },
+  {
+    title: "Statystyki",
+    to: "/eksploruj/statystyki",
+    icon: mdiChartLine,
+    desc: "Stan bazy i kto ją ostatnio zmieniał.",
+  },
 ];
 
 const noteTypeLabels: Record<string, string> = {
@@ -254,23 +285,41 @@ const noteTypeLabels: Record<string, string> = {
 };
 const noteTypeLabel = (type: string) => noteTypeLabels[type] ?? type;
 
+/** The window the panel calls "this week". The stats page lets an admin widen
+ * it; here it is fixed, because the question is "who is around right now". */
+const WEEKLY_DAYS = 7;
+
 const summary = ref<AdminSummary | null>(null);
+const weekly = ref<ActivityStats | null>(null);
 const pending = ref(true);
 const error = ref<string | null>(null);
 
 const loadSummary = async () => {
   pending.value = true;
   error.value = null;
-  try {
-    summary.value = await authRequest<AdminSummary>("/api/admin/summary", {
+  // Independent queues; one failing should not blank the other.
+  const [summaryResult, weeklyResult] = await Promise.allSettled([
+    authRequest<AdminSummary>("/api/admin/summary", { method: "GET" }),
+    authRequest<ActivityStats>("/api/stats/activity", {
       method: "GET",
-    });
-  } catch (err) {
-    console.error("Failed to load admin summary", err);
+      query: { days: WEEKLY_DAYS },
+    }),
+  ]);
+
+  if (summaryResult.status === "fulfilled") {
+    summary.value = summaryResult.value;
+  } else {
+    console.error("Failed to load admin summary", summaryResult.reason);
     error.value = "Nie udało się wczytać podsumowania.";
-  } finally {
-    pending.value = false;
   }
+
+  if (weeklyResult.status === "fulfilled") {
+    weekly.value = weeklyResult.value;
+  } else {
+    console.error("Failed to load weekly activity", weeklyResult.reason);
+  }
+
+  pending.value = false;
 };
 
 onMounted(loadSummary);
