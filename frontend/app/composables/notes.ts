@@ -92,6 +92,14 @@ export function useNotes(nodeID: MaybeRef<string>) {
       // admin queue forever. Reads normalise it back to an ISO string.
       updatedAt: serverTimestamp() as unknown as string,
     };
+    // Only when there is no note yet, so coming back to one keeps the date it
+    // was written. Should the note collection not have loaded when this runs,
+    // the worst case is that an existing `createdAt` is moved forward - which
+    // readers do not see, since `updatedAt` is written here too and takes
+    // precedence over it.
+    if (!userNote.value) {
+      dataTyped.createdAt = serverTimestamp() as unknown as string;
+    }
     await setDoc(doc(db, "notes", docId), dataTyped, {
       merge: true,
     });

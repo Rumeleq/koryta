@@ -323,11 +323,17 @@ export type Note = {
   userUid: string;
   nodeId: string;
 
-  /** When the author last saved the note, as an ISO string once it has been
-   * read back. Admin triage deliberately leaves it alone, so a review queue
-   * stays ordered by when people wrote rather than by when it was reviewed.
-   * Absent on notes written before the field existed - readers fall back to
-   * the document's own write time. */
+  /** When the note was first written, as an ISO string once it has been read
+   * back. Written once and never rewritten, so it is the date a reader can
+   * always be shown - `updatedAt` only exists once the author has come back to
+   * the note. Backfilled onto older notes from the document's creation time by
+   * scripts/migrate/backfill-note-timestamps.ts. */
+  createdAt?: string;
+
+  /** When the author last saved the note. Admin triage deliberately leaves it
+   * alone, so a review queue stays ordered by when people wrote rather than by
+   * when it was reviewed. Absent until the author edits a note they already
+   * wrote. */
   updatedAt?: string;
 
   // Users can easily add sources they encounter and annotate what they found interesting in them.
