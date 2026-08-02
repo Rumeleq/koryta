@@ -21,6 +21,11 @@
         </template>
       </ClientOnly>
 
+      <div class="text-caption text-medium-emphasis mt-2">
+        Ocena sumuje głosy użytkowników i wstępną ocenę pipeline'u, dlatego
+        sięga powyżej +5 i obejmuje osoby, na które nikt jeszcze nie zagłosował.
+      </div>
+
       <div class="d-flex justify-end mt-2">
         <v-btn
           variant="text"
@@ -77,12 +82,20 @@ import {
  *
  * The old second chart broke the "Znaleziony problem" votes down the same way
  * "Dobre znalezisko" is; nobody was acting on it. This asks the question the
- * ratings are collected for instead: of the people the community rated worth
- * looking at, how many still have no public page — and how good are they.
+ * ratings are collected for instead: of the people rated worth looking at, how
+ * many still have no public page — and how good are they.
  *
- * The unit is a person, not a vote, so the axis is the aggregate score summed
- * over everyone who voted. That runs past +5, which is why the top bucket is
- * open-ended rather than a step of the -5..5 scale a single voter uses.
+ * The unit is a person, not a vote, so the axis is `stats.votes.interesting`:
+ * the sum of every verdict cast on them. Two things follow, and the caption
+ * says both, because neither is guessable from the chart. It runs past +5, so
+ * the top bucket is open-ended rather than a step of the -5..5 scale a single
+ * voter uses. And the pipeline's own rating is part of that sum — most people
+ * on this chart carry one and no human vote at all (`stats.votes.humanVoted`
+ * is what says otherwise), so this is the shortlist to review and publish, not
+ * a tally of what users have already endorsed.
+ *
+ * That is deliberately the same number `minVotes` filters on and the explore
+ * table sorts by, so the link below the chart lands on exactly these people.
  */
 const props = defineProps<{
   buckets: PublicationBucket[] | undefined;
@@ -103,8 +116,8 @@ const total = computed(
 
 const subtitle = computed(() =>
   total.value === 0
-    ? "Osoby z oceną na plus"
-    : `${formatCount(pending.value)} z ${formatCount(total.value)} ocenionych na plus wciąż czeka na publikację`,
+    ? "Osoby z dodatnią oceną"
+    : `${formatCount(pending.value)} z ${formatCount(total.value)} osób z dodatnią oceną wciąż czeka na publikację`,
 );
 
 /** The queue the chart is about: unpublished, best rated first. */

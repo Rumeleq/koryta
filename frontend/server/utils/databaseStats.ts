@@ -77,14 +77,20 @@ export type PublicationBucket = {
 };
 
 /**
- * People the community rated positively, split by whether their page is public
- * yet. This is the "who should we publish next" view: a tall unpublished
- * segment at a high score is a backlog of things worth showing.
+ * People rated positively, split by whether their page is public yet. This is
+ * the "who should we publish next" view: a tall unpublished segment at a high
+ * score is a backlog of things worth showing.
  *
  * The unit is a person, not a vote. Two people rating the same person +5 is one
  * candidate, not two, and it is the person who does or does not have a public
  * page — so counting vote documents here would answer a question nobody asked.
  * That also means the buckets are aggregate scores, which run past +5.
+ *
+ * The score includes the pipeline's own rating, which is what
+ * `stats.votes.interesting` sums and what `minVotes` filters on elsewhere. Most
+ * people here therefore carry no human vote at all — `humanVoted` is the field
+ * that says otherwise. Read it as the review-and-publish shortlist rather than
+ * as what users have endorsed.
  *
  * People at zero or below are left out: they are not candidates.
  */
