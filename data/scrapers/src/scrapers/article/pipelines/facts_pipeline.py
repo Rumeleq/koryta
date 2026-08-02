@@ -21,7 +21,13 @@ from entities.facts import (
 from scrapers.article.pipelines.koryciarski_scores_pipeline import (
     ArticleKoryciarskiScores,
 )
-from scrapers.article.pipelines.pipeline_utils import llm_model
+from scrapers.article.pipelines.pipeline_utils import (
+    article_facts_max_tokens,
+    article_facts_min_koryciarski_score,
+    article_facts_text_limit,
+    get_llm,
+    llm_model,
+)
 from scrapers.stores import VERSIONED_DIR, Context, LLMRequest, Pipeline
 
 PROMPT_VERSION = 13
@@ -220,8 +226,6 @@ class ArticleExtractedFacts(Pipeline[ArticleFacts]):
 
     def process(self, ctx: Context):
         _reset_run_think_stats()
-        if ctx.llm is None:
-            raise ValueError("ArticleExtractedFacts requires Context.llm")
         if not _PARSED_FILE.exists():
             raise FileNotFoundError(_PARSED_FILE)
         if not _SCORES_FILE.exists():
@@ -232,9 +236,9 @@ class ArticleExtractedFacts(Pipeline[ArticleFacts]):
             _TEMP_OUTPUT_FILE,
         )
         _prepare_temp_output()
-        model = llm_model(ctx)
+        model = llm_model()
         records = _extractable_records(_PARSED_FILE, _SCORES_FILE)
-        min_score = getattr(ctx, "article_facts_min_koryciarski_score", None)
+        min_score = article_facts_min_koryciarski_score()
         asyncio.run(
             _extract_records(
                 ctx,
@@ -369,8 +373,8 @@ async def _extract_records(
     model: str,
     min_score: int | None,
 ) -> None:
-    assert ctx.llm is not None
-    await ctx.llm.check_health()
+    assert get_llm() is not None
+    await get_llm().check_health()
     pending: dict[int, dict[str, Any]] = {}
     uncached = _filter_uncached_fact_records(
         _emit_cached_facts(ctx, records, existing, model),
@@ -385,7 +389,7 @@ async def _extract_records(
         mininterval=1.0,
         smoothing=0.05,
     ) as bar:
-        async with ctx.llm.response_pool() as pool:
+        async with get_llm().response_pool() as pool:
             for record in uncached:
                 while pool.is_full():
                     request_id, response = await pool.get_response()
@@ -472,10 +476,10 @@ def _emit_fact_response(
 
 def _fact_request(record: dict[str, Any], model: str, ctx=None) -> LLMRequest:
     text_limit = (
-        getattr(ctx, "article_facts_text_limit", None) or TEXT_LIMIT
+        article_facts_text_limit() or TEXT_LIMIT
     )
     max_tokens = (
-        getattr(ctx, "article_facts_max_tokens", None) or MAX_TOKENS
+        article_facts_max_tokens() or MAX_TOKENS
     )
     return LLMRequest(
         prompt=_PROMPT.format(
@@ -952,7 +956,7 @@ def _normalize_markdown_response(
 
 
 def _print_llm_usage(ctx: Context) -> None:
-    llm = ctx.llm
+    llm = get_llm()
     if llm is None:
         return
     print(

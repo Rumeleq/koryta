@@ -524,12 +524,6 @@ class Context:
     nlp: NLP
     crawl_queue: CrawlQueue | None = None
     refresh_policy: ProcessPolicy = field(default_factory=ProcessPolicy.with_default)
-    llm: LLM | None = None
-    article_workers: int = 4
-    article_facts_min_koryciarski_score: int | None = None
-    article_facts_max_tokens: int | None = None
-    article_facts_text_limit: int | None = None
-    article_tag: str | None = None
 
 
 Output = typing.TypeVar("Output")

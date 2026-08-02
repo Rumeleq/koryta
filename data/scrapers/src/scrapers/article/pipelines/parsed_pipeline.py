@@ -30,6 +30,7 @@ from scrapers.article.pipelines.domain_selectors_pipeline import (
 )
 from scrapers.article.pipelines.done_urls_pipeline import ArticleDoneUrls
 from scrapers.article.pipelines.pipeline_utils import (
+    article_workers,
     iter_done_urls,
 )
 from scrapers.stores import DOWNLOADED_DIR, VERSIONED_DIR, Context, DoneUrl, Pipeline
@@ -229,7 +230,7 @@ def _parse_domain_batches(
     if not tasks_by_domain:
         return
 
-    workers = max(1, int(getattr(ctx, "article_workers", 8) or 8))
+    workers = max(1, int(article_workers() or 8))
     total_work = sum(len(tasks) for tasks in tasks_by_domain.values())
 
     by_storage: dict[str, list[ParseTask]] = defaultdict(list)

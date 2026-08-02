@@ -24,7 +24,7 @@ from tqdm import tqdm
 
 from entities.article import ArticleFactsVerified as ArticleFactsVerifiedRecord
 from scrapers.article.pipelines.facts_pipeline import ArticleExtractedFacts
-from scrapers.article.pipelines.pipeline_utils import llm_model
+from scrapers.article.pipelines.pipeline_utils import get_llm, llm_model
 from scrapers.stores import VERSIONED_DIR, Context, LLMRequest, Pipeline
 
 VERIFY_VERSION = 1
@@ -202,12 +202,10 @@ class ArticleFactsVerified(Pipeline[ArticleFactsVerifiedRecord]):
         return df
 
     def process(self, ctx: Context) -> pd.DataFrame:
-        if ctx.llm is None:
-            raise ValueError("ArticleFactsVerified requires Context.llm")
         if not _INPUT_FILE.exists():
             raise FileNotFoundError(_INPUT_FILE)
 
-        model = llm_model(ctx)
+        model = llm_model()
         existing = _existing_verified_cache(_FINAL_OUTPUT_FILE, _TEMP_OUTPUT_FILE)
         _prepare_temp_output()
         rows = _load_input_rows(_INPUT_FILE)
@@ -368,8 +366,8 @@ async def _verify_rows(
     *,
     model: str,
 ) -> None:
-    assert ctx.llm is not None
-    await ctx.llm.check_health()
+    assert get_llm() is not None
+    await get_llm().check_health()
 
     # Reuse cache and collect fact-level tasks for the rest.
     to_judge: list[dict[str, Any]] = []
@@ -404,7 +402,7 @@ async def _verify_rows(
     ]
 
     with tqdm(total=total_facts, desc="Verifying facts", unit="fact") as bar:
-        async with ctx.llm.response_pool() as pool:
+        async with get_llm().response_pool() as pool:
             for state, idx in tasks:
                 while pool.is_full():
                     await _drain_one(ctx, pool, inflight, model, bar)
@@ -432,7 +430,7 @@ async def _drain_one(ctx, pool, inflight, model, bar) -> None:
 
 
 def _print_llm_usage(ctx: Context) -> None:
-    llm = ctx.llm
+    llm = get_llm()
     if llm is None:
         return
     print(

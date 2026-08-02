@@ -1,6 +1,9 @@
+import argparse
 import io
+import os
 import tarfile
 from collections import defaultdict
+from functools import cache
 from typing import Generator
 
 import pandas as pd
@@ -8,6 +11,7 @@ import pandas as pd
 from entities.util import NormalizedParse
 from scrapers.stores import Context, DoneUrl
 from scrapers.stores.file import GCSBlob
+from stores.llm import OpenAICompatibleConfig, OpenAICompatibleMultiPortLLM
 
 _GCS_PREFIX = "gs://koryta-pl-crawled/"
 
@@ -131,9 +135,151 @@ def iter_done_urls(done_df: pd.DataFrame) -> list[DoneUrl]:
     return done_urls
 
 
-def llm_model(ctx: Context) -> str:
-    llm_config = getattr(ctx.llm, "config", None)
-    model = getattr(llm_config, "model", None)
-    if isinstance(model, str) and model.strip():
-        return model
-    return "Qwen/Qwen3-14B"
+# ---------------------------------------------------------------------------
+# Article/LLM pipeline configuration.
+#
+# These flags belong to the article pipelines, not to the generic Context, so
+# they are defined and read here (mirroring scrapers.wiki.dump). koryta.py
+# registers them via add_arguments so the positional pipeline names are not
+# mistaken for flag values; the pipelines then read them lazily via the cached
+# accessors below — nothing pipeline-specific has to live on conductor/Context.
+# ---------------------------------------------------------------------------
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the article/LLM pipeline flags on a parser."""
+    parser.add_argument(
+        "--llm-model",
+        default="Qwen/Qwen3-14B",
+        help="Model name for the OpenAI-compatible LLM servers.",
+    )
+    parser.add_argument(
+        "--llm-ports",
+        default="6000-6015",
+        help="LLM ports as an inclusive range or comma list, e.g. 6000-6015.",
+    )
+    parser.add_argument(
+        "--llm-per-port-concurrency",
+        type=int,
+        default=4,
+        help="Concurrent requests allowed per LLM port.",
+    )
+    parser.add_argument(
+        "--llm-base-url",
+        default=None,
+        help="OpenAI-compatible base URL (e.g. https://openrouter.ai/api/v1). "
+        "When set, requests go here instead of local ports. API key is read "
+        "from --llm-api-key or the OPENROUTER_APIKEY / OPENAI_API_KEY env var.",
+    )
+    parser.add_argument(
+        "--llm-api-key",
+        default=None,
+        help="Bearer token for --llm-base-url (falls back to env).",
+    )
+    parser.add_argument(
+        "--llm-request-timeout-seconds",
+        type=int,
+        default=1800,
+        help="HTTP timeout for each LLM request.",
+    )
+    parser.add_argument(
+        "--article-workers",
+        type=int,
+        default=4,
+        help="Parallel workers for article parsing pipelines.",
+    )
+    parser.add_argument(
+        "--article-facts-min-koryciarski-score",
+        type=int,
+        default=None,
+        help="Only run ArticleExtractedFacts LLM extraction for uncached "
+        "articles with koryciarski_llm_score >= N.",
+    )
+    parser.add_argument(
+        "--article-facts-max-tokens",
+        type=int,
+        default=None,
+        help="Max completion tokens for ArticleExtractedFacts LLM requests.",
+    )
+    parser.add_argument(
+        "--article-facts-text-limit",
+        type=int,
+        default=None,
+        help="Max article text characters fed to the facts extraction prompt.",
+    )
+    parser.add_argument(
+        "--tag",
+        type=str,
+        default=None,
+        help="Tag for this pipeline run (e.g. v1_qwen3-32b), stored in outputs.",
+    )
+
+
+@cache
+def _args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    add_arguments(parser)
+    return parser.parse_known_args()[0]
+
+
+def _parse_ports(raw_ports: str) -> list[int]:
+    raw_ports = raw_ports.strip()
+    if not raw_ports:
+        return []
+    ports: list[int] = []
+    for part in raw_ports.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            start_text, end_text = part.split("-", 1)
+            start, end = int(start_text), int(end_text)
+            if end < start:
+                raise ValueError("--llm-ports range end must be >= start")
+            ports.extend(range(start, end + 1))
+        else:
+            ports.append(int(part))
+    return ports
+
+
+@cache
+def get_llm() -> OpenAICompatibleMultiPortLLM:
+    """The shared LLM client, configured from the CLI flags. Built on first use."""
+    args = _args()
+    return OpenAICompatibleMultiPortLLM(
+        OpenAICompatibleConfig(
+            model=args.llm_model,
+            ports=tuple(_parse_ports(args.llm_ports) or list(range(6000, 6016))),
+            per_port_concurrency=args.llm_per_port_concurrency,
+            request_timeout_seconds=args.llm_request_timeout_seconds,
+            base_url=args.llm_base_url,
+            api_key=(
+                args.llm_api_key
+                or os.environ.get("OPENROUTER_APIKEY")
+                or os.environ.get("OPENAI_API_KEY")
+            ),
+        )
+    )
+
+
+def llm_model() -> str:
+    model = _args().llm_model
+    return model if isinstance(model, str) and model.strip() else "Qwen/Qwen3-14B"
+
+
+def article_workers() -> int:
+    return _args().article_workers
+
+
+def article_tag() -> str | None:
+    return _args().tag
+
+
+def article_facts_min_koryciarski_score() -> int | None:
+    return _args().article_facts_min_koryciarski_score
+
+
+def article_facts_max_tokens() -> int | None:
+    return _args().article_facts_max_tokens
+
+
+def article_facts_text_limit() -> int | None:
+    return _args().article_facts_text_limit
