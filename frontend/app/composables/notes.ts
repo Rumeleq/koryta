@@ -10,9 +10,13 @@ import {
 } from "firebase/firestore";
 import { useCollection, useFirebaseApp } from "vuefire";
 import {
+  mdiAlertCircleOutline,
+  mdiDotsHorizontalCircleOutline,
+  mdiLightbulbOnOutline,
   mdiLinkVariant,
   mdiPencilOutline,
   mdiHelpCircleOutline,
+  mdiVectorLink,
 } from "@mdi/js";
 import { useAuthState } from "./auth";
 import type { Note, NoteEntryKind, NoteSource } from "~~/shared/model";
@@ -55,6 +59,48 @@ export const noteKindConfig: Record<
 /** Entries written before kinds existed are all sources. */
 export function noteKindOf(source: Pick<NoteSource, "kind">): NoteEntryKind {
   return source.kind ?? "source";
+}
+
+/** What an admin decided the entry is about, once they have read it - the kind
+ * above is what its author said it was. Stored as a plain string, so a value
+ * that predates this list still reads back; the order here is the order the
+ * buttons appear in on /admin/notatki/kategoryzacja.
+ */
+export const noteAdminTypeConfig: Record<
+  string,
+  { title: string; hint: string; icon: string; color: string }
+> = {
+  missing_data: {
+    title: "Brakujące dane / Błąd",
+    hint: "Coś jest nie tak albo czegoś brakuje w danych.",
+    icon: mdiAlertCircleOutline,
+    color: "error",
+  },
+  new_connection: {
+    title: "Nowe powiązanie",
+    hint: "Wskazuje osobę, spółkę lub relację, której jeszcze nie ma.",
+    icon: mdiVectorLink,
+    color: "primary",
+  },
+  context: {
+    title: "Ciekawostka / Kontekst",
+    hint: "Tło sprawy - nie zmienia danych, ale warto je mieć.",
+    icon: mdiLightbulbOnOutline,
+    color: "info",
+  },
+  other: {
+    title: "Inne",
+    hint: "Nie pasuje do żadnej z powyższych.",
+    icon: mdiDotsHorizontalCircleOutline,
+    color: "grey",
+  },
+};
+
+/** The stored value read back for display. An empty type is "Brak"; one this
+ * build does not know is shown as itself rather than swallowed. */
+export function noteAdminTypeLabel(type: string | null | undefined): string {
+  if (!type) return "Brak";
+  return noteAdminTypeConfig[type]?.title ?? type;
 }
 
 export function useNotes(nodeID: MaybeRef<string>) {
