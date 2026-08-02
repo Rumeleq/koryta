@@ -2,6 +2,7 @@ import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { computeVoteStats } from "../../shared/stats";
 import type { VoteDocument } from "../../shared/model";
+import { firestoreDatabaseFromEnv } from "../../shared/firebase-env";
 
 /**
  * One-time migration: give every extraction a `stats.votes` aggregate.
@@ -37,7 +38,7 @@ if (!isProd) {
 const app = initializeApp({ projectId: "koryta-pl" });
 
 async function backfill() {
-  const db = getFirestore(app, "koryta-pl");
+  const db = getFirestore(app, firestoreDatabaseFromEnv());
   console.log(
     `Connecting to ${isProd ? "PRODUCTION" : "local emulator"} Firestore` +
       (commit ? "" : " (dry run — pass --commit to apply)"),

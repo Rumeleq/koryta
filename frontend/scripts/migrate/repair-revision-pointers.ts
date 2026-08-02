@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { INTERNAL_FIELDS } from "../../server/utils/revisions";
+import { firestoreDatabaseFromEnv } from "../../shared/firebase-env";
 
 /**
  * One-time migration: give documents whose `revision_id` points nowhere a real
@@ -116,7 +117,7 @@ async function repair(
 }
 
 async function migrate() {
-  const db = getFirestore(app, "koryta-pl");
+  const db = getFirestore(app, firestoreDatabaseFromEnv());
   console.log(
     `Connecting to ${isProd ? "PRODUCTION" : "local emulator"} Firestore` +
       (commit ? "" : " (dry run — pass --commit to apply)"),

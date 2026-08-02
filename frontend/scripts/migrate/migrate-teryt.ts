@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { firestoreDatabaseFromEnv } from "../../shared/firebase-env";
 
 // Setup for emulator - similar to seed-emulator.ts
 const isProd = process.argv.includes("--prod");
@@ -15,7 +16,7 @@ const app = initializeApp({
 });
 
 async function migrate() {
-  const db = getFirestore(app, "koryta-pl");
+  const db = getFirestore(app, firestoreDatabaseFromEnv());
   console.log(
     `Connecting to ${isProd ? "Production" : "Local Emulator"} Firestore...`,
   );

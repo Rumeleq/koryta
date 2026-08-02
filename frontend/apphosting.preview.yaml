@@ -1,0 +1,50 @@
+# Overlay for the App Hosting backend whose environment name is `preview` -
+# the one any feature branch can be rolled out to, to be opened on a phone.
+# Merged over apphosting.yaml; production's backend never reads this file.
+#
+# These values must match FIREBASE_TARGETS.preview in shared/firebase-env.ts.
+# They are declared for BUILD as well as RUNTIME so the build bakes the preview
+# ids in and the runtime override is a second line of defence rather than the
+# only one. server/plugins/firebase.server.ts refuses to start if any of them
+# still names a production database.
+
+runConfig:
+  # A preview gets one visitor at a time, and a cold start is cheaper than an
+  # instance idling between the days nobody looks at it.
+  minInstances: 0
+  maxInstances: 2
+  memoryMiB: 1024
+
+env:
+  - variable: KORYTA_ENV
+    value: preview
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NUXT_PUBLIC_KORYTA_ENV
+    value: preview
+    availability:
+      - RUNTIME
+  - variable: NUXT_PUBLIC_FIRESTORE_DATABASE
+    value: koryta-pl-preview
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NUXT_PUBLIC_USERS_DATABASE
+    value: koryta-pl-preview
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NUXT_PUBLIC_DATABASE_URL
+    value: https://koryta-pl-preview.firebaseio.com
+    availability:
+      - BUILD
+      - RUNTIME
+  # A second public copy of the site is a duplicate of koryta.pl as far as a
+  # crawler is concerned. nuxt-site-config reads this at runtime and
+  # @nuxtjs/robots serves a blanket Disallow when it is false.
+  - variable: NUXT_PUBLIC_SITE_INDEXABLE
+    value: "false"
+    availability:
+      - BUILD
+      - RUNTIME

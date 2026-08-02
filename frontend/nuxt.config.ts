@@ -1,5 +1,10 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 import { bundleSharpBinaries } from "./build/sharp-binaries";
+import {
+  FIREBASE_TARGETS,
+  localTarget,
+  resolveKorytaEnv,
+} from "./shared/firebase-env";
 
 // Force IPv4 for emulators to avoid Node 17+ IPv6 issues
 process.env.FIRESTORE_EMULATOR_HOST = "127.0.0.1:8080";
@@ -11,6 +16,16 @@ const isLocal =
   process.env.NODE_ENV === "development";
 const useProdProject = process.env.USE_PROD_PROJECT === "true";
 const ssr = process.env.SSR !== "false";
+// Baked in at build time so a build is readable on its own, and overridable at
+// runtime through Nuxt's NUXT_PUBLIC_* convention - which is how the preview
+// backend points a build of any branch at the preview data without rebuilding.
+const korytaEnv = resolveKorytaEnv(process.env.KORYTA_ENV, isLocal);
+const firebaseProjectId =
+  isLocal && !useProdProject ? "demo-koryta-pl" : "koryta-pl";
+const firebaseTarget =
+  korytaEnv === "local"
+    ? localTarget(firebaseProjectId)
+    : FIREBASE_TARGETS[korytaEnv];
 console.log(
   "Nuxt Config - isLocal:",
   isLocal,
@@ -70,6 +85,14 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       isLocal,
+      // NUXT_PUBLIC_KORYTA_ENV / NUXT_PUBLIC_FIRESTORE_DATABASE /
+      // NUXT_PUBLIC_DATABASE_URL override these at runtime. They travel
+      // together: server/plugins/firebase.server.ts refuses to boot on a
+      // combination that does not match the environment it claims to be.
+      korytaEnv,
+      firestoreDatabase: firebaseTarget.firestoreDatabase,
+      usersDatabase: firebaseTarget.usersDatabase,
+      databaseURL: firebaseTarget.databaseURL,
     },
   },
 
@@ -177,11 +200,13 @@ export default defineNuxtConfig({
     },
     config: {
       apiKey: "AIzaSyD54RK-k0TIcJtVbZerx2947XiduteqvaM",
-      authDomain:
-        isLocal && !useProdProject
-          ? "demo-koryta-pl.firebaseapp.com"
-          : "koryta-pl.firebaseapp.com",
-      projectId: isLocal && !useProdProject ? "demo-koryta-pl" : "koryta-pl",
+      authDomain: `${firebaseProjectId}.firebaseapp.com`,
+      projectId: firebaseProjectId,
+      // Spelled out rather than left to the SDK's <projectId>-default-rtdb
+      // guess, so a preview build can be pointed somewhere else. Anything
+      // reading the instance at runtime goes through appDatabase(), which
+      // takes the URL from runtimeConfig and can be overridden per deployment.
+      databaseURL: firebaseTarget.databaseURL,
       storageBucket:
         isLocal && !useProdProject
           ? undefined

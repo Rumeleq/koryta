@@ -1,0 +1,13 @@
+{
+  "//": "Rules for the preview environment's databases. Kept out of firebase.json so that deploying production can never touch them, and so that deploying these can never touch production: the two configs name different databases and the CLI only ever reads one of them.",
+  "firestore": {
+    "database": "koryta-pl-preview",
+    "location": "europe-central2",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "database": {
+    "instance": "koryta-pl-preview",
+    "rules": "database.rules.json"
+  }
+}
