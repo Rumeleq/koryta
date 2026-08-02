@@ -7,13 +7,14 @@ from tqdm import tqdm
 
 from entities.article import ArticleAnalyzedRecord
 from scrapers.article.parse import date_iso_from_ld_json, title_from_ld_json
+from scrapers.article.pipelines.incremental import IncrementalJsonlPipeline
 from scrapers.article.pipelines.koryciarski_scores_pipeline import (
     ArticleKoryciarskiScores,
 )
 from scrapers.article.pipelines.parsed_pipeline import ArticleParsed
 from scrapers.article.pipelines.pipeline_utils import article_tag
 from scrapers.article.pipelines.verified_facts_pipeline import ArticleFactsVerified
-from scrapers.stores import VERSIONED_DIR, Context, Pipeline
+from scrapers.stores import VERSIONED_DIR, Context
 
 _PARSED_FILE = Path(VERSIONED_DIR) / "article_parsed" / "article_parsed.jsonl"
 _SCORES_FILE = (
@@ -26,19 +27,17 @@ _FACTS_FILE = (
     / "article_facts_verified"
     / "article_facts_verified.jsonl"
 )
-_FINAL_OUTPUT_FILE = (
-    Path(VERSIONED_DIR) / "article_analyzed" / "article_analyzed.jsonl"
-)
-_TEMP_OUTPUT_FILE = _FINAL_OUTPUT_FILE.with_suffix(".jsonl.tmp")
 
 # Verifier bookkeeping fields kept in article_facts_verified but stripped from
 # the analyzed output.
 _VERIFICATION_FIELDS = {"verified", "verification_verdict", "verification_reason"}
 
 
-class ArticleAnalyzed(Pipeline[ArticleAnalyzedRecord]):
+class ArticleAnalyzed(IncrementalJsonlPipeline[ArticleAnalyzedRecord]):
     filename = "article_analyzed"
     backup_to_shared_cache = False  # large incremental output, keep local-only
+    # No interrupt_exceptions: a Ctrl+C during the merge still flushes via the
+    # base's finally, then propagates (this step is cheap to re-run).
 
     parsed: ArticleParsed
     koryciarski_scores: ArticleKoryciarskiScores
@@ -47,37 +46,6 @@ class ArticleAnalyzed(Pipeline[ArticleAnalyzedRecord]):
     @property
     def output_class(self):
         return ArticleAnalyzedRecord
-
-    def read_or_process(self, ctx: Context) -> pd.DataFrame:
-        if self._cached_result is not None:
-            return self._cached_result
-
-        if not ctx.refresh_policy.tree_printed:
-            ctx.refresh_policy.build_and_print_tree(self, ctx)
-
-        should_refresh = self.should_refresh_with_logic(ctx)
-        if not should_refresh:
-            self._cached_result = pd.DataFrame()
-            return self._cached_result
-
-        self.preprocess_sources(ctx, ctx.refresh_policy)
-        graceful = True
-        try:
-            self.process(ctx)
-            self._refreshed_execution = True
-        except Exception:
-            graceful = False
-            raise
-        finally:
-            if graceful:
-                print("Dumping...")
-                ctx.io.dumper.dump_pandas()  # type: ignore[attr-defined]
-                _finalize_output()
-                print("Done")
-
-        ctx.refresh_policy.add_refreshed_pipeline(self.pipeline_name)
-        self._cached_result = pd.DataFrame()
-        return self._cached_result
 
     def process(self, ctx: Context) -> pd.DataFrame:
         tag = article_tag()
@@ -153,12 +121,6 @@ class ArticleAnalyzed(Pipeline[ArticleAnalyzedRecord]):
 
         print(f"Emitted {emitted:,} ArticleAnalyzed records")
         return pd.DataFrame()
-
-
-def _finalize_output() -> None:
-    if _TEMP_OUTPUT_FILE.exists():
-        _FINAL_OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _TEMP_OUTPUT_FILE.replace(_FINAL_OUTPUT_FILE)
 
 
 def _load_facts(path: Path) -> dict[str, list[dict[str, Any]]]:

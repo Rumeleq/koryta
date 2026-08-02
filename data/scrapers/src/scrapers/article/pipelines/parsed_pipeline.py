@@ -29,11 +29,12 @@ from scrapers.article.pipelines.domain_selectors_pipeline import (
     selector_map_from_df,
 )
 from scrapers.article.pipelines.done_urls_pipeline import ArticleDoneUrls
+from scrapers.article.pipelines.incremental import IncrementalJsonlPipeline
 from scrapers.article.pipelines.pipeline_utils import (
     article_workers,
     iter_done_urls,
 )
-from scrapers.stores import DOWNLOADED_DIR, VERSIONED_DIR, Context, DoneUrl, Pipeline
+from scrapers.stores import DOWNLOADED_DIR, VERSIONED_DIR, Context, DoneUrl
 
 _FINAL_OUTPUT_FILE = Path(VERSIONED_DIR) / "article_parsed" / "article_parsed.jsonl"
 _TEMP_OUTPUT_FILE = (
@@ -50,9 +51,11 @@ class ParseTask:
     selector: str
 
 
-class ArticleParsed(Pipeline[ParsedArticleRecord]):
+class ArticleParsed(IncrementalJsonlPipeline[ParsedArticleRecord]):
     filename = "article_parsed"
     backup_to_shared_cache = False  # ~20GB streamed, keep local-only
+    interrupt_exceptions = (InterruptedError,)
+    interrupt_note = "will save partial data"
 
     done_urls: ArticleDoneUrls
     domain_selectors: ArticleDomainSelectors
@@ -61,52 +64,12 @@ class ArticleParsed(Pipeline[ParsedArticleRecord]):
     def output_class(self):
         return ParsedArticleRecord
 
-    def read_or_process(self, ctx: Context) -> pd.DataFrame:
-        if self._cached_result is not None:
-            return self._cached_result
-
-        if not ctx.refresh_policy.tree_printed:
-            ctx.refresh_policy.build_and_print_tree(self, ctx)
-
-        should_refresh = self.should_refresh_with_logic(ctx)
-        if not should_refresh:
-            # Avoid loading multi-GB article output into pandas just to report success.
-            self._cached_result = pd.DataFrame()
-            return self._cached_result
-
-        self.preprocess_sources(ctx, ctx.refresh_policy)
-        graceful = True
-        completed = False
-        try:
-            df = self.process(ctx)
-            self._refreshed_execution = True
-            completed = True
-        except InterruptedError:
-            print("Caught interrupt signal, will save partial data")
-            df = pd.DataFrame()
-        except Exception:
-            graceful = False
-            raise
-        finally:
-            if graceful:
-                print("Dumping...")
-                ctx.io.dumper.dump_pandas()  # type: ignore[attr-defined]
-                if completed or _TEMP_OUTPUT_FILE.exists():
-                    _finalize_temp_output()
-                else:
-                    print(f"Partial output left at {_TEMP_OUTPUT_FILE}")
-                print("Done")
-
-        ctx.refresh_policy.add_refreshed_pipeline(self.pipeline_name)
-        self._cached_result = df
-        return df
-
     def process(self, ctx: Context):
         done_df = self.done_urls.read_or_process(ctx)
         selectors_df = self.domain_selectors.read_or_process(ctx)
         selectors = selector_map_from_df(selectors_df)
         existing_records = _existing_parse_index(_FINAL_OUTPUT_FILE)
-        _prepare_temp_output()
+        self.prepare_temp_output()
 
         reusable_urls: set[str] = set()
         tasks_by_domain: dict[str, list[ParseTask]] = {}
@@ -130,22 +93,6 @@ class ArticleParsed(Pipeline[ParsedArticleRecord]):
         _emit_reused_records(ctx, _FINAL_OUTPUT_FILE, reusable_urls)
         _parse_domain_batches(ctx, tasks_by_domain)
         return pd.DataFrame()
-
-
-def _prepare_temp_output() -> None:
-    _TEMP_OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    if _TEMP_OUTPUT_FILE.exists():
-        _TEMP_OUTPUT_FILE.unlink()
-    _TEMP_OUTPUT_FILE.write_text("", encoding="utf-8")
-
-
-def _finalize_temp_output() -> None:
-    if _TEMP_OUTPUT_FILE.exists():
-        _FINAL_OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _TEMP_OUTPUT_FILE.replace(_FINAL_OUTPUT_FILE)
-    elif not _FINAL_OUTPUT_FILE.exists():
-        _FINAL_OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _FINAL_OUTPUT_FILE.write_text("", encoding="utf-8")
 
 
 def _existing_parse_index(path: Path) -> dict[str, dict[str, Any]]:

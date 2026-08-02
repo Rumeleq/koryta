@@ -8,9 +8,10 @@ import pandas as pd
 from tqdm import tqdm
 
 from entities.article import KoryciarskiScore
+from scrapers.article.pipelines.incremental import IncrementalJsonlPipeline
 from scrapers.article.pipelines.parsed_pipeline import ArticleParsed
 from scrapers.article.pipelines.pipeline_utils import llm_model
-from scrapers.stores import VERSIONED_DIR, Context, LLMRequest, Pipeline
+from scrapers.stores import VERSIONED_DIR, Context, LLMRequest
 
 PROMPT_VERSION = 1
 TEXT_LIMIT = 100000
@@ -49,54 +50,17 @@ _PROMPT = (
 )
 
 
-class ArticleKoryciarskiScores(Pipeline[KoryciarskiScore]):
+class ArticleKoryciarskiScores(IncrementalJsonlPipeline[KoryciarskiScore]):
     filename = "article_koryciarski_scores"
     backup_to_shared_cache = False  # large incremental output, keep local-only
+    interrupt_exceptions = (InterruptedError,)
+    interrupt_note = "will save partial scores"
 
     article_parsed: ArticleParsed
 
     @property
     def output_class(self):
         return KoryciarskiScore
-
-    def read_or_process(self, ctx: Context) -> pd.DataFrame:
-        if self._cached_result is not None:
-            return self._cached_result
-
-        if not ctx.refresh_policy.tree_printed:
-            ctx.refresh_policy.build_and_print_tree(self, ctx)
-
-        should_refresh = self.should_refresh_with_logic(ctx)
-        if not should_refresh:
-            self._cached_result = pd.DataFrame()
-            return self._cached_result
-
-        self.preprocess_sources(ctx, ctx.refresh_policy)
-        graceful = True
-        completed = False
-        try:
-            df = self.process(ctx)
-            self._refreshed_execution = True
-            completed = True
-        except InterruptedError:
-            print("Caught interrupt signal, will save partial scores")
-            df = pd.DataFrame()
-        except Exception:
-            graceful = False
-            raise
-        finally:
-            if graceful:
-                print("Dumping...")
-                ctx.io.dumper.dump_pandas()  # type: ignore[attr-defined]
-                if completed or _TEMP_OUTPUT_FILE.exists():
-                    _finalize_temp_output()
-                else:
-                    print(f"Partial score output left at {_TEMP_OUTPUT_FILE}")
-                print("Done")
-
-        ctx.refresh_policy.add_refreshed_pipeline(self.pipeline_name)
-        self._cached_result = df
-        return df
 
     def process(self, ctx: Context):
         if not _PARSED_FILE.exists():
@@ -106,28 +70,12 @@ class ArticleKoryciarskiScores(Pipeline[KoryciarskiScore]):
             _FINAL_OUTPUT_FILE,
             _TEMP_OUTPUT_FILE,
         )
-        _prepare_temp_output()
+        self.prepare_temp_output()
         model = llm_model()
         records = _latest_ok_parsed_records(_PARSED_FILE)
         asyncio.run(_score_records(ctx, records, existing, model=model))
         _print_llm_usage(ctx)
         return pd.DataFrame()
-
-
-def _prepare_temp_output() -> None:
-    _TEMP_OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    if _TEMP_OUTPUT_FILE.exists():
-        _TEMP_OUTPUT_FILE.unlink()
-    _TEMP_OUTPUT_FILE.write_text("", encoding="utf-8")
-
-
-def _finalize_temp_output() -> None:
-    if _TEMP_OUTPUT_FILE.exists():
-        _FINAL_OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _TEMP_OUTPUT_FILE.replace(_FINAL_OUTPUT_FILE)
-    elif not _FINAL_OUTPUT_FILE.exists():
-        _FINAL_OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _FINAL_OUTPUT_FILE.write_text("", encoding="utf-8")
 
 
 def _existing_score_cache_from_files(*paths: Path) -> dict[str, dict[str, Any]]:
