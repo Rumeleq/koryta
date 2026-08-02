@@ -24,8 +24,9 @@ from tqdm import tqdm
 
 from entities.article import ArticleFactsVerified as ArticleFactsVerifiedRecord
 from scrapers.article.pipelines.facts_pipeline import ArticleExtractedFacts
+from scrapers.article.pipelines.incremental import IncrementalJsonlPipeline
 from scrapers.article.pipelines.pipeline_utils import llm_model
-from scrapers.stores import VERSIONED_DIR, Context, LLMRequest, Pipeline
+from scrapers.stores import VERSIONED_DIR, Context, LLMRequest
 
 VERIFY_VERSION = 1
 MAX_TOKENS = 4000
@@ -156,9 +157,11 @@ _JUDGE_PROMPT = (
 )
 
 
-class ArticleFactsVerified(Pipeline[ArticleFactsVerifiedRecord]):
+class ArticleFactsVerified(IncrementalJsonlPipeline[ArticleFactsVerifiedRecord]):
     filename = "article_facts_verified"
     backup_to_shared_cache = False
+    interrupt_exceptions = (InterruptedError, KeyboardInterrupt)
+    interrupt_note = "will save partial verifications"
 
     extracted_facts: ArticleExtractedFacts
 
@@ -166,48 +169,13 @@ class ArticleFactsVerified(Pipeline[ArticleFactsVerifiedRecord]):
     def output_class(self):
         return ArticleFactsVerifiedRecord
 
-    def read_or_process(self, ctx: Context) -> pd.DataFrame:
-        if self._cached_result is not None:
-            return self._cached_result
-
-        if not ctx.refresh_policy.tree_printed:
-            ctx.refresh_policy.build_and_print_tree(self, ctx)
-
-        should_refresh = self.should_refresh_with_logic(ctx)
-        if not should_refresh:
-            self._cached_result = pd.DataFrame()
-            return self._cached_result
-
-        self.preprocess_sources(ctx, ctx.refresh_policy)
-        graceful = True
-        try:
-            df = self.process(ctx)
-            self._refreshed_execution = True
-        except (InterruptedError, KeyboardInterrupt):
-            print("Caught interrupt signal, will save partial verifications")
-            df = pd.DataFrame()
-        except Exception:
-            graceful = False
-            raise
-        finally:
-            if graceful:
-                print("Dumping...")
-                ctx.io.dumper.dump_pandas()  # type: ignore[attr-defined]
-                if _TEMP_OUTPUT_FILE.exists():
-                    _finalize_temp_output()
-                print("Done")
-
-        ctx.refresh_policy.add_refreshed_pipeline(self.pipeline_name)
-        self._cached_result = df
-        return df
-
     def process(self, ctx: Context) -> pd.DataFrame:
         if not _INPUT_FILE.exists():
             raise FileNotFoundError(_INPUT_FILE)
 
         model = llm_model()
         existing = _existing_verified_cache(_FINAL_OUTPUT_FILE, _TEMP_OUTPUT_FILE)
-        _prepare_temp_output()
+        self.prepare_temp_output()
         rows = _load_input_rows(_INPUT_FILE)
         asyncio.run(_verify_rows(ctx, rows, existing, model=model))
         _print_llm_usage(ctx)
@@ -217,19 +185,6 @@ class ArticleFactsVerified(Pipeline[ArticleFactsVerifiedRecord]):
 # --------------------------------------------------------------------------- #
 # IO helpers
 # --------------------------------------------------------------------------- #
-def _prepare_temp_output() -> None:
-    _TEMP_OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    if _TEMP_OUTPUT_FILE.exists():
-        _TEMP_OUTPUT_FILE.unlink()
-    _TEMP_OUTPUT_FILE.write_text("", encoding="utf-8")
-
-
-def _finalize_temp_output() -> None:
-    if _TEMP_OUTPUT_FILE.exists():
-        _FINAL_OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _TEMP_OUTPUT_FILE.replace(_FINAL_OUTPUT_FILE)
-
-
 def _load_input_rows(path: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     with path.open("r", encoding="utf-8") as handle:

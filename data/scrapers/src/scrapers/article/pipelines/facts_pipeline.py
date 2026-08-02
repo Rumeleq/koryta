@@ -18,6 +18,7 @@ from entities.facts import (
     PersonalRelationFact,
     dict_to_fact,
 )
+from scrapers.article.pipelines.incremental import IncrementalJsonlPipeline
 from scrapers.article.pipelines.koryciarski_scores_pipeline import (
     ArticleKoryciarskiScores,
 )
@@ -27,7 +28,7 @@ from scrapers.article.pipelines.pipeline_utils import (
     article_facts_text_limit,
     llm_model,
 )
-from scrapers.stores import VERSIONED_DIR, Context, LLMRequest, Pipeline
+from scrapers.stores import VERSIONED_DIR, Context, LLMRequest
 
 PROMPT_VERSION = 13
 TEXT_LIMIT = 100000
@@ -178,50 +179,17 @@ _PROMPT = (
 )
 
 
-class ArticleExtractedFacts(Pipeline[ArticleFacts]):
+class ArticleExtractedFacts(IncrementalJsonlPipeline[ArticleFacts]):
     filename = "article_facts"
     backup_to_shared_cache = False  # large incremental output, keep local-only
+    interrupt_exceptions = (InterruptedError, KeyboardInterrupt)
+    interrupt_note = "will save partial facts"
 
     koryciarski_scores: ArticleKoryciarskiScores
 
     @property
     def output_class(self):
         return ArticleFacts
-
-    def read_or_process(self, ctx: Context) -> pd.DataFrame:
-        if self._cached_result is not None:
-            return self._cached_result
-
-        if not ctx.refresh_policy.tree_printed:
-            ctx.refresh_policy.build_and_print_tree(self, ctx)
-
-        should_refresh = self.should_refresh_with_logic(ctx)
-        if not should_refresh:
-            self._cached_result = pd.DataFrame()
-            return self._cached_result
-
-        self.preprocess_sources(ctx, ctx.refresh_policy)
-        graceful = True
-        try:
-            df = self.process(ctx)
-            self._refreshed_execution = True
-        except (InterruptedError, KeyboardInterrupt):
-            print("Caught interrupt signal, will save partial facts")
-            df = pd.DataFrame()
-        except Exception:
-            graceful = False
-            raise
-        finally:
-            if graceful:
-                print("Dumping...")
-                ctx.io.dumper.dump_pandas()  # type: ignore[attr-defined]
-                if _TEMP_OUTPUT_FILE.exists():
-                    _finalize_temp_output()
-                print("Done")
-
-        ctx.refresh_policy.add_refreshed_pipeline(self.pipeline_name)
-        self._cached_result = df
-        return df
 
     def process(self, ctx: Context):
         _reset_run_think_stats()
@@ -234,7 +202,7 @@ class ArticleExtractedFacts(Pipeline[ArticleFacts]):
             _FINAL_OUTPUT_FILE,
             _TEMP_OUTPUT_FILE,
         )
-        _prepare_temp_output()
+        self.prepare_temp_output()
         model = llm_model()
         records = _extractable_records(_PARSED_FILE, _SCORES_FILE)
         min_score = article_facts_min_koryciarski_score()
@@ -249,22 +217,6 @@ class ArticleExtractedFacts(Pipeline[ArticleFacts]):
         )
         _print_llm_usage(ctx)
         return pd.DataFrame()
-
-
-def _prepare_temp_output() -> None:
-    _TEMP_OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    if _TEMP_OUTPUT_FILE.exists():
-        _TEMP_OUTPUT_FILE.unlink()
-    _TEMP_OUTPUT_FILE.write_text("", encoding="utf-8")
-
-
-def _finalize_temp_output() -> None:
-    if _TEMP_OUTPUT_FILE.exists():
-        _FINAL_OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _TEMP_OUTPUT_FILE.replace(_FINAL_OUTPUT_FILE)
-    elif not _FINAL_OUTPUT_FILE.exists():
-        _FINAL_OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _FINAL_OUTPUT_FILE.write_text("", encoding="utf-8")
 
 
 def _existing_facts_cache_from_files(*paths: Path) -> dict[str, dict[str, Any]]:
