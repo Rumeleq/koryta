@@ -39,9 +39,16 @@ class FakeFile:
 
 
 class BucketIO(MockIO):
-    """Serves a fixed set of blobs, so a listing can be crawl-dated at will."""
+    """Serves a fixed set of blobs, so a listing can be crawl-dated at will.
 
-    def __init__(self, blobs: dict[str, list]):
+    ``read_many`` hands back everything under the prefix in insertion order,
+    which is what both of its real implementations do - the compressed mirror
+    walks an archive, the fallback walks a listing - and neither promises the
+    crawls of one query arrive together or in date order. Tests therefore
+    control arrival order by the order they build the dict in.
+    """
+
+    def __init__(self, blobs: dict[str, list | str]):
         self.blobs = blobs
         self.read: list[str] = []
 
@@ -52,12 +59,22 @@ class BucketIO(MockIO):
     def read_data(self, fs):
         name = fs.url.removeprefix(f"{BUCKET}/")
         self.read.append(name)
-        return FakeFile(json.dumps(self.blobs[name]))
+        return FakeFile(self._body(name))
+
+    def read_many(self, path):
+        for name in self.blobs:
+            self.read.append(name)
+            yield f"{BUCKET}/{name}", FakeFile(self._body(name))
+
+    def _body(self, name: str) -> str:
+        blob = self.blobs[name]
+        # A crawl that failed is stored as an empty object, not as empty JSON.
+        return blob if isinstance(blob, str) else json.dumps(blob)
 
 
 @pytest.fixture
 def context():
-    def build(blobs: dict[str, list]) -> tuple[Context, BucketIO]:
+    def build(blobs: dict[str, list | str]) -> tuple[Context, BucketIO]:
         io = BucketIO(blobs)
         return (
             Context(
@@ -110,22 +127,29 @@ def test_one_seat_crawled_four_times_is_one_row(context):
     assert people.iloc[0]["employed_end"] == "2026-07-07"
 
 
-def test_only_the_newest_crawl_is_downloaded(context):
-    """Egress is billed per GB, so the superseded crawls are not fetched."""
-    ctx, io = context(
-        {
-            connections("0000030563", "aktualne", "2026-02-13"): [
-                seat("2007-10-16", None)
-            ],
-            connections("0000030563", "aktualne", "2026-07-19"): [
-                seat("2007-10-16", "2026-07-07")
-            ],
-        }
+@pytest.mark.parametrize("newest_first", [False, True])
+def test_the_newest_crawl_wins_whichever_order_it_arrives_in(context, newest_first):
+    """Nothing orders the blobs, so the answer cannot depend on their order.
+
+    The crawls used to be sorted by a listing before anything was read. They now
+    arrive from `read_many` in whatever order the compressed archive holds them,
+    so the newest has to win on its `date=` alone.
+    """
+    older = (
+        connections("0000030563", "aktualne", "2026-02-13"),
+        [seat("2007-10-16", None)],
     )
+    newer = (
+        connections("0000030563", "aktualne", "2026-07-19"),
+        [seat("2007-10-16", "2026-07-07")],
+    )
+    arriving = [newer, older] if newest_first else [older, newer]
+    ctx, _ = context(dict(arriving))
 
-    extract_people(ctx)
+    people = extract_people(ctx)
 
-    assert io.read == [connections("0000030563", "aktualne", "2026-07-19")]
+    assert len(people) == 1
+    assert people.iloc[0]["employed_end"] == "2026-07-07"
 
 
 def test_current_and_historical_seats_are_both_kept(context):
@@ -146,20 +170,49 @@ def test_current_and_historical_seats_are_both_kept(context):
     assert sorted(people["employed_start"]) == ["2007-10-16", "2020-01-01"]
 
 
-def test_blobs_that_are_not_connection_queries_are_never_downloaded(context):
-    """The `aktualnosc_` filter used to run after the download, not before."""
-    ctx, io = context(
+def test_blobs_that_are_not_connection_queries_contribute_nothing(context):
+    """`read_many` returns the whole hostname, not just the connection queries.
+
+    Company profiles, the `osoby` lookups and anything else crawled off
+    rejestr.io arrive on the same prefix. They are somebody's data too, so the
+    filter has to be on the name rather than on whether the body parses.
+    """
+    ctx, _ = context(
         {
-            "hostname=rejestr.io/api/v2/org/0000030563/date=2026-07-19": [],
+            "hostname=rejestr.io/api/v2/org/0000030563/date=2026-07-19": [
+                seat("1999-01-01", None)
+            ],
             connections("0000030563", "aktualne", "2026-07-19"): [
                 seat("2007-10-16", None)
             ],
         }
     )
 
-    extract_people(ctx)
+    people = extract_people(ctx)
 
-    assert io.read == [connections("0000030563", "aktualne", "2026-07-19")]
+    assert list(people["employed_start"]) == ["2007-10-16"]
+
+
+def test_an_empty_newest_crawl_falls_back_to_the_crawl_before_it(context):
+    """A failed fetch costs one crawl, not the company.
+
+    An empty object is how a failed crawl is stored. Nothing is recorded for it,
+    so the crawl before it stands - which is the whole reason the newest crawl
+    is picked from what arrives rather than named from a listing.
+    """
+    ctx, _ = context(
+        {
+            connections("0000030563", "aktualne", "2026-02-13"): [
+                seat("2007-10-16", None)
+            ],
+            connections("0000030563", "aktualne", "2026-07-19"): "",
+        }
+    )
+
+    people = extract_people(ctx)
+
+    assert len(people) == 1
+    assert people.iloc[0]["employed_start"] == "2007-10-16"
 
 
 # --------------------------------------------------------------------------- #

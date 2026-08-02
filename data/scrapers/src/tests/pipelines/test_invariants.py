@@ -837,8 +837,8 @@ def test_one_spell_of_employment_is_stored_once(edges):
     That is exactly the shape the pipeline used to produce. Every crawl of a
     company was kept in the bucket and every one of them was read, so a board
     seat held across four crawls arrived four times, disagreeing with itself
-    about whether it had ended. `rejestrio_connection_blobs` now reads only the
-    last crawl, and the ingest refuses the duplicate even if one is offered.
+    about whether it had ended. `extract_people` now keeps only the last crawl
+    of each query, and the ingest refuses the duplicate even if one is offered.
     """
     # Written before either guard existed. Goes to zero once
     # scripts/migrate/dedupe-edges.ts has been run against production.
