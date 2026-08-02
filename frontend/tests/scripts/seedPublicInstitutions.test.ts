@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { isPublicInstitution } from "../../scripts/migrate/seed-public-institutions";
+import {
+  isPublicInstitution,
+  nodeOwnershipUpdate,
+} from "../../scripts/migrate/seed-public-institutions";
 
 describe("isPublicInstitution", () => {
   it("covers the bodies that have no KRS entry to scrape", () => {
@@ -42,5 +45,47 @@ describe("isPublicInstitution", () => {
     expect(
       isPublicInstitution("Fundacja Promocji Kultury Miasta Krakowa"),
     ).toBe(false);
+  });
+});
+
+describe("nodeOwnershipUpdate", () => {
+  it("touches nothing but the ownership answer", () => {
+    // This ran against production writing the revision snapshot over the node,
+    // which deleted every field a revision leaves out. Losing `stats` took 37
+    // institutions out of /api/search - it orders by `stats.nodeGroupSize`, and
+    // Firestore returns no document missing the field it orders on - so
+    // WFOŚiGW, Departament and Urząd entries could not be found at all.
+    expect(Object.keys(nodeOwnershipUpdate()).sort()).toEqual([
+      "isPublic",
+      "isPublicSource",
+    ]);
+    for (const field of [
+      "stats",
+      "revisions",
+      "votes",
+      "nameChunksLower",
+      "name",
+      "krsNumber",
+    ]) {
+      expect(nodeOwnershipUpdate({ id: "rev1" })).not.toHaveProperty(field);
+    }
+  });
+
+  it("records the answer as a human one", () => {
+    // What stops the next company ingest, which cannot see a spółka akcyjna's
+    // shareholders, from writing its own guess over this.
+    expect(nodeOwnershipUpdate()).toMatchObject({
+      isPublic: true,
+      isPublicSource: "manual",
+    });
+  });
+
+  it("republishes a node that was published, and only that one", () => {
+    // A node with no current revision is an unapproved draft, and marking its
+    // owner must not publish it.
+    expect(nodeOwnershipUpdate({ id: "rev1" }).revision_id).toEqual({
+      id: "rev1",
+    });
+    expect(nodeOwnershipUpdate()).not.toHaveProperty("revision_id");
   });
 });
