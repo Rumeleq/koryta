@@ -166,18 +166,18 @@
 
     <v-row class="mb-6">
       <v-col cols="12" md="6">
+        <!-- Individual verdicts; the card beside it counts people, not votes,
+             so the two titles have to say which is which. -->
         <StatsVoteDistribution
-          title="Rozkład ocen: Dobre znalezisko"
+          title="Oddane oceny: Dobre znalezisko"
           category="interesting"
           :counts="database?.votes.distribution.interesting"
           :loading="databasePending"
         />
       </v-col>
       <v-col cols="12" md="6">
-        <StatsVoteDistribution
-          title="Rozkład ocen: Znaleziony problem"
-          category="quality"
-          :counts="database?.votes.distribution.quality"
+        <StatsPublicationCandidates
+          :buckets="database?.publicationCandidates"
           :loading="databasePending"
         />
       </v-col>

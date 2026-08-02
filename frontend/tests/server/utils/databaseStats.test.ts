@@ -3,6 +3,7 @@ import {
   bucketNotes,
   bucketPeople,
   bucketPlaces,
+  bucketPublicationCandidates,
   bucketVotes,
 } from "../../../server/utils/databaseStats";
 
@@ -46,6 +47,56 @@ describe("bucketPeople", () => {
 
     expect(result.withPublicEmployment).toBe(2);
     expect(result.currentlyEmployed).toBe(1);
+  });
+});
+
+describe("bucketPublicationCandidates", () => {
+  it("splits each score into published and still waiting", () => {
+    const buckets = bucketPublicationCandidates([
+      { interesting: 1, isApproved: false },
+      { interesting: 1, isApproved: true },
+      { interesting: 3, isApproved: false },
+      { interesting: 3, isApproved: false },
+      { interesting: 4, isApproved: true },
+    ]);
+
+    expect(buckets.map((b) => b.floor)).toEqual([1, 2, 3, 4, 5]);
+    expect(buckets[0]).toMatchObject({ pending: 1, approved: 1 });
+    expect(buckets[1]).toMatchObject({ pending: 0, approved: 0 });
+    expect(buckets[2]).toMatchObject({ pending: 2, approved: 0 });
+    expect(buckets[3]).toMatchObject({ pending: 0, approved: 1 });
+  });
+
+  it("pools the long tail, because the score is a sum over voters", () => {
+    const buckets = bucketPublicationCandidates([
+      { interesting: 5 },
+      { interesting: 9 },
+      { interesting: 40, isApproved: true },
+    ]);
+
+    expect(buckets[4]).toMatchObject({
+      floor: 5,
+      open: true,
+      pending: 2,
+      approved: 1,
+    });
+  });
+
+  it("leaves out anyone who is not a candidate", () => {
+    const buckets = bucketPublicationCandidates([
+      { interesting: 0 },
+      { interesting: -4 },
+      {},
+    ]);
+
+    expect(buckets.every((b) => b.pending + b.approved === 0)).toBe(true);
+  });
+
+  it("counts a person once, however many people voted on them", () => {
+    // The aggregate is what is bucketed, so three +1 votes are one candidate
+    // at +3 rather than three candidates at +1.
+    const buckets = bucketPublicationCandidates([{ interesting: 3 }]);
+    expect(buckets.reduce((n, b) => n + b.pending + b.approved, 0)).toBe(1);
   });
 });
 
