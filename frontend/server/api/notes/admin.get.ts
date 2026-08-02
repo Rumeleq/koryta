@@ -18,8 +18,8 @@ const queryValidator = z.object({
   q: z.string().min(1).optional(),
 
   sortBy: z
-    .enum(["updatedAt", "nodeName", "nodeType", "kind", "adminStatus"])
-    .default("updatedAt"),
+    .enum(["createdAt", "nodeName", "nodeType", "kind", "adminStatus"])
+    .default("createdAt"),
   sortDesc: z.enum(["true", "false"]).default("true"),
 });
 
@@ -62,7 +62,7 @@ export default defineEventHandler(async (event) => {
   // `getNoteRows` already hands back the default order, so only a column the
   // admin picked costs a sort.
   const sorted =
-    query.sortBy === "updatedAt" && query.sortDesc === "true"
+    query.sortBy === "createdAt" && query.sortDesc === "true"
       ? matching
       : sortRows(matching, query.sortBy, query.sortDesc === "true");
 

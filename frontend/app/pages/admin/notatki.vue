@@ -83,9 +83,9 @@
         loading-text="Ładowanie..."
         items-per-page-text="Wierszy na stronę:"
       >
-        <template #[`item.updatedAt`]="{ item }">
+        <template #[`item.createdAt`]="{ item }">
           <span class="text-no-wrap text-caption">
-            {{ formatDate(item.updatedAt) }}
+            {{ formatDate(item.createdAt) }}
           </span>
         </template>
 
@@ -253,7 +253,7 @@ type SortEntry = { key: string; order: "asc" | "desc" };
 // the one ordering the page could not offer before.
 const sortBy = computed<SortEntry[]>({
   get: () => {
-    const key = (route.query.sortBy as string | undefined) || "updatedAt";
+    const key = (route.query.sortBy as string | undefined) || "createdAt";
     const order: "asc" | "desc" =
       route.query.sortBy && route.query.sortDesc !== "true" ? "asc" : "desc";
     return [{ key, order }];
@@ -289,7 +289,7 @@ watch(filterSearch, (value) => {
 });
 
 const headers = [
-  { title: "Data", key: "updatedAt", sortable: true, width: 140 },
+  { title: "Data", key: "createdAt", sortable: true, width: 140 },
   { title: "Węzeł", key: "nodeName", sortable: true },
   { title: "Autor", key: "userUid", sortable: false },
   { title: "Rodzaj", key: "kind", sortable: true },
@@ -370,7 +370,7 @@ const saving = ref<Record<string, boolean>>({});
 const apiQuery = computed(() => ({
   page: page.value,
   limit: itemsPerPage.value,
-  sortBy: sortBy.value[0]?.key ?? "updatedAt",
+  sortBy: sortBy.value[0]?.key ?? "createdAt",
   sortDesc: sortBy.value[0]?.order === "asc" ? "false" : "true",
   kind: filterKind.value || undefined,
   status: filterStatus.value || undefined,

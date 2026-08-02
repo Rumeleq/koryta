@@ -96,7 +96,7 @@ describe("/api/notes/admin", () => {
         noteDoc("note-old", {
           nodeId: "node-1",
           userUid: "user-a",
-          updatedAt: "2026-01-02T00:00:00.000Z",
+          createdAt: "2026-01-02T00:00:00.000Z",
           sources: [
             { note: "pierwsza", url: "https://a.example" },
             { note: "druga", kind: "change_request" },
@@ -105,7 +105,7 @@ describe("/api/notes/admin", () => {
         noteDoc("note-new", {
           nodeId: "node-2",
           userUid: "user-b",
-          updatedAt: "2026-03-01T00:00:00.000Z",
+          createdAt: "2026-03-01T00:00:00.000Z",
           sources: [{ note: "inna" }],
         }),
       ],
@@ -132,7 +132,8 @@ describe("/api/notes/admin", () => {
       nodeName: "Jan Testowy",
       nodeType: "person",
       userUid: "user-a",
-      updatedAt: "2026-01-02T00:00:00.000Z",
+      createdAt: "2026-01-02T00:00:00.000Z",
+      updatedAt: null,
       note: "pierwsza",
       url: "https://a.example",
       // Entries written before kinds existed read back as sources.
@@ -157,7 +158,9 @@ describe("/api/notes/admin", () => {
 
     const result = (await callHandler()) as Result;
 
-    expect(result.notes[0]?.updatedAt).toBe("2025-06-01T10:00:00.000Z");
+    expect(result.notes[0]?.createdAt).toBe("2025-06-01T10:00:00.000Z");
+    // Never edited, so there is no later date to confuse it with.
+    expect(result.notes[0]?.updatedAt).toBeNull();
   });
 
   it("ignores the document's own write time", async () => {
@@ -177,10 +180,11 @@ describe("/api/notes/admin", () => {
 
     const result = (await callHandler()) as Result;
 
+    expect(result.notes[0]?.createdAt).toBeNull();
     expect(result.notes[0]?.updatedAt).toBeNull();
   });
 
-  it("prefers the author's last edit over the creation date", async () => {
+  it("keeps the write date and the edit date apart", async () => {
     mockNotesGet.mockResolvedValue({
       docs: [
         noteDoc("edited", {
@@ -195,6 +199,9 @@ describe("/api/notes/admin", () => {
 
     const result = (await callHandler()) as Result;
 
+    // The column shows when it was written; the edit is carried separately
+    // rather than folded into it.
+    expect(result.notes[0]?.createdAt).toBe("2025-06-01T10:00:00.000Z");
     expect(result.notes[0]?.updatedAt).toBe("2026-01-15T12:00:00.000Z");
   });
 
