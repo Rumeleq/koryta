@@ -143,20 +143,59 @@ describe("/api/notes/admin", () => {
     expect(result.notes[2]).toMatchObject({ kind: "change_request" });
   });
 
-  it("falls back to the document write time when a note has no updatedAt", async () => {
+  it("dates a note that was never edited by when it was created", async () => {
     mockNotesGet.mockResolvedValue({
       docs: [
-        noteDoc(
-          "legacy",
-          { nodeId: "node-1", userUid: "user-a", sources: [{ note: "stara" }] },
-          "2025-06-01T10:00:00.000Z",
-        ),
+        noteDoc("legacy", {
+          nodeId: "node-1",
+          userUid: "user-a",
+          createdAt: "2025-06-01T10:00:00.000Z",
+          sources: [{ note: "stara" }],
+        }),
       ],
     });
 
     const result = (await callHandler()) as Result;
 
     expect(result.notes[0]?.updatedAt).toBe("2025-06-01T10:00:00.000Z");
+  });
+
+  it("ignores the document's own write time", async () => {
+    // Triaging a source writes to the note document, so dating a note by
+    // `doc.updateTime` moved it to the top of the queue the moment an admin
+    // touched it. A note with neither field is undated rather than dated by
+    // whoever last reviewed it.
+    mockNotesGet.mockResolvedValue({
+      docs: [
+        noteDoc(
+          "untouched-by-the-migration",
+          { nodeId: "node-1", userUid: "user-a", sources: [{ note: "stara" }] },
+          "2026-08-02T09:00:00.000Z",
+        ),
+      ],
+    });
+
+    const result = (await callHandler()) as Result;
+
+    expect(result.notes[0]?.updatedAt).toBeNull();
+  });
+
+  it("prefers the author's last edit over the creation date", async () => {
+    mockNotesGet.mockResolvedValue({
+      docs: [
+        noteDoc("edited", {
+          nodeId: "node-1",
+          userUid: "user-a",
+          createdAt: "2025-06-01T10:00:00.000Z",
+          updatedAt: "2026-01-15T12:00:00.000Z",
+          sources: [{ note: "poprawiona" }],
+        }),
+      ],
+    });
+
+    const result = (await callHandler()) as Result;
+
+    expect(result.notes[0]?.updatedAt).toBe("2026-01-15T12:00:00.000Z");
   });
 
   it("resolves names of nodes that only exist as a proposed revision", async () => {

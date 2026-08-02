@@ -42,11 +42,16 @@ export async function getNoteRows(db: Firestore): Promise<NoteRow[]> {
   const rows: NoteRow[] = [];
   for (const doc of snapshot.docs) {
     const data = doc.data() as Note;
-    // Notes written before `updatedAt` existed fall back to the document's own
-    // write time, which orders a triage queue just as well.
+    // Only fields the author writes. `doc.updateTime` used to stand in for a
+    // missing `updatedAt`, but triaging a source *is* a write to the document,
+    // so every note without the field jumped to the top of the queue the
+    // moment an admin touched it - dated by the review rather than by the
+    // writing. Notes older than these fields get a `createdAt` from
+    // scripts/migrate/backfill-note-timestamps.ts; anything the migration has
+    // not reached is left undated rather than given a misleading date.
     const updatedAt =
       normalizeUpdateTime(data.updatedAt) ??
-      normalizeUpdateTime(doc.updateTime);
+      normalizeUpdateTime(data.createdAt);
 
     // Read as partial: nothing validates what a client writes into `sources`,
     // and this list is searched on, so a note missing its text must not throw.
