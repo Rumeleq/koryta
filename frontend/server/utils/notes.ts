@@ -43,15 +43,14 @@ export async function getNoteRows(db: Firestore): Promise<NoteRow[]> {
   for (const doc of snapshot.docs) {
     const data = doc.data() as Note;
     // Only fields the author writes. `doc.updateTime` used to stand in for a
-    // missing `updatedAt`, but triaging a source *is* a write to the document,
-    // so every note without the field jumped to the top of the queue the
-    // moment an admin touched it - dated by the review rather than by the
-    // writing. Notes older than these fields get a `createdAt` from
+    // missing date, but triaging a source *is* a write to the document, so
+    // every note without one jumped to the top of the queue the moment an
+    // admin touched it - dated by the review rather than by the writing. Notes
+    // older than these fields get a `createdAt` from
     // scripts/migrate/backfill-note-timestamps.ts; anything the migration has
     // not reached is left undated rather than given a misleading date.
-    const updatedAt =
-      normalizeUpdateTime(data.updatedAt) ??
-      normalizeUpdateTime(data.createdAt);
+    const createdAt = normalizeUpdateTime(data.createdAt);
+    const updatedAt = normalizeUpdateTime(data.updatedAt);
 
     // Read as partial: nothing validates what a client writes into `sources`,
     // and this list is searched on, so a note missing its text must not throw.
@@ -65,6 +64,7 @@ export async function getNoteRows(db: Firestore): Promise<NoteRow[]> {
         nodeName: null,
         nodeType: null,
         userUid: data.userUid,
+        createdAt,
         updatedAt,
         note: source.note ?? "",
         url: source.url || null,
@@ -90,12 +90,13 @@ export async function getNoteRows(db: Firestore): Promise<NoteRow[]> {
   return rows;
 }
 
-/** Newest first, with undated entries at the end. */
+/** Newest first by when the note was written, with undated entries - notes
+ * the backfill has not reached - at the end. */
 function compareByRecency(a: NoteRow, b: NoteRow) {
-  if (a.updatedAt === b.updatedAt) return 0;
-  if (!a.updatedAt) return 1;
-  if (!b.updatedAt) return -1;
-  return a.updatedAt < b.updatedAt ? 1 : -1;
+  if (a.createdAt === b.createdAt) return 0;
+  if (!a.createdAt) return 1;
+  if (!b.createdAt) return -1;
+  return a.createdAt < b.createdAt ? 1 : -1;
 }
 
 async function resolveNodes(

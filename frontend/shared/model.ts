@@ -352,6 +352,12 @@ export type NoteRow = {
   nodeName: string | null;
   nodeType: NodeType | null;
   userUid: string;
+  /** When the note was written. The date a reviewer is shown, and what the
+   * queue is ordered by, because it is the one that stands still. */
+  createdAt: string | null;
+  /** When the author last came back to it, if they ever did. Null on a note
+   * nobody has edited since writing - deliberately not filled in from
+   * `createdAt`, so the two stay tellable apart. */
   updatedAt: string | null;
   note: string;
   url: string | null;
