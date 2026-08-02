@@ -19,9 +19,10 @@ is still stated in full - the budget only stops a known problem from failing the
 build, and shrinks as the data is repaired. New breakage pushes the count over
 the budget and fails.
 
-Run just this file with::
+Reading the export needs credentials and a download, so the whole file is
+marked ``e2e`` and deselected by default. Run it with::
 
-    poetry run pytest src/tests/pipelines/test_invariants.py
+    .venv/bin/pytest -m e2e src/tests/pipelines/test_invariants.py
 """
 
 import collections
@@ -29,6 +30,10 @@ import collections
 import pytest
 
 from scrapers.koryta.snapshot import is_reference, reference_id
+
+#: Every test here reads the production export rather than a fixture, which is
+#: what `e2e` marks: a test that needs state this repository does not carry.
+pytestmark = pytest.mark.e2e
 
 # Node and edge types the frontend knows how to render, from `shared/model.ts`.
 NODE_TYPES = {"person", "place", "article", "region"}
@@ -199,7 +204,6 @@ def votes_by_extraction(votes) -> dict[str, list[dict]]:
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.integration
 def test_every_extraction_has_vote_stats(extractions):
     """An extraction must carry `stats.votes.humanVoted`, even with no votes.
 
@@ -223,7 +227,6 @@ def test_every_extraction_has_vote_stats(extractions):
     )
 
 
-@pytest.mark.integration
 def test_extraction_vote_stats_match_the_votes_cast(extractions, votes_by_extraction):
     """`stats.votes` must agree with the votes collection.
 
@@ -242,7 +245,6 @@ def test_extraction_vote_stats_match_the_votes_cast(extractions, votes_by_extrac
     )
 
 
-@pytest.mark.integration
 def test_extraction_article_node_is_an_article(extractions, snapshot):
     """`articleNodeId` links a fact to the article node it was extracted from.
 
@@ -265,7 +267,6 @@ def test_extraction_article_node_is_an_article(extractions, snapshot):
     )
 
 
-@pytest.mark.integration
 def test_extraction_fact_types_are_known(extractions):
     """Only the fact types the ingest schema accepts may be stored."""
     unknown = collections.Counter(
@@ -285,7 +286,6 @@ def test_extraction_fact_types_are_known(extractions):
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.integration
 def test_every_vote_names_the_document_it_is_about(votes):
     """A vote sets exactly one of `nodeId` and `extractionId`.
 
@@ -312,7 +312,6 @@ def test_every_vote_names_the_document_it_is_about(votes):
     )
 
 
-@pytest.mark.integration
 def test_vote_targets_exist(votes, node_ids, snapshot):
     """A vote must point at a document that is still there."""
     extraction_ids = snapshot.ids("extractions")
@@ -329,7 +328,6 @@ def test_vote_targets_exist(votes, node_ids, snapshot):
     )
 
 
-@pytest.mark.integration
 def test_vote_categories_are_known(votes):
     """`categoryVotes` decides which counters `stats.votes` grows.
 
@@ -351,7 +349,6 @@ def test_vote_categories_are_known(votes):
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.integration
 def test_node_vote_stats_match_the_votes_cast(nodes, votes_by_node):
     """The same aggregate-versus-truth check as for extractions, for nodes.
 
@@ -369,7 +366,6 @@ def test_node_vote_stats_match_the_votes_cast(nodes, votes_by_node):
     )
 
 
-@pytest.mark.integration
 def test_is_approved_matches_the_approved_revision(nodes):
     """`stats.isApproved` is a copy of `!!revision_id` and must stay one.
 
@@ -391,7 +387,6 @@ def test_is_approved_matches_the_approved_revision(nodes):
     )
 
 
-@pytest.mark.integration
 @pytest.mark.parametrize("collection", ["nodes", "edges"])
 def test_revision_id_points_at_the_documents_own_revision(snapshot, collection):
     """`revision_id` names the revision that was published.
@@ -426,7 +421,6 @@ def test_revision_id_points_at_the_documents_own_revision(snapshot, collection):
     )
 
 
-@pytest.mark.integration
 def test_node_types_are_known(nodes):
     """Every node is one of the four types the frontend can render.
 
@@ -456,7 +450,6 @@ def test_node_types_are_known(nodes):
     )
 
 
-@pytest.mark.integration
 def test_every_node_has_a_name(nodes):
     """`name` is what search indexes and what every listing shows."""
     # The same 233 legacy blobs, which hold `text` or `url` instead, plus six
@@ -474,7 +467,6 @@ def test_every_node_has_a_name(nodes):
     )
 
 
-@pytest.mark.integration
 def test_array_fields_are_stored_as_arrays(nodes):
     """An array field has to be a real array for `array-contains` to see it.
 
@@ -513,7 +505,6 @@ def test_array_fields_are_stored_as_arrays(nodes):
     )
 
 
-@pytest.mark.integration
 def test_companies_are_not_duplicated_by_krs(nodes):
     """One company node per KRS number.
 
@@ -533,7 +524,6 @@ def test_companies_are_not_duplicated_by_krs(nodes):
     )
 
 
-@pytest.mark.integration
 def test_a_company_can_be_told_apart_from_the_others(nodes):
     """No two companies go by the same name.
 
@@ -567,7 +557,6 @@ def test_a_company_can_be_told_apart_from_the_others(nodes):
     )
 
 
-@pytest.mark.integration
 def test_regions_are_identified_by_teryt(nodes):
     """Every region has a TERYT code, and no two regions share one.
 
@@ -586,7 +575,6 @@ def test_regions_are_identified_by_teryt(nodes):
     assert not duplicated, f"TERYT codes used by several regions: {duplicated}"
 
 
-@pytest.mark.integration
 def test_edge_stats_cover_every_edge_of_the_node(nodes, edges):
     """`stats.edges.all.targetNodeIds` is the index behind the table filters.
 
@@ -637,7 +625,6 @@ def test_edge_stats_cover_every_edge_of_the_node(nodes, edges):
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.integration
 def test_edge_endpoints_exist(edges, node_ids):
     """Both ends of an edge must be nodes that exist.
 
@@ -658,7 +645,6 @@ def test_edge_endpoints_exist(edges, node_ids):
     )
 
 
-@pytest.mark.integration
 def test_edge_types_are_known(edges):
     """Only the six edge types `shared/model.ts` declares may be stored."""
     # 64 `source` and 3 `mentioned_person` edges. `source` predates article
@@ -677,7 +663,6 @@ def test_edge_types_are_known(edges):
     )
 
 
-@pytest.mark.integration
 def test_edges_join_the_node_types_they_are_defined_for(edges, snapshot):
     """An `employed` edge runs person -> place, an `election` person -> region.
 
@@ -712,7 +697,6 @@ def test_edges_join_the_node_types_they_are_defined_for(edges, snapshot):
     )
 
 
-@pytest.mark.integration
 def test_a_state_edge_is_not_stored_twice(edges):
     """A tie that either holds or does not may only be recorded once.
 
@@ -746,7 +730,6 @@ def test_a_state_edge_is_not_stored_twice(edges):
     )
 
 
-@pytest.mark.integration
 def test_nobody_stands_in_two_places_at_once(edges, nodes):
     """One person, one election, one constituency.
 
@@ -798,7 +781,6 @@ def test_nobody_stands_in_two_places_at_once(edges, nodes):
     )
 
 
-@pytest.mark.integration
 def test_occurrence_edges_may_repeat(edges):
     """Two identical `election` or `employed` edges are not a defect to fix.
 
@@ -843,7 +825,6 @@ def test_occurrence_edges_may_repeat(edges):
     )
 
 
-@pytest.mark.integration
 def test_one_spell_of_employment_is_stored_once(edges):
     """A person may hold the same role at the same company twice - not at once.
 
@@ -891,7 +872,6 @@ def test_one_spell_of_employment_is_stored_once(edges):
     )
 
 
-@pytest.mark.integration
 def test_employment_says_what_the_person_did(edges):
     """Every `employed` edge carries a role.
 
@@ -925,7 +905,6 @@ def test_employment_says_what_the_person_did(edges):
     )
 
 
-@pytest.mark.integration
 def test_employment_does_not_end_before_it_starts(edges):
     """`start_date <= end_date` on every edge that has both.
 
@@ -955,7 +934,6 @@ def test_employment_does_not_end_before_it_starts(edges):
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.integration
 def test_revision_node_id_is_a_document_id(revisions):
     """`node_id` has to be a plain id string, not a document reference.
 
@@ -985,7 +963,6 @@ def test_revision_node_id_is_a_document_id(revisions):
     )
 
 
-@pytest.mark.integration
 def test_every_revision_belongs_to_a_document(revisions, node_ids, snapshot):
     """A revision describes a node or an edge, which has to still exist.
 
@@ -1009,7 +986,6 @@ def test_every_revision_belongs_to_a_document(revisions, node_ids, snapshot):
     )
 
 
-@pytest.mark.integration
 def test_a_later_revision_never_drops_a_field(revisions):
     """A revision is a whole snapshot, so it must not lose an earlier field.
 
@@ -1070,7 +1046,6 @@ def test_a_later_revision_never_drops_a_field(revisions):
     )
 
 
-@pytest.mark.integration
 def test_revisions_record_who_changed_what_and_when(revisions):
     """`update_time` and `update_user` back the history view and the credits.
 
@@ -1099,7 +1074,6 @@ def test_revisions_record_who_changed_what_and_when(revisions):
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.integration
 def test_notes_belong_to_an_existing_node(notes, node_ids):
     """`/api/notes` resolves each note's `nodeId` to a name to display it."""
     dangling = [
@@ -1114,7 +1088,6 @@ def test_notes_belong_to_an_existing_node(notes, node_ids):
     )
 
 
-@pytest.mark.integration
 def test_one_note_per_user_and_node(notes):
     """A user keeps a single note per node, which the note editor overwrites.
 
@@ -1132,7 +1105,6 @@ def test_one_note_per_user_and_node(notes):
     )
 
 
-@pytest.mark.integration
 def test_notes_count_matches_the_notes(notes, nodes):
     """`stats.notesCount` counts the *sources* across a node's notes.
 
