@@ -115,7 +115,7 @@
         <v-card variant="outlined" height="100%">
           <v-card-item>
             <v-card-title class="text-subtitle-1 font-weight-medium">
-              Zgłoszenia od czytelników
+              Zgłoszenia od użytkowników
             </v-card-title>
             <v-card-subtitle class="text-wrap">
               Wpisy w notatkach, po rodzaju.
