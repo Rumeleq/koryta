@@ -14,6 +14,8 @@ from entities.util import NormalizedParse
 from scrapers.article.pipelines.common import hash_bytes, is_html
 from scrapers.article.pipelines.done_urls_pipeline import ArticleDoneUrls
 from scrapers.article.pipelines.pipeline_utils import (
+    article_workers,
+    get_llm,
     iter_done_urls,
     llm_model,
     read_html_from_storage,
@@ -141,15 +143,13 @@ class ArticleDomainSelectors(Pipeline):
     done_urls: ArticleDoneUrls
 
     def process(self, ctx: Context):
-        if ctx.llm is None:
-            raise ValueError("ArticleDomainSelectors requires Context.llm")
 
         done_df = self.done_urls.read_or_process(ctx)
         candidates = _candidate_done_urls_by_domain(iter_done_urls(done_df))
         existing = _existing_selector_rows(
             self.read(ctx) if self.output_time(ctx) is not None else None
         )
-        model = llm_model(ctx)
+        model = llm_model()
 
         rows = asyncio.run(
             _generate_selectors(
@@ -187,13 +187,13 @@ async def _generate_selectors(
     *,
     model: str,
 ) -> list[dict[str, Any]]:
-    assert ctx.llm is not None
-    await ctx.llm.check_health()
+    assert get_llm() is not None
+    await get_llm().check_health()
     rows: list[dict[str, Any]] = []
     domain_concurrency = max(
         1,
         int(
-            getattr(ctx, "article_workers", SELECTOR_DOMAIN_CONCURRENCY)
+            article_workers()
             or SELECTOR_DOMAIN_CONCURRENCY
         ),
     )
@@ -286,7 +286,7 @@ async def _generate_selector_prompt_rows(
     *,
     model: str,
 ) -> list[dict[str, Any]]:
-    assert ctx.llm is not None
+    assert get_llm() is not None
     pending: dict[int, str] = {}
     responses_by_domain: dict[str, list[str]] = {
         str(row["domain"]): [] for row in prompt_rows
@@ -302,7 +302,7 @@ async def _generate_selector_prompt_rows(
         mininterval=1.0,
         smoothing=0.05,
     ) as bar:
-        async with ctx.llm.response_pool() as pool:
+        async with get_llm().response_pool() as pool:
             for row in prompt_rows:
                 domain = str(row["domain"])
                 for prompt in row.get("prompts") or []:

@@ -11,6 +11,7 @@ from scrapers.article.pipelines.koryciarski_scores_pipeline import (
     ArticleKoryciarskiScores,
 )
 from scrapers.article.pipelines.parsed_pipeline import ArticleParsed
+from scrapers.article.pipelines.pipeline_utils import article_tag
 from scrapers.article.pipelines.verified_facts_pipeline import ArticleFactsVerified
 from scrapers.stores import VERSIONED_DIR, Context, Pipeline
 
@@ -79,7 +80,7 @@ class ArticleAnalyzed(Pipeline[ArticleAnalyzedRecord]):
         return self._cached_result
 
     def process(self, ctx: Context) -> pd.DataFrame:
-        tag = getattr(ctx, "article_tag", None)
+        tag = article_tag()
 
         # Load facts first (small) to get the URL set we care about
         print("Loading facts...")

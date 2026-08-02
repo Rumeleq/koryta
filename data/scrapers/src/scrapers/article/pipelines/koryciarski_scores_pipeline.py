@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 from entities.article import KoryciarskiScore
 from scrapers.article.pipelines.parsed_pipeline import ArticleParsed
-from scrapers.article.pipelines.pipeline_utils import llm_model
+from scrapers.article.pipelines.pipeline_utils import get_llm, llm_model
 from scrapers.stores import VERSIONED_DIR, Context, LLMRequest, Pipeline
 
 PROMPT_VERSION = 1
@@ -99,8 +99,6 @@ class ArticleKoryciarskiScores(Pipeline[KoryciarskiScore]):
         return df
 
     def process(self, ctx: Context):
-        if ctx.llm is None:
-            raise ValueError("ArticleKoryciarskiScores requires Context.llm")
         if not _PARSED_FILE.exists():
             raise FileNotFoundError(_PARSED_FILE)
 
@@ -109,7 +107,7 @@ class ArticleKoryciarskiScores(Pipeline[KoryciarskiScore]):
             _TEMP_OUTPUT_FILE,
         )
         _prepare_temp_output()
-        model = llm_model(ctx)
+        model = llm_model()
         records = _latest_ok_parsed_records(_PARSED_FILE)
         asyncio.run(_score_records(ctx, records, existing, model=model))
         _print_llm_usage(ctx)
@@ -196,8 +194,8 @@ async def _score_records(
     *,
     model: str,
 ) -> list[dict[str, Any]]:
-    assert ctx.llm is not None
-    await ctx.llm.check_health()
+    assert get_llm() is not None
+    await get_llm().check_health()
     pending: dict[int, dict[str, Any]] = {}
     uncached = _emit_cached_scores(ctx, records, existing, model)
 
@@ -209,7 +207,7 @@ async def _score_records(
         mininterval=1.0,
         smoothing=0.05,
     ) as bar:
-        async with ctx.llm.response_pool() as pool:
+        async with get_llm().response_pool() as pool:
             for record in uncached:
                 while pool.is_full():
                     request_id, response = await pool.get_response()
@@ -440,7 +438,7 @@ def _normalize_scoring_result(parsed: dict[str, Any]) -> tuple[bool, int | None,
 
 
 def _print_llm_usage(ctx: Context) -> None:
-    llm = ctx.llm
+    llm = get_llm()
     if llm is None:
         return
     requests = int(getattr(llm, "request_count", 0) or 0)
