@@ -26,6 +26,9 @@ export type PersonStatsRow = {
   notesCount?: number;
   experienceMonths?: number;
   currentlyEmployed?: boolean;
+  /** `stats.votes.interesting`: the sum of every voter's -5..5 verdict on this
+   * person, so it is not bounded by the scale one of them can cast. */
+  interesting?: number;
 };
 
 export function bucketPeople(rows: PersonStatsRow[]): PeopleBreakdown {
@@ -55,6 +58,59 @@ export function bucketPeople(rows: PersonStatsRow[]): PeopleBreakdown {
   }
 
   return breakdown;
+}
+
+/** Where the open-ended top bucket starts. Below it every score gets its own
+ * bucket; at and above it they are pooled, because the aggregate is a sum over
+ * voters and its tail is long and thin. */
+const CANDIDATE_TOP_BUCKET = 5;
+
+export type PublicationBucket = {
+  /** Lowest aggregate "Dobre znalezisko" score in this bucket. */
+  floor: number;
+  /** True for the top bucket, which has no upper end. */
+  open: boolean;
+  /** Rated this well and already published. */
+  approved: number;
+  /** Rated this well and still not published - the work queue. */
+  pending: number;
+};
+
+/**
+ * People the community rated positively, split by whether their page is public
+ * yet. This is the "who should we publish next" view: a tall unpublished
+ * segment at a high score is a backlog of things worth showing.
+ *
+ * The unit is a person, not a vote. Two people rating the same person +5 is one
+ * candidate, not two, and it is the person who does or does not have a public
+ * page — so counting vote documents here would answer a question nobody asked.
+ * That also means the buckets are aggregate scores, which run past +5.
+ *
+ * People at zero or below are left out: they are not candidates.
+ */
+export function bucketPublicationCandidates(
+  rows: PersonStatsRow[],
+): PublicationBucket[] {
+  const buckets: PublicationBucket[] = [];
+  for (let floor = 1; floor <= CANDIDATE_TOP_BUCKET; floor++) {
+    buckets.push({
+      floor,
+      open: floor === CANDIDATE_TOP_BUCKET,
+      approved: 0,
+      pending: 0,
+    });
+  }
+
+  for (const row of rows) {
+    const score = row.interesting ?? 0;
+    if (score < 1) continue;
+    const index = Math.min(Math.trunc(score), CANDIDATE_TOP_BUCKET) - 1;
+    const bucket = buckets[index]!;
+    if (row.isApproved === true) bucket.approved++;
+    else bucket.pending++;
+  }
+
+  return buckets;
 }
 
 /** Places, split by what is actually known about their ownership.

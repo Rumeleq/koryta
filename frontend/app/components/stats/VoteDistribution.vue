@@ -86,7 +86,7 @@ const subtitle = computed(() => {
     .filter((s) => s.value > 0)
     .reduce((sum, s) => sum + s.count, 0);
   if (total.value === 0) return "Brak głosów";
-  return `${formatCount(total.value)} głosów, ${Math.round(
+  return `${formatCount(total.value)} pojedynczych ocen, ${Math.round(
     (positive / total.value) * 100,
   )}% na plus`;
 });

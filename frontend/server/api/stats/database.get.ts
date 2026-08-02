@@ -3,10 +3,12 @@ import {
   bucketNotes,
   bucketPeople,
   bucketPlaces,
+  bucketPublicationCandidates,
   bucketVotes,
   type NotesBreakdown,
   type PeopleBreakdown,
   type PlacesBreakdown,
+  type PublicationBucket,
   type VotesBreakdown,
 } from "~~/server/utils/databaseStats";
 import { isPipelineUid } from "~~/server/utils/activityStats";
@@ -23,6 +25,8 @@ export type DatabaseStats = {
     regions: number;
   };
   people: PeopleBreakdown;
+  /** Positively rated people, by score and by whether they are published yet. */
+  publicationCandidates: PublicationBucket[];
   places: PlacesBreakdown;
   /** Connections in the graph: employment, party membership, mentions. */
   edges: number;
@@ -77,6 +81,7 @@ export default defineCachedEventHandler(
           "stats.notesCount",
           "stats.edges.all.experienceMonths",
           "stats.edges.all.currentlyEmployed",
+          "stats.votes.interesting",
         )
         .get(),
       nodes
@@ -102,15 +107,15 @@ export default defineCachedEventHandler(
       count(db.collection("comments")),
     ]);
 
-    const people = bucketPeople(
-      peopleSnap.docs.map((doc) => ({
-        isApproved: doc.get("stats.isApproved"),
-        humanVoted: doc.get("stats.votes.humanVoted"),
-        notesCount: doc.get("stats.notesCount"),
-        experienceMonths: doc.get("stats.edges.all.experienceMonths"),
-        currentlyEmployed: doc.get("stats.edges.all.currentlyEmployed"),
-      })),
-    );
+    const peopleRows = peopleSnap.docs.map((doc) => ({
+      isApproved: doc.get("stats.isApproved"),
+      humanVoted: doc.get("stats.votes.humanVoted"),
+      notesCount: doc.get("stats.notesCount"),
+      experienceMonths: doc.get("stats.edges.all.experienceMonths"),
+      currentlyEmployed: doc.get("stats.edges.all.currentlyEmployed"),
+      interesting: doc.get("stats.votes.interesting"),
+    }));
+    const people = bucketPeople(peopleRows);
 
     const places = bucketPlaces(
       placesSnap.docs.map((doc) => ({
@@ -141,6 +146,7 @@ export default defineCachedEventHandler(
         regions: regionCount,
       },
       people,
+      publicationCandidates: bucketPublicationCandidates(peopleRows),
       places,
       edges: edgeCount,
       notes,
