@@ -12,7 +12,13 @@ const queryValidator = z.object({
   kind: z.enum(["source", "change_request", "missing"]).optional(),
   /** "none" selects the entries nobody has triaged yet. */
   status: z.enum(["resolved", "unresolved", "none"]).optional(),
+  /** A stored type, or "none" for the entries nobody has classified - which is
+   * the queue /admin/notatki/kategoryzacja works through. */
   adminType: z.string().min(1).optional(),
+  /** Entries a reviewer handed back to the table view ("true"), or the ones
+   * they did not ("false"). The phone queue asks for the latter so an entry it
+   * could not classify does not come round again. */
+  deferred: z.enum(["true", "false"]).optional(),
   nodeType: z.enum(["person", "place", "article", "region"]).optional(),
   /** Free text over the note, its url and the name of the node it is on. */
   q: z.string().min(1).optional(),
@@ -53,7 +59,12 @@ export default defineEventHandler(async (event) => {
     ) {
       return false;
     }
-    if (query.adminType && row.adminType !== query.adminType) return false;
+    if (query.adminType) {
+      const wanted = query.adminType === "none" ? null : query.adminType;
+      if (row.adminType !== wanted) return false;
+    }
+    if (query.deferred && row.adminTypeDeferred !== (query.deferred === "true"))
+      return false;
     if (query.nodeType && row.nodeType !== query.nodeType) return false;
     if (needle && !matchesText(row, needle)) return false;
     return true;

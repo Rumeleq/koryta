@@ -10,6 +10,8 @@ const bodyValidator = z.object({
   // `undefined` leaves the field untouched, `null`/"" clears it.
   adminStatus: z.enum(["resolved", "unresolved"]).nullable().optional(),
   adminType: z.string().nullable().optional(),
+  /** "the phone queue can't classify this one" - see NoteSource. */
+  adminTypeDeferred: z.boolean().nullable().optional(),
 });
 
 /** Admin-only triage of an individual note source.
@@ -50,8 +52,18 @@ export default defineEventHandler(async (event) => {
       else delete source.adminStatus;
     }
     if (body.adminType !== undefined) {
-      if (body.adminType) source.adminType = body.adminType;
-      else delete source.adminType;
+      if (body.adminType) {
+        source.adminType = body.adminType;
+        // A type answers the question the deferral was asking, whichever view
+        // gave it - so the flag never outlives what it was waiting for.
+        delete source.adminTypeDeferred;
+      } else {
+        delete source.adminType;
+      }
+    }
+    if (body.adminTypeDeferred !== undefined) {
+      if (body.adminTypeDeferred) source.adminTypeDeferred = true;
+      else delete source.adminTypeDeferred;
     }
 
     tx.update(noteRef, { sources });

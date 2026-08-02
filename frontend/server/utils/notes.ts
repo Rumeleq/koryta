@@ -72,6 +72,7 @@ export async function getNoteRows(db: Firestore): Promise<NoteRow[]> {
         kind: source.kind ?? "source",
         adminStatus: source.adminStatus ?? null,
         adminType: source.adminType || null,
+        adminTypeDeferred: source.adminTypeDeferred === true,
       });
     });
   }

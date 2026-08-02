@@ -140,6 +140,7 @@ describe("/api/notes/admin", () => {
       kind: "source",
       adminStatus: null,
       adminType: null,
+      adminTypeDeferred: false,
     });
     expect(result.notes[2]).toMatchObject({ kind: "change_request" });
   });
@@ -277,6 +278,51 @@ describe("/api/notes/admin", () => {
       adminType: "missing_data",
     })) as Result;
     expect(byAdminType.notes.map((n) => n.note)).toEqual(["załatwione"]);
+  });
+
+  it("serves the phone queue: untyped entries nobody handed back", async () => {
+    // What /admin/notatki/kategoryzacja asks for. An entry a reviewer could
+    // not classify there is marked deferred and must not come round again.
+    mockNotesGet.mockResolvedValue({
+      docs: [
+        noteDoc("note-1", {
+          nodeId: "node-1",
+          userUid: "user-a",
+          sources: [
+            { note: "do oceny" },
+            { note: "już opisana", adminType: "context" },
+            { note: "nie da się z telefonu", adminTypeDeferred: true },
+            // A type given in the table wins over an older deferral, so this
+            // one is neither in the queue nor waiting for the table.
+            {
+              note: "odłożona i opisana",
+              adminType: "other",
+              adminTypeDeferred: true,
+            },
+          ],
+        }),
+      ],
+    });
+    mockGetAll.mockResolvedValue([nodeDoc("node-1", "Jan Testowy")]);
+
+    const queue = (await callHandler({
+      adminType: "none",
+      deferred: "false",
+    })) as Result;
+    expect(queue.notes.map((n) => n.note)).toEqual(["do oceny"]);
+
+    // The other half of the split: what the table view is being asked about.
+    const forTheTable = (await callHandler({
+      adminType: "none",
+      deferred: "true",
+    })) as Result;
+    expect(forTheTable.notes.map((n) => n.note)).toEqual([
+      "nie da się z telefonu",
+    ]);
+
+    // "none" on its own is every unclassified entry, deferred or not.
+    const untyped = (await callHandler({ adminType: "none" })) as Result;
+    expect(untyped.total).toBe(2);
   });
 
   it("searches the note, its url and the name of the node it is on", async () => {
