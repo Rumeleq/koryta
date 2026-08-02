@@ -13,21 +13,34 @@
 </template>
 
 <script setup lang="ts">
+import { computed, watch } from "vue";
 import { mdiAccountCircle } from "@mdi/js";
-import { useUserLookup } from "@/composables/users";
+import { useUserLookup, type LookedUpUser } from "@/composables/users";
 
 const props = defineProps<{
   uid?: string | null;
+  /** Display data the caller already has.
+   *
+   * An endpoint that ranks or lists people resolves their names server-side in
+   * one batch; passing the result in skips the chip's own lookup, which would
+   * otherwise re-ask for names the page is already holding. */
+  user?: LookedUpUser | null;
 }>();
 
 const { cache, resolve, displayName } = useUserLookup();
 
 watch(
-  () => props.uid,
-  (uid) => resolve([uid]),
+  () => [props.uid, props.user] as const,
+  ([uid, user]) => {
+    if (!user) resolve([uid]);
+  },
   { immediate: true },
 );
 
-const info = computed(() => (props.uid ? cache.value[props.uid] : null));
-const name = computed(() => displayName(props.uid));
+const info = computed(
+  () => props.user ?? (props.uid ? cache.value[props.uid] : null),
+);
+const name = computed(
+  () => props.user?.displayName || props.user?.email || displayName(props.uid),
+);
 </script>
