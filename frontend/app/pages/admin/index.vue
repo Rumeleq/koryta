@@ -97,7 +97,7 @@
                 >
                   <template #append>
                     <v-chip v-if="item.adminType" size="x-small" label>
-                      {{ noteTypeLabel(item.adminType) }}
+                      {{ noteAdminTypeLabel(item.adminType) }}
                     </v-chip>
                   </template>
                 </v-list-item>
@@ -121,6 +121,19 @@
               :append-icon="mdiChevronRight"
             >
               Przejdź do notatek
+            </v-btn>
+            <v-spacer />
+            <!-- The queue reads on a phone, which is where this dashboard is
+                 most often opened, so it is one tap from here. -->
+            <v-btn
+              variant="text"
+              color="primary"
+              to="/admin/notatki/kategoryzacja"
+              :prepend-icon="mdiGestureTapButton"
+            >
+              Kategoryzuj<span v-if="summary?.notes.uncategorized">
+                ({{ summary.notes.uncategorized }})</span
+              >
             </v-btn>
           </v-card-actions>
         </v-card>
@@ -236,9 +249,11 @@ import {
   mdiChartLine,
   mdiChevronRight,
   mdiCheckCircleOutline,
+  mdiGestureTapButton,
   mdiRefresh,
 } from "@mdi/js";
 import { authRequest } from "~/composables/auth";
+import { noteAdminTypeLabel } from "~/composables/notes";
 import type { AdminSummary } from "~~/server/api/admin/summary.get";
 import type { ActivityStats } from "~~/server/api/stats/activity.get";
 
@@ -276,14 +291,6 @@ const subpages = [
     desc: "Stan bazy i kto ją ostatnio zmieniał.",
   },
 ];
-
-const noteTypeLabels: Record<string, string> = {
-  missing_data: "Brakujące dane / Błąd",
-  new_connection: "Nowe powiązanie",
-  context: "Ciekawostka / Kontekst",
-  other: "Inne",
-};
-const noteTypeLabel = (type: string) => noteTypeLabels[type] ?? type;
 
 /** The window the panel calls "this week". The stats page lets an admin widen
  * it; here it is fixed, because the question is "who is around right now". */

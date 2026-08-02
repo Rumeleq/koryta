@@ -13,6 +13,10 @@ export type AdminSummary = {
   notes: {
     // Sources an admin has explicitly flagged as unresolved.
     needsAction: number;
+    // Sources nobody has given a type yet, minus the ones a reviewer handed
+    // back to the table view - i.e. the length of the phone queue at
+    // /admin/notatki/kategoryzacja.
+    uncategorized: number;
     sample: {
       noteId: string;
       nodeId: string;
@@ -63,6 +67,7 @@ export default defineEventHandler(async (event): Promise<AdminSummary> => {
     .get();
 
   let needsAction = 0;
+  let uncategorized = 0;
   const noteSampleRaw: {
     noteId: string;
     nodeId: string;
@@ -75,6 +80,7 @@ export default defineEventHandler(async (event): Promise<AdminSummary> => {
   for (const doc of notesSnap.docs) {
     const data = doc.data() as Note;
     for (const source of data.sources || []) {
+      if (!source.adminType && !source.adminTypeDeferred) uncategorized++;
       if (source.adminStatus === "unresolved") {
         needsAction++;
         if (noteSampleRaw.length < SAMPLE_SIZE) {
@@ -163,6 +169,7 @@ export default defineEventHandler(async (event): Promise<AdminSummary> => {
   return {
     notes: {
       needsAction,
+      uncategorized,
       sample: noteSampleRaw.map((n) => ({
         ...n,
         name: names[n.nodeId] ?? null,
