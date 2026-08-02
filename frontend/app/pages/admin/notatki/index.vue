@@ -6,7 +6,17 @@
       :edges="focusedEdges"
     />
 
-    <h1 class="text-h4 mb-4">Wszystkie Notatki</h1>
+    <div class="d-flex align-center justify-space-between flex-wrap ga-3 mb-4">
+      <h1 class="text-h5 text-sm-h4">Wszystkie Notatki</h1>
+      <v-btn
+        color="primary"
+        variant="tonal"
+        :prepend-icon="mdiGestureTapButton"
+        to="/admin/notatki/kategoryzacja"
+      >
+        Kategoryzuj
+      </v-btn>
+    </div>
 
     <v-card class="mb-4 pa-3">
       <v-row dense>
@@ -172,10 +182,16 @@
               <v-chip
                 v-bind="activator"
                 :disabled="saving[item.key]"
+                :color="adminTypeChip(item).color"
                 variant="outlined"
                 size="small"
               >
-                {{ adminTypeLabels[item.adminType ?? ""] ?? item.adminType }}
+                <v-icon
+                  v-if="adminTypeChip(item).icon"
+                  start
+                  :icon="adminTypeChip(item).icon"
+                />
+                {{ adminTypeChip(item).title }}
               </v-chip>
             </template>
             <v-list density="compact">
@@ -196,7 +212,9 @@
 <script setup lang="ts">
 import {
   mdiAccountOutline,
+  mdiCommentQuestionOutline,
   mdiFileDocumentOutline,
+  mdiGestureTapButton,
   mdiHelp,
   mdiLink,
   mdiMagnify,
@@ -208,7 +226,11 @@ import { computed, ref, shallowRef, watch } from "vue";
 import { useRoute } from "vue-router";
 import { authRequest } from "~/composables/auth";
 import { useEdges } from "~/composables/edges";
-import { noteKindConfig } from "~/composables/notes";
+import {
+  noteAdminTypeConfig,
+  noteAdminTypeLabel,
+  noteKindConfig,
+} from "~/composables/notes";
 import { useQueryFilters } from "~/composables/queryFilters";
 import { generateEntityUrl } from "~/composables/slugs";
 import type {
@@ -346,21 +368,36 @@ const statusOptions: { title: string; value: NoteAdminStatus | null }[] = [
   { title: "Rozwiązane", value: "resolved" },
 ];
 
-const adminTypeLabels: Record<string, string> = {
-  "": "Brak",
-  missing_data: "Brakujące dane / Błąd",
-  new_connection: "Nowe powiązanie",
-  context: "Ciekawostka / Kontekst",
-  other: "Inne",
-};
+const adminTypeOptions = [
+  { title: "Brak", value: "" },
+  ...Object.entries(noteAdminTypeConfig).map(([value, config]) => ({
+    title: config.title,
+    value,
+  })),
+];
 
-const adminTypeOptions = Object.entries(adminTypeLabels).map(
-  ([value, title]) => ({ title, value }),
-);
+// The two states the phone queue leaves behind are what an admin sitting at
+// the table most wants to pull up, so they are filters of their own.
+const adminTypeFilterOptions = [
+  { title: "Do oceny tutaj", value: "deferred" },
+  { title: "Nieokreślony", value: "none" },
+  ...adminTypeOptions.filter((option) => option.value !== ""),
+];
 
-const adminTypeFilterOptions = adminTypeOptions.filter(
-  (option) => option.value !== "",
-);
+/** An entry the phone queue handed back is the one this column is being asked
+ * about, so it says so rather than reading as untouched. */
+const adminTypeChip = (row: NoteRow) =>
+  !row.adminType && row.adminTypeDeferred
+    ? {
+        title: "Do oceny tutaj",
+        color: "warning",
+        icon: mdiCommentQuestionOutline,
+      }
+    : {
+        title: noteAdminTypeLabel(row.adminType),
+        color: undefined,
+        icon: undefined,
+      };
 
 const items = ref<NoteRow[]>([]);
 const total = ref(0);
@@ -374,7 +411,13 @@ const apiQuery = computed(() => ({
   sortDesc: sortBy.value[0]?.order === "asc" ? "false" : "true",
   kind: filterKind.value || undefined,
   status: filterStatus.value || undefined,
-  adminType: filterAdminType.value || undefined,
+  // "deferred" is not a stored type but a flag beside it, so it travels in the
+  // url as one filter and splits into two query parameters here.
+  adminType:
+    filterAdminType.value === "deferred"
+      ? undefined
+      : filterAdminType.value || undefined,
+  deferred: filterAdminType.value === "deferred" ? "true" : undefined,
   nodeType: filterNodeType.value || undefined,
   q: filterSearch.value || undefined,
 }));
@@ -414,10 +457,17 @@ const patchRow = async (
   row: NoteRow,
   patch: { adminStatus?: NoteAdminStatus | null; adminType?: string | null },
 ) => {
-  const previous = { adminStatus: row.adminStatus, adminType: row.adminType };
+  const previous = {
+    adminStatus: row.adminStatus,
+    adminType: row.adminType,
+    adminTypeDeferred: row.adminTypeDeferred,
+  };
   // Applied straight away - the verdict is the whole point of the row, and
   // waiting on a round trip to see it makes triaging a page of them slow.
+  // Giving a type here answers what the deferral was waiting for, which is
+  // what the endpoint does to the stored entry too.
   Object.assign(row, patch);
+  if (patch.adminType) row.adminTypeDeferred = false;
   saving.value[row.key] = true;
   try {
     await authRequest("/api/notes/admin", {

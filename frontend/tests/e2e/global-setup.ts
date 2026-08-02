@@ -39,6 +39,11 @@ const LOGGED_IN_ROUTES = [
   "/eksploruj/nowe",
   "/ekstrakcje/kategoryzacja",
   "/admin/rewizje",
+  // The notes queue and the table it hands entries back to. Both specs judge
+  // an entry within their first few seconds, so neither can afford to wait on
+  // vite for the chunk that renders the buttons they click.
+  "/admin/notatki",
+  "/admin/notatki/kategoryzacja",
   // The id does not have to resolve; the route's own chunk is what we want
   // compiled before a spec follows a revision link into it.
   "/admin/rewizje/warmup",
