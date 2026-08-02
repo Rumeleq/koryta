@@ -314,7 +314,13 @@ const inventoryTiles = computed(() => {
     { label: "Miejsca", value: db.nodes.places, hint: "spółki i instytucje" },
     { label: "Artykuły", value: db.nodes.articles, hint: "źródła prasowe" },
     { label: "Powiązania", value: db.edges, hint: "krawędzie w grafie" },
-    { label: "Regiony", value: db.nodes.regions },
+    {
+      label: "Regiony",
+      value: db.nodes.regions,
+      // Every other tile carries a hint, and the row is bottom-aligned - a
+      // tile without one sits a line higher than its neighbours.
+      hint: "gminy, powiaty, województwa",
+    },
     {
       label: "Oceny",
       value: db.votes.total,
