@@ -75,6 +75,31 @@ export function isPublicInstitution(name: string | undefined): boolean {
   );
 }
 
+/** What this migration changes about the node itself.
+ *
+ * Only these fields, written with `update`. Writing the revision snapshot over
+ * the node with `set` - which is what this did until it had wiped the
+ * institutions it was meant to mark - deletes everything a revision
+ * deliberately leaves out, `stats` among it. A node with no
+ * `stats.nodeGroupSize` disappears from `/api/search`, which orders by it, and
+ * Firestore returns no document that lacks the field it is ordered on: the
+ * WFOŚiGW, Departament and Urząd entries were unfindable for as long as that
+ * took to notice.
+ *
+ * `revisionRef` is passed only when the node was already published, so an
+ * unapproved draft stays one.
+ */
+export function nodeOwnershipUpdate(revisionRef?: {
+  id: string;
+}): Record<string, unknown> {
+  const update: Record<string, unknown> = {
+    isPublic: true,
+    isPublicSource: "manual",
+  };
+  if (revisionRef) update.revision_id = revisionRef;
+  return update;
+}
+
 /** Fields regenerated or managed outside a revision, mirroring
  * `server/utils/revisions.ts` — copying them in would freeze a stale snapshot. */
 const INTERNAL_FIELDS = new Set([
@@ -138,7 +163,8 @@ async function migrate() {
 
     // A revision, not a bare field write: the node's content and its current
     // revision have to keep saying the same thing, and this change should show
-    // up in the node's history like any other.
+    // up in the node's history like any other. The revision is the content
+    // snapshot, so it keeps leaving the internal fields out.
     const revisionRef = db.collection("revisions").doc();
     batch.set(revisionRef, {
       node_id: doc.id,
@@ -147,9 +173,13 @@ async function migrate() {
       update_user: "migration:seed-public-institutions",
       update_automatic: true,
     });
-    // Published only if the node already was; an unapproved draft stays one.
-    if (data.revision_id) revisionData.revision_id = revisionRef;
-    batch.set(doc.ref, revisionData);
+    // The node only gains an answer about its ownership - see
+    // `nodeOwnershipUpdate` for why this is not the snapshot written back.
+    batch.update(
+      doc.ref,
+      // Published only if the node already was; an unapproved draft stays one.
+      nodeOwnershipUpdate(data.revision_id ? revisionRef : undefined),
+    );
     pending += 2;
 
     if (pending >= 400) {
