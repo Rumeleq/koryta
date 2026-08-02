@@ -222,6 +222,23 @@ jobs:
           KORYTA_E2E_STRICT: "1"
         run: uv run --no-sync pytest -m e2e src/tests/e2e -v
 
+      # src/tests/pipelines carries the other kind of e2e test: the database
+      # invariants, which read the newest Firestore export out of the bucket
+      # rather than versioned/. Deliberately not folded into the step above.
+      #
+      # Only on the full tier, for two reasons. It needs the bucket, and a fork
+      # pull request has no credentials to read it with. And what it checks is
+      # production data rather than the code in the diff, so a red here would
+      # be telling a contributor about drift they did not cause -- nightly is
+      # the right place to hear it.
+      #
+      # Runs even if the step above failed: versioned/ output and stored data
+      # break independently, and one night should report both.
+      - name: Check the database invariants
+        if: ${{ !cancelled() && env.TIER == 'full' }}
+        working-directory: data/scrapers
+        run: uv run --no-sync pytest -m e2e src/tests/pipelines -v
+
       - name: Upload pipeline output
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
