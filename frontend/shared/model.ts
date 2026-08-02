@@ -313,6 +313,11 @@ export type NoteSource = {
   // Admin triage of an individual source. Each source is reviewed separately.
   adminStatus?: NoteAdminStatus;
   adminType?: string;
+  /** Set when a reviewer looked at the entry and could not tell its type from
+   * the note and its url alone - it needs the node beside it, which only the
+   * table view has room for. Keeps the entry out of the phone queue without
+   * pretending it has been classified; cleared as soon as a type is given. */
+  adminTypeDeferred?: boolean;
 };
 
 /** Note allows users to collaborate on a node content without accessing the node itself.
@@ -364,6 +369,8 @@ export type NoteRow = {
   kind: NoteEntryKind;
   adminStatus: NoteAdminStatus | null;
   adminType: string | null;
+  /** Whether classifying this entry was handed back to the table view. */
+  adminTypeDeferred: boolean;
 };
 
 export type ExtractionFactType =
