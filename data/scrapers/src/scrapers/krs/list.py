@@ -14,7 +14,7 @@ from scrapers.krs.data import CompaniesHardcoded
 from scrapers.krs.graph import QueryRelation
 from scrapers.map.postal_codes import PostalCodes
 from scrapers.stores import CloudStorage, Context, Pipeline
-from scrapers.stores.file import DownloadableFile, latest_crawls
+from scrapers.stores.file import DownloadableFile, latest_crawls, split_crawl_date
 
 curr_date = datetime.now().strftime("%Y-%m-%d")
 
@@ -104,64 +104,65 @@ class PeopleKRS(Pipeline):
         return extract_people(ctx)
 
 
-def rejestrio_connection_blobs(ctx: Context) -> list[DownloadableFile]:
-    """The newest crawl of each rejestr.io connection query.
-
-    Every crawl is kept in the bucket under its own ``date=``, so listing the
-    prefix returns one blob per company per crawl. Reading all of them would
-    state each connection once per crawl it survived - the same board seat as
-    it stood in February, in May and in July - and those copies do not even
-    agree: a seat that ended between two crawls is open in the earlier blob and
-    closed in the later one, so the person ends up both still employed and
-    long gone.
-
-    Only the last crawl describes the register as it is now, which is what
-    every caller wants, so that is the only one worth reading. It also means
-    downloading a quarter of the blobs, which the per-GB egress makes worth
-    having on its own.
-    """
-    listing = [
-        blob_ref
-        for blob_ref in ctx.io.list_files(CloudStorage(prefix="hostname=rejestr.io"))
-        if isinstance(blob_ref, DownloadableFile) and "aktualnosc_" in blob_ref.url
-    ]
-    return latest_crawls(listing, lambda blob_ref: blob_ref.url)
-
-
 def extract_people(ctx: Context):
-    """
-    Iterates through GCS files from rejestr.io, parses them,
-    and extracts information about people.
-    """
-    outputs = []
-    unknown_relations: typing.Counter[str] = collections.Counter()
+    """Everyone rejestr.io ties to a company, as the register stands now.
 
-    # Deliberately not `ctx.io.read_many`, which would serve this prefix from
-    # the compressed mirror in seconds: it hands back every object under the
-    # hostname, and which crawl a blob belongs to can only be decided from the
-    # listing, before anything is downloaded. Reconciling the two - a mirror
-    # read that is also crawl-aware - is worth doing and is not this change.
-    for blob_ref in rejestrio_connection_blobs(ctx):
-        blob = ctx.io.read_data(blob_ref)
-        blob_name = blob_ref.url
+    Every crawl of a query is kept in the bucket under its own ``date=``, so the
+    prefix holds one blob per company per crawl. Reading all of them states each
+    connection once per crawl it survived - the same board seat as it stood in
+    February, in May and in July - and the copies do not even agree: a seat that
+    ended between two crawls is open in the earlier blob and closed in the later
+    one, so the person comes out both still employed and long gone.
+
+    Only the newest crawl of each query describes the register as it is, so that
+    is the only one kept. Which crawl that is gets decided over what arrives,
+    not over a listing of the bucket, and the reason is `read_many`: it serves
+    this prefix from the compressed mirror, seconds against the hour the 29k
+    objects take one at a time, and it hands back everything under the hostname
+    in whatever order the archive holds it. Naming the newest crawl from a
+    listing first would read better but breaks on a mirror built before that
+    crawl was taken - the query would contribute nothing at all rather than the
+    previous crawl, which is the wrong way to fail.
+
+    The cost of that choice is that superseded blobs are still fetched. On the
+    mirror path they arrive inside one archive and are free; on the fallback
+    path this is the egress an earlier version of this function avoided.
+    """
+    unknown_relations: typing.Counter[str] = collections.Counter()
+    # subject -> (crawl date, the rows that crawl produced). Keyed by the query
+    # with its `date=` removed, which is what identifies the thing crawled.
+    latest: dict[str, tuple[str, list[KrsPerson]]] = {}
+
+    for blob_name, blob in ctx.io.read_many(
+        CloudStorage(prefix="hostname=rejestr.io")
+    ):
+        if "aktualnosc_" not in blob_name:
+            continue
+        subject, date = split_crawl_date(blob_name)
+        seen = latest.get(subject)
+        if seen is not None and seen[0] >= date:
+            # A crawl this one supersedes. Skipped before parsing rather than
+            # after, so the work is proportional to the companies, not to how
+            # often they have been crawled.
+            continue
         content = blob.read_string()
         if content == "":
-            # A failure marker. It is the newest crawl of this query, so there
-            # is nothing left to read it from - say so rather than losing the
-            # company's people to a silent `continue`.
-            print(f"  [WARN] Newest crawl of {blob_name} is empty, skipping")
+            # A failed fetch. Nothing is recorded for it, so a crawl taken
+            # before it stands - stale by one crawl beats losing the company.
+            print(f"  [WARN] Crawl {blob_name} is empty, skipping")
             continue
         try:
             data = json.loads(content)
         except json.JSONDecodeError as e:
             print(f"  [ERROR] Could not process {blob_name}: {e}")
             raise e
+        people: list[KrsPerson] = []
         try:
             for item in data:
                 if item.get("typ") == "osoba":
                     identity = item.get("tozsamosc", {})
                     for post in posts_held(item, unknown_relations):
-                        outputs.append(
+                        people.append(
                             KrsPerson(
                                 id=item["id"],
                                 first_name=identity.get("imie"),
@@ -179,6 +180,10 @@ def extract_people(ctx: Context):
                         )
         except KeyError as e:
             print(f"  [ERROR] Could not process {blob_name}: {e}")
+            continue
+        latest[subject] = (date, people)
+
+    outputs = [person for _, people in latest.values() for person in people]
 
     if unknown_relations:
         # rejestr.io grew a kind of connection nobody has classified. Dropping
