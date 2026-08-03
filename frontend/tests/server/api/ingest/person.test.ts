@@ -51,8 +51,12 @@ vi.mock("firebase-admin/app", () => ({
   getApp: vi.fn(),
 }));
 
-vi.mock("../../../../server/utils/auth", () => ({
-  getUser: vi.fn().mockResolvedValue({ uid: "test-user-id" }),
+// Only `getUser` is faked. `requireDatascience` is a pure check on the decoded
+// token, so the endpoint's real gate runs against whatever `getUser` hands back.
+const mockGetUser = vi.fn();
+vi.mock("../../../../server/utils/auth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../../server/utils/auth")>()),
+  getUser: (...args: unknown[]) => mockGetUser(...args),
 }));
 
 const mockBaseNodeFields = vi.fn().mockResolvedValue({});
@@ -96,10 +100,27 @@ const { mockReadBody } = vi.hoisted(() => {
 describe("api/ingest/person", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
+    mockGetUser.mockResolvedValue({ uid: "test-user-id", datascience: true });
     // Reset query chain mocks
     mockWhere.mockReturnValue(queryMock);
     queryMock.where.mockReturnValue(queryMock);
     queryMock.limit.mockReturnValue(queryMock);
+  });
+
+  it("refuses a caller who is not in the datascience group", async () => {
+    // Being logged in is not enough: this endpoint takes the caller's word for
+    // whether a change is approved, including changes to candidacies it did not
+    // create.
+    mockGetUser.mockResolvedValue({ uid: "test-user-id" });
+    mockReadBody.mockResolvedValue({
+      name: "Test Person",
+      parties: [],
+      companies: [],
+    });
+
+    await expect(handler({} as any)).rejects.toMatchObject({
+      statusCode: 403,
+    });
   });
 
   it("should throw 400 if name is missing", async () => {
@@ -164,7 +185,7 @@ describe("api/ingest/person", () => {
       2,
       mockDb,
       expect.anything(),
-      { uid: "test-user-id" },
+      expect.objectContaining({ uid: "test-user-id" }),
       edgeRef1,
       {
         source: "person-id",
@@ -222,7 +243,7 @@ describe("api/ingest/person", () => {
       2,
       mockDb,
       expect.anything(),
-      { uid: "test-user-id" },
+      expect.objectContaining({ uid: "test-user-id" }),
       edgeRef,
       expect.objectContaining({
         type: "election",
@@ -577,7 +598,7 @@ describe("api/ingest/person", () => {
       expect(createRevisionTransaction).toHaveBeenCalledWith(
         mockDb,
         expect.anything(),
-        { uid: "test-user-id" },
+        expect.objectContaining({ uid: "test-user-id" }),
         expect.anything(),
         expect.objectContaining({ parties: ["PiS"] }),
         true,
@@ -606,7 +627,7 @@ describe("api/ingest/person", () => {
       expect(createRevisionTransaction).toHaveBeenCalledWith(
         mockDb,
         expect.anything(),
-        { uid: "test-user-id" },
+        expect.objectContaining({ uid: "test-user-id" }),
         expect.anything(),
         expect.objectContaining({
           parties: ["PO", "PiS"],

@@ -1,6 +1,6 @@
 import { getFirestore } from "firebase-admin/firestore";
 import { getApp } from "firebase-admin/app";
-import { getUser } from "~~/server/utils/auth";
+import { getUser, requireDatascience } from "~~/server/utils/auth";
 import {
   baseNodeFields,
   createRevisionTransaction,
@@ -28,7 +28,7 @@ export default defineEventHandler(async (event) => {
   const body: PersonRequest = await readValidatedBody(event, (body) =>
     personRequestSchema.parse(body),
   );
-  const user = await getUser(event);
+  const user = requireDatascience(await getUser(event));
   const db = getFirestore(getApp(), "koryta-pl");
 
   const batch = db.batch();
