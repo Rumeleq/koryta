@@ -211,6 +211,17 @@
           </v-row>
         </div>
 
+        <FormAddRelation
+          v-if="entity && (entity.type === 'person' || entity.type === 'place')"
+          :key="node"
+          :node-id="node"
+          :node-type="entity.type"
+          :node-name="entity.name"
+          :types="relationTypes"
+          @added="refreshEdges()"
+          @login="handleLoginRedirect()"
+        />
+
         <div v-if="referencedIn.length" class="mt-4">
           <h3 class="text-h6 mb-2">Artykuł stanowi źródło dla:</h3>
           <v-row>
@@ -327,6 +338,8 @@ import type {
   Revision,
 } from "~~/shared/model";
 import CommentsSection from "@/components/comment/CommentsSection.vue";
+import FormAddRelation from "~/components/form/AddRelation.vue";
+import type { edgeTypeExt } from "~/composables/useEdgeTypes";
 import { useDisplay } from "vuetify";
 
 definePageMeta({
@@ -413,7 +426,12 @@ const regionTeryt = computed(() => {
 });
 
 // Calculate edges and relationships
-const { sources, targets, referencedIn } = await useEdges(node);
+const {
+  sources,
+  targets,
+  referencedIn,
+  refresh: refreshEdges,
+} = await useEdges(node);
 const edges = computed(() => [...sources.value, ...targets.value]);
 const owners = computed(() => {
   return sources.value.filter((e) => e.type === "owns");
@@ -428,4 +446,9 @@ const subsidiaries = computed(() => {
     (e) => e.type === "owns" && e.richNode.type == "place",
   );
 });
+
+/** The relations a reader may add by hand: who somebody knows, and where they
+ * work. Ownership and candidacies come from the registers rather than from a
+ * form, and an article's mentions are added while reading the article. */
+const relationTypes: edgeTypeExt[] = ["connection", "employed"];
 </script>

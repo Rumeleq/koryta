@@ -182,12 +182,6 @@
                 </v-list-item-subtitle>
                 <template #append>
                   <v-btn
-                    :icon="mdiPencil"
-                    variant="text"
-                    size="small"
-                    @click="openEditEdge(edge)"
-                  />
-                  <v-btn
                     :icon="mdiOpenInNew"
                     variant="text"
                     size="small"
@@ -202,7 +196,7 @@
               Brak istniejących powiązań.
             </div>
 
-            <div v-if="!activeEdgeTypeExt && !isEditingEdge" class="mt-4">
+            <div v-if="!activeEdgeTypeExt" class="mt-4">
               <FormEditEdgePicker
                 :node-id="node_id!"
                 :node-type="current.type || 'person'"
@@ -212,15 +206,14 @@
             </div>
 
             <FormEditEdge
-              v-if="activeEdgeTypeExt || isEditingEdge"
+              v-else
               ref="editEdgeForm"
-              :key="editedEdgeId || activeEdgeTypeExt"
+              :key="activeEdgeTypeExt"
               :node-id="node_id!"
               :node-type="current.type || 'person'"
               :node-name="current.name || ''"
-              :edge-type-ext="activeEdgeTypeExt!"
+              :edge-type-ext="activeEdgeTypeExt"
               :initial-direction="activeDirection"
-              :edited-edge="isEditingEdge ? editedEdgeId : undefined"
               @update="onEdgeUpdate"
             />
           </template>
@@ -231,7 +224,7 @@
 </template>
 
 <script setup lang="ts">
-import { mdiBriefcase, mdiLink, mdiOpenInNew, mdiPencil } from "@mdi/js";
+import { mdiBriefcase, mdiLink, mdiOpenInNew } from "@mdi/js";
 import { ref } from "vue";
 import { useNodeEdit } from "~/composables/useNodeEdit";
 import FormEditEdge from "~/components/form/EditEdge.vue";
@@ -274,32 +267,19 @@ const loading = false;
 
 const activeEdgeTypeExt = ref<edgeTypeExt | undefined>(undefined);
 const activeDirection = ref<"incoming" | "outgoing" | undefined>(undefined);
-const isEditingEdge = ref(false);
-const editedEdgeId = ref<string | undefined>(undefined);
 
 function startNewEdge(type: string, direction: string) {
   activeEdgeTypeExt.value = type as edgeTypeExt;
   activeDirection.value = direction as "incoming" | "outgoing";
-  isEditingEdge.value = false;
-  editedEdgeId.value = undefined;
 }
 
-function openEditEdge(edge: EdgeNode) {
-  isEditingEdge.value = true;
-  editedEdgeId.value = edge.id;
-  // We need to map the edge type to edgeTypeExt
-  // For now let's assume it's direct or we can infer it
-  // This might need more logic if types don't match 1:1
-  activeEdgeTypeExt.value = edge.type as edgeTypeExt;
-  activeDirection.value = undefined;
-  throw new Error("Not implemented");
-}
+// Editing an existing edge is not offered: it would need an endpoint that
+// revises one, and /api/edges/create only ever writes a new document. The list
+// above is read-only until there is one; adding still works.
 
 function onEdgeUpdate() {
   activeEdgeTypeExt.value = undefined;
   activeDirection.value = undefined;
-  isEditingEdge.value = false;
-  editedEdgeId.value = undefined;
   refreshEdges();
 }
 
