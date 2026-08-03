@@ -245,6 +245,7 @@ import { ref, onMounted } from "vue";
 import {
   mdiGraphOutline,
   mdiHistory,
+  mdiVectorPolyline,
   mdiNoteEditOutline,
   mdiTextBoxSearchOutline,
   mdiChartLine,
@@ -278,6 +279,12 @@ const subpages = [
     to: "/admin/krawedzie",
     icon: mdiGraphOutline,
     desc: "Powiązania gotowe do publikacji - obie strony już opublikowane.",
+  },
+  {
+    title: "Rewizje krawędzi",
+    to: "/admin/rewizje-krawedzi",
+    icon: mdiVectorPolyline,
+    desc: "Zmiany krawędzi zaproponowane przez pipeline, jeszcze nierozpatrzone.",
   },
   {
     title: "Notatki",
