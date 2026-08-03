@@ -31,6 +31,7 @@ from stores.config import PROJECT_ROOT
 from stores.download import CompressedMirror, FileSource
 from stores.duckdb import EntityDumper
 from stores.firestore import FirestoreIO
+from stores.llm import OpenAICompatibleConfig, OpenAICompatibleMultiPortLLM
 from stores.rejestr import Rejestr
 from stores.storage import CRAWLED_BUCKET, BatchClient
 from stores.storage import Client as CloudStorageClient
@@ -39,9 +40,10 @@ from stores.web import WebImpl
 
 
 class Conductor(IO):
-    def __init__(self, dumper: EntityDumper, batch_upload=False):
+    def __init__(self, dumper: EntityDumper, llm=None, batch_upload=False):
         self.firestore = FirestoreIO()
         self.dumper = dumper
+        self.llm = llm
         # Not `batch_upload`, which is already a method on this class.
         self._batch_upload = batch_upload
         self.mirror = CompressedMirror()
@@ -222,6 +224,18 @@ class Conductor(IO):
 def setup_context(
     use_rejestr_io: bool = False,
     use_nlp: bool = False,
+    use_llm: bool = False,
+    llm_ports: list[int] | None = None,
+    llm_model: str = "Qwen/Qwen3-14B",
+    llm_per_port_concurrency: int = 4,
+    llm_request_timeout_seconds: int = 600,
+    llm_base_url: str | None = None,
+    llm_api_key: str | None = None,
+    article_workers: int = 4,
+    article_facts_min_koryciarski_score: int | None = None,
+    article_facts_max_tokens: int | None = None,
+    article_facts_text_limit: int | None = None,
+    article_tag: str | None = None,
     policy: ProcessPolicy | None = None,
     crawl_queue: CrawlQueue | None = None,
     batch_upload: bool = False,
@@ -229,7 +243,19 @@ def setup_context(
     if policy is None:
         policy = ProcessPolicy.with_default()
     dumper = EntityDumper()
-    conductor = Conductor(dumper, batch_upload=batch_upload)
+    llm = None
+    if use_llm:
+        llm = OpenAICompatibleMultiPortLLM(
+            OpenAICompatibleConfig(
+                model=llm_model,
+                ports=tuple(llm_ports or list(range(6000, 6016))),
+                per_port_concurrency=llm_per_port_concurrency,
+                request_timeout_seconds=llm_request_timeout_seconds,
+                base_url=llm_base_url,
+                api_key=llm_api_key,
+            )
+        )
+    conductor = Conductor(dumper, llm=llm, batch_upload=batch_upload)
     rejestr_io = None
     if use_rejestr_io:
         print("Initializing RejestrIO as a data source")
@@ -252,6 +278,12 @@ def setup_context(
         crawl_queue=crawl_queue,
         nlp=nlp,  # type: ignore
         refresh_policy=policy,
+        llm=llm,
+        article_workers=article_workers,
+        article_facts_min_koryciarski_score=article_facts_min_koryciarski_score,
+        article_facts_max_tokens=article_facts_max_tokens,
+        article_facts_text_limit=article_facts_text_limit,
+        article_tag=article_tag,
     )
 
     ctx.con.create_function("parse_hostname", parse_hostname, [VARCHAR], VARCHAR)  # type: ignore
