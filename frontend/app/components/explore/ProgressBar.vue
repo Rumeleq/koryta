@@ -69,8 +69,8 @@
         </span>
         <v-spacer />
         <span class="text-caption text-medium-emphasis">
-          oczekujące zmiany: {{ stats.pendingRevisions }} · z głosami:
-          {{ stats.withVotes }} · z notatkami: {{ stats.withNotes }}
+          z głosami: {{ stats.withVotes }} · z notatkami:
+          {{ stats.withNotes }}
         </span>
       </div>
 

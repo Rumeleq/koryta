@@ -181,12 +181,12 @@ useSeoMeta({
 
 const { toCheck } = useStats();
 
-const quickActions = [
+const quickActions = computed(() => [
   {
     title: "Przeglądaj nowe osoby",
     to: "/eksploruj/nowe",
     icon: mdiLayersSearchOutline,
-    desc: `Oceń osoby, które nie są jeszcze opublikowane na stronie. Do sprawdzenia zostało jeszcze ${toCheck}.`,
+    desc: `Oceń osoby, które nie są jeszcze opublikowane na stronie. Do sprawdzenia zostało jeszcze ${toCheck.value}.`,
   },
   {
     title: "Kategoryzuj fakty",
@@ -200,7 +200,7 @@ const quickActions = [
     icon: mdiGithub,
     desc: "Masz pomysł na usprawnienie lub znalazłeś błąd? Zgłoś go na GitHubie.",
   },
-];
+]);
 
 // TODO update the link before the end of January 2025
 const communityLinks = [
