@@ -2,6 +2,7 @@ import {
   signOut,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
 } from "firebase/auth";
 import { computedAsync } from "@vueuse/core";
 import {
@@ -59,6 +60,16 @@ export function useAuthState() {
     return await createUserWithEmailAndPassword(auth, email, pass);
   };
 
+  /** Sends the "set a new password" link to `email`.
+   *
+   * Firebase's email enumeration protection makes this succeed even for an
+   * address with no account, so the caller must not report back whether the
+   * address is known.
+   */
+  const resetPassword = async (email: string) => {
+    return await sendPasswordResetEmail(auth, email);
+  };
+
   return {
     user,
     isAdmin,
@@ -67,6 +78,7 @@ export function useAuthState() {
     logout,
     login,
     register,
+    resetPassword,
   };
 }
 
