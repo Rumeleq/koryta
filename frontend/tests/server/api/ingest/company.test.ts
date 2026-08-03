@@ -131,8 +131,12 @@ describe("api/ingest/company", () => {
     const existingRef = { id: "existing-id" };
     const existingDoc = {
       ref: existingRef,
-      // revision_id present => the company is currently public
-      data: () => ({ content: "Old Content", revision_id: "rev-1" }),
+      // published => the company is currently live, and a re-ingest keeps it so
+      data: () => ({
+        content: "Old Content",
+        revision_id: "rev-1",
+        published: true,
+      }),
     };
     mockGet.mockResolvedValue({
       empty: false,

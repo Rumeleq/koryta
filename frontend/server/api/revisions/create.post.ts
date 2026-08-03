@@ -88,9 +88,14 @@ export default defineEventHandler(async (event) => {
   batch.set(revisionRef, revision);
   if (isNewNode) {
     // Create the node itself so the proposal gets an id and can be linked to,
-    // voted on and edited further. It is written without a `revision_id`, which
-    // keeps it unapproved and therefore hidden from logged out users.
-    batch.set(nodeRef, revision.data as Record<string, unknown>);
+    // voted on and edited further. Written without a `revision_id`, so nothing
+    // is approved to show, and with `published: false` said out loud: now that
+    // the backfill has run, every document carries the field, and a proposal
+    // that left it absent would be the only place the old ambiguity survived.
+    batch.set(nodeRef, {
+      ...(revision.data as Record<string, unknown>),
+      published: false,
+    });
   }
   await batch.commit();
 
