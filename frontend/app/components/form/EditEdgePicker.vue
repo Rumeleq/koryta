@@ -19,12 +19,15 @@
 <script lang="ts" setup>
 import { computed } from "vue";
 import type { NodeType } from "~~/shared/model";
-import { useEdgeButtons } from "~/composables/useEdgeTypes";
+import { useEdgeButtons, type edgeTypeExt } from "~/composables/useEdgeTypes";
 
 const props = defineProps<{
   nodeId: string;
   nodeType: NodeType;
   nodeName?: string;
+  /** Narrows what may be added here. Every type this node can be an end of,
+   * when left out. */
+  types?: edgeTypeExt[];
 }>();
 
 const emit = defineEmits<{
@@ -38,7 +41,11 @@ const newEdgeButtons = computed(() =>
 const effectiveNodeType = computed(() => props.nodeType);
 
 const filteredButtons = computed(() =>
-  newEdgeButtons.value.filter((b) => b.nodeType === effectiveNodeType.value),
+  newEdgeButtons.value.filter(
+    (b) =>
+      b.nodeType === effectiveNodeType.value &&
+      (!props.types || props.types.includes(b.edgeTypeExt)),
+  ),
 );
 
 function startAddEdge(edgeType: string, direction: string) {

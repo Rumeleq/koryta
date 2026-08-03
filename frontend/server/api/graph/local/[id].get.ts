@@ -9,7 +9,7 @@ import {
 } from "~~/shared/graph/util";
 import { authCachedEventHandler } from "~~/server/utils/handlers";
 import type { Edge, Person, Company, Region } from "~~/shared/model";
-import { getQuery, getRouterParam } from "h3";
+import { getQuery, getRouterParam, type H3Event } from "h3";
 import {
   fetchNodesByIds,
   fetchEdges,
@@ -116,9 +116,17 @@ export async function getLocalGraph(
   } as GraphLayout;
 }
 
-export default authCachedEventHandler(async (event) => {
+/** Whether the caller asked to be shown things that are not approved yet.
+ *
+ * `authFetch` sets it on every request a signed in reader makes, so it doubles
+ * as "this is an editor", which is what decides the caching below. */
+function wantsLatest(event: H3Event): boolean {
+  const latest = getQuery(event).latest;
+  return latest !== undefined && latest !== "false";
+}
+
+async function localGraph(event: H3Event) {
   const query = getQuery(event);
-  const latest = query.latest !== undefined && query.latest !== "false";
   const distance = query.distance ? parseInt(query.distance as string, 10) : 1;
   const focusNodeId = getRouterParam(event, "id");
 
@@ -132,5 +140,19 @@ export default authCachedEventHandler(async (event) => {
   }
 
   // TODO actually propagate the information about the latest
-  return getLocalGraph(focusNodeId, latest, distance, expansions);
+  return getLocalGraph(focusNodeId, wantsLatest(event), distance, expansions);
+}
+
+const cachedLocalGraph = authCachedEventHandler(localGraph);
+
+export default defineEventHandler(async (event) => {
+  // A signed in reader is the one who may have just added the edge they are
+  // looking for, and the cache below holds a response for six hours - long
+  // enough to convince somebody their relation was never written. So they read
+  // through to Firestore, while logged out traffic, which is nearly all of it,
+  // still gets the cache.
+  if (wantsLatest(event)) {
+    return localGraph(event);
+  }
+  return cachedLocalGraph(event);
 });
