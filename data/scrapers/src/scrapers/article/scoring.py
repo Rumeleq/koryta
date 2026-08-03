@@ -211,12 +211,6 @@ def _load_url_model(name: str) -> Any:
     return _loaded_models[name]
 
 
-# Model file backing each ML scorer, so batch scoring can reach it directly.
-_ML_SCORER_MODELS = {
-    "koryciarski_ml": "koryciarski_url",
-    "article_hub_ml": "ok_article_links_url",
-}
-
 # Spread each raw prediction onto the 0..100 priority axis so the queue isn't
 # millions of URLs tied at one value. The raw ranges are small (koryciarski
 # ~0-5, ok-link count ~0-20), so without scaling `priority = 100 - score`
@@ -249,29 +243,6 @@ def _ml_priority_score(
         return 0
     scale = _ML_SCORE_SCALE.get(model_name, 1.0)
     return max(0, min(100, round(raw * scale)))
-
-
-def get_batch_scoring_function(
-    name: str, domains_of_interest: frozenset[str] = frozenset()
-) -> Callable[[list[str]], list[int]]:
-    """Like get_scoring_function but scores a whole list at once.
-
-    ML scorers run a single vectorized model.predict over the batch (far faster
-    than one call per URL); other scorers fall back to per-URL evaluation.
-    """
-    if name in _ML_SCORER_MODELS:
-        model_name = _ML_SCORER_MODELS[name]
-
-        def scorer(urls: list[str]) -> list[int]:
-            raw = _predict_raw(model_name, urls)
-            return [
-                _ml_priority_score(model_name, r, u, domains_of_interest)
-                for u, r in zip(urls, raw)
-            ]
-
-        return scorer
-    fn = get_scoring_function(name, domains_of_interest)
-    return lambda urls: [fn(u) for u in urls]
 
 
 @score_function("koryciarski_ml")
