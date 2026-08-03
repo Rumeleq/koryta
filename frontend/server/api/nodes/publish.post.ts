@@ -2,6 +2,7 @@ import { getFirestore } from "firebase-admin/firestore";
 import { getApp } from "firebase-admin/app";
 import { requireAdmin } from "~~/server/utils/auth";
 import { recordAudit } from "~~/server/utils/audit";
+import { cascadeUnpublishEdges } from "~~/server/utils/edgePublication";
 import { z } from "zod";
 
 const bodyValidator = z.object({
@@ -38,6 +39,16 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  // Hiding the page hides the relations that lean on it, and in that order: no
+  // edge may be published unless both its ends are, so taking the edges down
+  // first means the invariant holds at every point in between. Nothing a
+  // reader sees changes either way - the graph already drops an edge whose
+  // node was filtered out - but the flag would otherwise outlive the page, and
+  // republishing it later would bring back relations nobody looked at again.
+  const hiddenEdges = body.published
+    ? []
+    : await cascadeUnpublishEdges(db, body.node_id, user);
+
   // The node keeps only the answer, so without this nothing said who gave it
   // or when - the one decision that settles what the public sees was the one
   // decision leaving no trace.
@@ -55,5 +66,10 @@ export default defineEventHandler(async (event) => {
   );
   await batch.commit();
 
-  return { id: body.node_id, published: body.published };
+  return {
+    id: body.node_id,
+    published: body.published,
+    /** The relations hidden along with it, so the admin page can say so. */
+    hiddenEdges,
+  };
 });
