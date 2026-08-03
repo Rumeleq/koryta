@@ -11,6 +11,11 @@ import { isInWojewodztwo, isWojewodztwoTeryt } from "~~/shared/teryt";
 export type NodeFilterOp = {
   applyFs: (q: FirebaseFirestore.Query) => FirebaseFirestore.Query;
   applyMem: (nodes: any[]) => any[];
+  /** Document fields `applyMem` reads. Declared so that a caller which
+   * projects its Firestore query knows what to ask for - a field left out of
+   * the projection reads back as undefined and the filter silently drops
+   * everything. Callers that fetch whole documents can ignore it. */
+  fields?: string[];
 };
 
 export type StructuralQuery = {
@@ -88,14 +93,20 @@ function memOnly(applyMem: NodeFilterOp["applyMem"]): NodeFilterOp {
  *
  * Returns `empty: true` when a filter value resolves to nothing (e.g. an
  * unknown KRS number), meaning the result set is empty regardless of the
- * other filters.
+ * other filters. `fields` is the union of what the ops read, for callers that
+ * project their query - see `NodeFilterOp.fields`.
  */
 export async function buildStructuralFilterOps(
   db: FirebaseFirestore.Firestore,
   query: StructuralQuery,
   edgeScope: "all" | "approved",
-): Promise<{ ops: NodeFilterOp[]; empty: boolean }> {
+): Promise<{ ops: NodeFilterOp[]; fields: string[]; empty: boolean }> {
   const ops: NodeFilterOp[] = [];
+  const result = (empty: boolean) => ({
+    ops,
+    fields: [...new Set(ops.flatMap((op) => op.fields ?? []))],
+    empty,
+  });
   // Firestore allows only one array-contains/array-contains-any clause per
   // query, so once one op uses it, later array ops must run in memory.
   let arrayFilterUsed = false;
@@ -104,6 +115,7 @@ export async function buildStructuralFilterOps(
     ops.push({
       applyFs: (q) => q.where("type", "==", query.type),
       applyMem: (nodes) => nodes.filter((n) => n.type === query.type),
+      fields: ["type"],
     });
   }
 
@@ -130,6 +142,7 @@ export async function buildStructuralFilterOps(
             return true;
           return false;
         }),
+      fields: ["parties"],
     });
   }
 
@@ -185,7 +198,7 @@ export async function buildStructuralFilterOps(
   if (placeIdSets.length > 0) {
     const placeIds = intersectAll(placeIdSets);
     if (placeIds.length === 0) {
-      return { ops, empty: true };
+      return result(true);
     }
     ops.push(targetNodesOp(placeIds, query, edgeScope, arrayFilterUsed));
     arrayFilterUsed = true;
@@ -194,7 +207,7 @@ export async function buildStructuralFilterOps(
   if (query.teryt) {
     const regionIds = await resolveRegionIds(db, query.teryt);
     if (regionIds.length === 0) {
-      return { ops, empty: true };
+      return result(true);
     }
     ops.push(targetNodesOp(regionIds, query, edgeScope, arrayFilterUsed));
     // Nothing reads this today, but every op that consumes the array-filter
@@ -211,6 +224,7 @@ export async function buildStructuralFilterOps(
         nodes.filter(
           (n) => n.stats?.edges?.[edgeScope]?.currentlyEmployed === true,
         ),
+      fields: [field],
     });
   }
 
@@ -224,6 +238,7 @@ export async function buildStructuralFilterOps(
           const val = n.stats?.edges?.[edgeScope]?.latestEmploymentStart;
           return typeof val === "string" && val >= minDate;
         }),
+      fields: [field],
     });
   }
 
@@ -233,10 +248,11 @@ export async function buildStructuralFilterOps(
       applyFs: (q) => q.where("stats.votes.interesting", ">=", minVotes),
       applyMem: (nodes) =>
         nodes.filter((n) => (n.stats?.votes?.interesting ?? 0) >= minVotes),
+      fields: ["stats.votes.interesting"],
     });
   }
 
-  return { ops, empty: false };
+  return result(false);
 }
 
 /** Region node ids a `teryt` filter covers.
@@ -326,14 +342,15 @@ function targetNodesOp(
         placeIds.includes(id),
       ),
     );
+  const arrayField = edgeTargetsField(edgeScope, query.currentlyEmployed);
 
   // array-contains-any accepts at most 10 values
   if (arrayFilterUsed || placeIds.length > 10) {
-    return memOnly(applyMem);
+    return { ...memOnly(applyMem), fields: [arrayField] };
   }
-  const arrayField = edgeTargetsField(edgeScope, query.currentlyEmployed);
   return {
     applyFs: (q) => q.where(arrayField, "array-contains-any", placeIds),
     applyMem,
+    fields: [arrayField],
   };
 }
