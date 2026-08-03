@@ -5,11 +5,7 @@ import type {
 } from "firebase-admin/firestore";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import type { Edge, Revision } from "~~/shared/model";
-import {
-  approvedRevisionId,
-  pageIsPublic,
-  revisionIsPending,
-} from "~~/shared/model";
+import { approvedRevisionId, pageIsPublic } from "~~/shared/model";
 import { recordAudit } from "~~/server/utils/audit";
 
 /** What an edge needs before it can be shown to the public.
@@ -130,21 +126,86 @@ function revisionTime(revision: Revision): number {
   return 0;
 }
 
-/** The newest revision still waiting for a verdict, if there is one. */
-export function newestPendingRevision(
-  revisions: (Revision & { id: string })[],
-): (Revision & { id: string }) | undefined {
-  return revisions.find((revision) => revisionIsPending(revision));
+/** Revisions for a batch of edges at once, newest first, keyed by edge id.
+ *
+ * One query per 30 ids rather than one per edge: a page listing a node's
+ * relations, or a publish of a hundred of them, would otherwise spend a round
+ * trip on each. 30 is Firestore's ceiling for `in`.
+ */
+export async function edgeRevisionsForMany(
+  db: Firestore,
+  edgeIds: string[],
+): Promise<Map<string, (Revision & { id: string })[]>> {
+  const result = new Map<string, (Revision & { id: string })[]>();
+  for (const id of edgeIds) result.set(id, []);
+  if (edgeIds.length === 0) return result;
+
+  for (let i = 0; i < edgeIds.length; i += 30) {
+    const chunk = edgeIds.slice(i, i + 30);
+    const snap = await db
+      .collection("revisions")
+      .where("node_id", "in", chunk)
+      .get();
+    for (const doc of snap.docs) {
+      const revision = { id: doc.id, ...(doc.data() as Revision) };
+      const target = revision.node_id;
+      if (target) result.get(target)?.push(revision);
+    }
+  }
+
+  for (const revisions of result.values()) {
+    revisions.sort((a, b) => revisionTime(b) - revisionTime(a));
+  }
+  return result;
 }
 
-/** Publishes one edge, and settles its outstanding proposal while it is there.
+/** The revision to approve when publishing an edge that points at none.
+ *
+ * The newest one that has not been rejected - *not* the newest still marked
+ * pending. An edge can carry an approved revision without pointing at it: the
+ * pointer is written by whatever applied the revision, and the ingest paths,
+ * the dedupe script and every document written before `status` existed have all
+ * left the two out of step. Asking for `status === "pending"` found nothing for
+ * those, so the relation had no candidate and the reviewer was told a proposal
+ * was waiting on a queue that would never clear.
+ *
+ * A rejected revision is skipped rather than resurrected - somebody said no to
+ * it, and publishing the relation is not a reason to undo that. If every
+ * revision was rejected there is no candidate, and the edge is published on the
+ * strength of its own document.
+ */
+export function publishCandidateRevision(
+  revisions: (Revision & { id: string })[],
+): (Revision & { id: string }) | undefined {
+  return revisions.find((revision) => revision.status !== "rejected");
+}
+
+/** Whether somebody is actually waiting on a verdict for this relation.
+ *
+ * Stricter than `revisionIsPending`, on purpose: that treats a *missing*
+ * `status` as pending, which is right when the question is "has this been
+ * settled" but wrong when the question is "is there a proposal in the queue".
+ * Every revision written before the field existed has no status - all 28k of
+ * them - so the looser reading labelled every legacy relation as a proposal
+ * awaiting review, which told the reviewer the same untrue thing about all of
+ * them.
+ */
+export function hasPendingRevision(
+  revisions: (Revision & { id: string })[],
+): boolean {
+  return revisions.some((revision) => revision.status === "pending");
+}
+
+/** Publishes one edge, and points it at a revision if it points at none.
  *
  * Publishing a relation *is* the review of it: the reviewer looked at the claim
- * and decided the public should see it. Leaving its revision on "pending" would
- * mean the queue still shows work on an edge that is already live, so an edge
- * with nothing approved yet has its newest proposal approved in the same
- * commit. An edge that predates the revision machinery has neither pointer nor
- * proposal, and is published on the strength of the document itself - refusing
+ * and decided the public should see it. So an edge whose `revision_id` is unset
+ * is pointed at its newest un-rejected revision in the same commit, and that
+ * revision is marked approved - see `publishCandidateRevision` for why the
+ * newest *pending* one is the wrong thing to look for.
+ *
+ * An edge that predates the revision machinery has neither pointer nor
+ * revision, and is published on the strength of the document itself; refusing
  * would hide relations that were never written through a revision at all.
  *
  * Writes into `batch`; the caller decides how many edges share a commit.
@@ -154,14 +215,14 @@ export function publishEdgeInBatch(
   batch: WriteBatch,
   edgeRef: DocumentReference,
   stored: Record<string, unknown>,
-  pending: (Revision & { id: string }) | undefined,
+  candidate: (Revision & { id: string }) | undefined,
   user: { uid: string },
 ): { approvedRevision: string | null } {
   const update: Record<string, unknown> = { published: true };
   let approvedRevision: string | null = null;
 
-  if (!approvedRevisionId(stored.revision_id) && pending) {
-    const revisionRef = db.collection("revisions").doc(pending.id);
+  if (!approvedRevisionId(stored.revision_id) && candidate) {
+    const revisionRef = db.collection("revisions").doc(candidate.id);
     const timestamp = Timestamp.now();
     batch.update(revisionRef, {
       status: "approved",
@@ -170,14 +231,14 @@ export function publishEdgeInBatch(
       reject_reason: FieldValue.delete(),
     });
     update.revision_id = revisionRef;
-    approvedRevision = pending.id;
+    approvedRevision = candidate.id;
     recordAudit(
       db,
       {
         action: "approve",
         collection: "edges",
         target_id: edgeRef.id,
-        revision_id: pending.id,
+        revision_id: candidate.id,
         user: user.uid,
       },
       batch,

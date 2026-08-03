@@ -71,6 +71,9 @@
                 <span v-if="relation.hasPendingRevision">
                   · propozycja czeka na zatwierdzenie</span
                 >
+                <span v-else-if="relation.revisionToApprove">
+                  · zostanie zatwierdzona najnowsza rewizja</span
+                >
               </v-list-item-subtitle>
               <template #append>
                 <v-icon

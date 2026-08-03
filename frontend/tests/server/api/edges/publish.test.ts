@@ -26,11 +26,16 @@ function docRef(collection: string, id: string) {
 function queryCollection(
   collection: string,
   field: string,
+  op: string,
   value: unknown,
 ): { id: string; data: () => Record<string, unknown> }[] {
   return Object.entries(stored)
     .filter(([path]) => path.startsWith(`${collection}/`))
-    .filter(([, data]) => data?.[field] === value)
+    .filter(([, data]) =>
+      op === "in"
+        ? (value as unknown[]).includes(data?.[field])
+        : data?.[field] === value,
+    )
     .map(([path, data]) => ({
       id: path.slice(collection.length + 1),
       data: () => data as Record<string, unknown>,
@@ -43,11 +48,11 @@ const mockWhere = vi.fn();
 const mockDb = {
   collection: vi.fn((collection: string) => ({
     doc: vi.fn((id?: string) => docRef(collection, id ?? "generated-id")),
-    where: vi.fn((field: string, _op: string, value: unknown) => {
+    where: vi.fn((field: string, op: string, value: unknown) => {
       mockWhere(collection, field, value);
       return {
         get: vi.fn(async () => {
-          const docs = queryCollection(collection, field, value);
+          const docs = queryCollection(collection, field, op, value);
           return { docs, size: docs.length, empty: docs.length === 0 };
         }),
       };
@@ -212,6 +217,78 @@ describe("api/edges/publish", () => {
       "revisions/old",
       expect.anything(),
     );
+  });
+
+  it("points the relation at its newest revision even when that one is already approved", async () => {
+    // The pointer and the status go out of step - the ingest paths and every
+    // revision written before `status` existed leave an approved revision with
+    // nothing pointing at it. Looking only for a *pending* one found nothing
+    // for those, so the relation had no candidate at all.
+    seedPublishableEdge();
+    stored["revisions/rev-1"] = {
+      node_id: "e1",
+      status: "approved",
+      update_time: "2026-01-01T00:00:00.000Z",
+      data: { source: "a", target: "b" },
+    };
+
+    const result = await handler({} as never);
+
+    expect(result).toMatchObject({ approved: ["rev-1"] });
+    expect(edgeUpdate()).toMatchObject({
+      published: true,
+      revision_id: expect.objectContaining({ id: "rev-1" }),
+    });
+  });
+
+  it("points it at a revision carrying no status at all", async () => {
+    seedPublishableEdge();
+    stored["revisions/legacy"] = {
+      node_id: "e1",
+      update_time: "2026-01-01T00:00:00.000Z",
+      data: { source: "a", target: "b" },
+    };
+
+    const result = await handler({} as never);
+
+    expect(result).toMatchObject({ approved: ["legacy"] });
+  });
+
+  it("passes over a rejected revision for the newest one nobody refused", async () => {
+    // Somebody said no to it. Publishing the relation is not a reason to undo
+    // that, so the candidate is the newest revision that was not rejected.
+    seedPublishableEdge();
+    stored["revisions/refused"] = {
+      node_id: "e1",
+      status: "rejected",
+      update_time: "2026-06-01T00:00:00.000Z",
+      data: {},
+    };
+    stored["revisions/older"] = {
+      node_id: "e1",
+      status: "pending",
+      update_time: "2025-01-01T00:00:00.000Z",
+      data: {},
+    };
+
+    const result = await handler({} as never);
+
+    expect(result).toMatchObject({ approved: ["older"] });
+  });
+
+  it("publishes on the document alone when every revision was rejected", async () => {
+    seedPublishableEdge();
+    stored["revisions/refused"] = {
+      node_id: "e1",
+      status: "rejected",
+      update_time: "2026-06-01T00:00:00.000Z",
+      data: {},
+    };
+
+    const result = await handler({} as never);
+
+    expect(result).toMatchObject({ published: true, approved: [] });
+    expect(edgeUpdate()).toEqual({ published: true });
   });
 
   it("leaves a relation that already has an approved revision alone", async () => {

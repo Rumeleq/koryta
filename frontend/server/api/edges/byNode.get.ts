@@ -2,9 +2,10 @@ import { getFirestore } from "firebase-admin/firestore";
 import { getApp } from "firebase-admin/app";
 import { requireAdmin } from "~~/server/utils/auth";
 import {
-  edgeRevisions,
+  edgeRevisionsForMany,
   fetchEdgesForNode,
-  newestPendingRevision,
+  hasPendingRevision,
+  publishCandidateRevision,
   resolveEdgeEndpoints,
 } from "~~/server/utils/edgePublication";
 import { approvedRevisionId, pageIsPublic } from "~~/shared/model";
@@ -23,8 +24,12 @@ export type NodeRelation = {
   otherName: string | null;
   otherPublished: boolean;
   published: boolean;
-  /** Whether a proposal for this relation is still waiting for a verdict -
-   * publishing it settles that too. */
+  /** The revision publishing this relation would approve, when it points at
+   * none of its own yet. Null when the edge already has an approved revision,
+   * or has no revision at all and will be published on its document alone. */
+  revisionToApprove: string | null;
+  /** Whether a revision of this relation is genuinely still awaiting a verdict,
+   * as opposed to merely not being pointed at. */
   hasPendingRevision: boolean;
   /** Whether the reviewer may tick this relation, which is what greys the row
    * out when false.
@@ -69,44 +74,47 @@ export default defineEventHandler(async (event): Promise<NodeRelations> => {
   const live = edges.filter((edge) => edge.deleted !== true);
   const endpoints = await resolveEdgeEndpoints(db, live);
 
-  const relations = await Promise.all(
-    live.map(async (edge): Promise<NodeRelation> => {
-      const state = endpoints.get(edge.id);
-      const outgoing = edge.source === query.nodeId;
-      const otherId = outgoing ? edge.target : edge.source;
-      const otherName = outgoing
-        ? (state?.targetName ?? null)
-        : (state?.sourceName ?? null);
-      const otherPublished = outgoing
-        ? (state?.targetPublished ?? false)
-        : (state?.sourcePublished ?? false);
-
-      // Only asked for the ones a reviewer might publish. An edge already live
-      // has nothing outstanding, and reading its revisions for every row would
-      // put the dialog back on an N+1.
-      const hasPendingRevision =
-        !pageIsPublic(edge) && !approvedRevisionId(edge.revision_id)
-          ? newestPendingRevision(await edgeRevisions(db, edge.id)) !==
-            undefined
-          : false;
-
-      return {
-        id: edge.id,
-        type: edge.type,
-        name: typeof edge.name === "string" && edge.name ? edge.name : null,
-        direction: outgoing ? "outgoing" : "incoming",
-        otherId,
-        otherName,
-        otherPublished,
-        published: pageIsPublic(edge),
-        hasPendingRevision,
-        // The subject page is the one being published, so only the far end can
-        // hold a relation back. A self-edge has no far end, and is therefore
-        // never the thing standing in the way.
-        publishable: otherId === query.nodeId ? true : otherPublished,
-      };
-    }),
+  // Only the relations a reviewer might act on need their revisions read: one
+  // already live, or already pointing at an approved revision, has nothing to
+  // settle. Read for the whole batch at once rather than per row.
+  const needRevisions = live.filter(
+    (edge) => !pageIsPublic(edge) && !approvedRevisionId(edge.revision_id),
   );
+  const revisions = await edgeRevisionsForMany(
+    db,
+    needRevisions.map((edge) => edge.id),
+  );
+
+  const relations = live.map((edge): NodeRelation => {
+    const state = endpoints.get(edge.id);
+    const outgoing = edge.source === query.nodeId;
+    const otherId = outgoing ? edge.target : edge.source;
+    const otherName = outgoing
+      ? (state?.targetName ?? null)
+      : (state?.sourceName ?? null);
+    const otherPublished = outgoing
+      ? (state?.targetPublished ?? false)
+      : (state?.sourcePublished ?? false);
+
+    const candidates = revisions.get(edge.id) ?? [];
+
+    return {
+      id: edge.id,
+      type: edge.type,
+      name: typeof edge.name === "string" && edge.name ? edge.name : null,
+      direction: outgoing ? "outgoing" : "incoming",
+      otherId,
+      otherName,
+      otherPublished,
+      published: pageIsPublic(edge),
+      revisionToApprove: publishCandidateRevision(candidates)?.id ?? null,
+      hasPendingRevision: hasPendingRevision(candidates),
+      // The subject page is the one being published, so only the far end can
+      // hold a relation back. A self-edge has no far end, and is therefore
+      // never the thing standing in the way.
+      publishable: otherId === query.nodeId ? true : otherPublished,
+    };
+  });
 
   // Unpublished first, and the ones that are ready before the ones blocked on
   // a draft - the dialog is a work queue, so what needs a decision goes on top.
