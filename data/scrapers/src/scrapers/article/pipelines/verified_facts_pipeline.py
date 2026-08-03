@@ -28,7 +28,7 @@ from scrapers.article.pipelines.incremental import IncrementalJsonlPipeline
 from scrapers.article.pipelines.pipeline_utils import llm_model
 from scrapers.stores import VERSIONED_DIR, Context, LLMRequest
 
-VERIFY_VERSION = 3
+VERIFY_VERSION = 4
 MAX_TOKENS = 4000
 TEMPERATURE = 0.0
 
@@ -45,7 +45,7 @@ _JSON_ANY_RE = re.compile(r"\{.*\}", flags=re.DOTALL)
 # The labeling rulebook is embedded here so the pipeline is self-contained (no
 # external file dependency). Keep it in sync with any labeling-policy changes.
 _RULES = """\
-# Facts Extraction — Labeling Rulebook (v3)
+# Facts Extraction — Labeling Rulebook (v4)
 
 Rules for labeling extracted facts (employment / party_membership /
 personal_relation) as **correct / incorrect / insufficient**, and — by
@@ -138,11 +138,18 @@ span. Judge form as well as grounding:
   Paczkowie`). BUT an institution whose *name* legitimately contains a place or
   country is fine when the span supports it — `Rząd Węgier`, `Ambasada Polski we
   Francji`, `Prokuratura Okręgowa w Katowicach` → **correct**.
-- **`role` must be the bare title only.** A role that also carries the
-  institution, domain, or unit (`minister sprawiedliwości`, `szef Generalnej
-  Dyrekcji`, `szef klubu`, `przewodniczący rady powiatu`) → **incorrect**; the
-  bare form (`minister`, `szef`, `przewodniczący`) is what is correct. (This
-  applies to the `role` field only — an `organization` may contain a place.)
+- **`role` — prefer the bare title, but standard multi-word titles are CORRECT.**
+  A genuine compound office title, whose extra word is part of the title and
+  NOT the employing institution, is fine: `prokurator generalny`, `prokurator
+  krajowy`, `rzecznik prasowy`, `sekretarz stanu`, `podsekretarz stanu`,
+  `marszałek Sejmu`, `asystent parlamentarny`, `p.o. dyrektora` → **correct**
+  (especially when that form appears verbatim in the span).
+  Mark **incorrect ONLY** when the role redundantly carries the SPECIFIC
+  employing institution or unit that belongs in `organization` — `szef klubu`,
+  `szef Generalnej Dyrekcji`, `przewodniczący rady powiatu`, `minister
+  sprawiedliwości` (the ministry is the org) → the bare form (`szef`,
+  `przewodniczący`, `minister`) is what is correct. (Applies to `role` only —
+  an `organization` may contain a place.)
 - **`role` must be a position noun, not a verb.** `pracował`, `kierował`,
   `nadzorował` are activities, not roles → **incorrect**.
 
@@ -177,7 +184,8 @@ span. Judge form as well as grounding:
 | Attribute contradicted, absent (ungrounded), or garbled | incorrect |
 | `organization` is a description / placeholder / anonymized (`firma B`) | incorrect |
 | `organization` is a place, not an institution (`Paczków`) | incorrect |
-| `role` carries the org/domain/country (`minister sprawiedliwości`) | incorrect |
+| `role` embeds the employing institution/unit (`szef klubu`) | incorrect |
+| Standard multi-word title (`prokurator generalny`, `rzecznik prasowy`) | correct |
 | `role` is a verb, not a position noun (`pracował`) | incorrect |
 | Value normalized to nominative but entailed by span (`Alior Bank`) | correct |
 | Relation endpoints swapped or unnamed | incorrect |
