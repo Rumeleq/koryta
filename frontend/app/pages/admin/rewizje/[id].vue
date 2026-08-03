@@ -30,7 +30,8 @@
           size="small"
           :loading="publishPending"
           :disabled="!published && !approvedRevisionId"
-          @click="setPublished(!published)"
+          data-testid="publish-toggle"
+          @click="published ? setPublished(false) : (publishDialog = true)"
         >
           {{ published ? "Ukryj" : "Opublikuj" }}
           <v-tooltip
@@ -258,8 +259,20 @@
       </v-card>
     </v-dialog>
 
+    <AdminPublishNodeDialog
+      v-model="publishDialog"
+      :node-id="nodeId"
+      :node-name="nodeName"
+      @published="onPublished"
+      @failed="report"
+    />
+
     <v-snackbar v-model="errorShown" color="error" :timeout="6000">
       {{ error }}
+    </v-snackbar>
+
+    <v-snackbar v-model="noticeShown" color="info" :timeout="6000">
+      {{ notice }}
     </v-snackbar>
   </div>
 </template>
@@ -268,6 +281,7 @@
 import { computed, ref, onMounted } from "vue";
 import { useRoute } from "vue-router";
 import { ClientOnly } from "#components";
+import { relationsPlural } from "~/composables/edges";
 import {
   mdiArrowLeft,
   mdiEyeOutline,
@@ -302,6 +316,9 @@ const publishPending = ref(false);
 const reviewPendingId = ref<string | null>(null);
 const error = ref<string | null>(null);
 const errorShown = ref(false);
+const notice = ref<string | null>(null);
+const noticeShown = ref(false);
+const publishDialog = ref(false);
 const rejectDialog = ref(false);
 const rejectReason = ref("");
 const rejectTarget = ref<string | null>(null);
@@ -338,19 +355,38 @@ function report(err: unknown) {
   errorShown.value = true;
 }
 
+/** Hiding the page. Going the other way runs through the dialog, which is
+ * where the relations that could go live with it are chosen. */
 async function setPublished(value: boolean) {
   publishPending.value = true;
   try {
-    const result = await authRequest<{ published: boolean }>(
-      "/api/nodes/publish",
-      { body: { node_id: nodeId, published: value } },
-    );
+    const result = await authRequest<{
+      published: boolean;
+      hiddenEdges?: string[];
+    }>("/api/nodes/publish", { body: { node_id: nodeId, published: value } });
     published.value = result.published;
+    // Hiding a page hides its relations too, and silently doing that to a
+    // reviewer who only meant to hide one page is how they find out much
+    // later.
+    const hidden = result.hiddenEdges?.length ?? 0;
+    if (hidden > 0) {
+      notice.value = `Ukryto stronę i ${hidden} ${relationsPlural(hidden)}.`;
+      noticeShown.value = true;
+    }
   } catch (err) {
     report(err);
   } finally {
     publishPending.value = false;
   }
+}
+
+async function onPublished({ relations }: { relations: number }) {
+  notice.value =
+    relations > 0
+      ? `Opublikowano stronę i ${relations} ${relationsPlural(relations)}.`
+      : "Opublikowano stronę.";
+  noticeShown.value = true;
+  await load();
 }
 
 async function approve(revisionId: string) {

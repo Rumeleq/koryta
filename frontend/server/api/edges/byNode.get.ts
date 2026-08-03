@@ -1,0 +1,126 @@
+import { getFirestore } from "firebase-admin/firestore";
+import { getApp } from "firebase-admin/app";
+import { requireAdmin } from "~~/server/utils/auth";
+import {
+  edgeRevisions,
+  fetchEdgesForNode,
+  newestPendingRevision,
+  resolveEdgeEndpoints,
+} from "~~/server/utils/edgePublication";
+import { approvedRevisionId, pageIsPublic } from "~~/shared/model";
+import type { EdgeType } from "~~/shared/model";
+import { z } from "zod";
+
+/** One relation as the publish dialog needs to render it: what it says, who is
+ * on the other end, and whether it may go live at all. */
+export type NodeRelation = {
+  id: string;
+  type: EdgeType;
+  name: string | null;
+  /** Which end of the edge the node this was asked about sits on. */
+  direction: "outgoing" | "incoming";
+  otherId: string;
+  otherName: string | null;
+  otherPublished: boolean;
+  published: boolean;
+  /** Whether a proposal for this relation is still waiting for a verdict -
+   * publishing it settles that too. */
+  hasPendingRevision: boolean;
+  /** Whether the reviewer may tick this relation, which is what greys the row
+   * out when false.
+   *
+   * This is `otherPublished` alone, deliberately - *not* the whole
+   * both-ends-published rule. The page this was asked about is the one the
+   * reviewer is publishing, so at the moment the dialog renders it is still a
+   * draft and the full rule would grey out every row, including the ones about
+   * to become perfectly publishable. By the time the edges are sent it is live,
+   * because the dialog publishes the node first.
+   *
+   * The real rule still holds: /api/edges/publish checks both ends itself, and
+   * refuses whatever this said. */
+  publishable: boolean;
+};
+
+export type NodeRelations = {
+  relations: NodeRelation[];
+  nodePublished: boolean;
+};
+
+const queryValidator = z.object({
+  nodeId: z.string().min(1),
+});
+
+/** The relations hanging off one node, for the reviewer about to publish it.
+ *
+ * Admin-only, unlike /api/revisions/byNode: this answers which pages are still
+ * drafts, which is not something an anonymous caller has any business
+ * enumerating.
+ */
+export default defineEventHandler(async (event): Promise<NodeRelations> => {
+  const query = await getValidatedQuery(event, (q) => queryValidator.parse(q));
+  await requireAdmin(event);
+
+  const db = getFirestore(getApp(), "koryta-pl");
+  const [edges, nodeDoc] = await Promise.all([
+    fetchEdgesForNode(db, query.nodeId),
+    db.collection("nodes").doc(query.nodeId).get(),
+  ]);
+
+  const live = edges.filter((edge) => edge.deleted !== true);
+  const endpoints = await resolveEdgeEndpoints(db, live);
+
+  const relations = await Promise.all(
+    live.map(async (edge): Promise<NodeRelation> => {
+      const state = endpoints.get(edge.id);
+      const outgoing = edge.source === query.nodeId;
+      const otherId = outgoing ? edge.target : edge.source;
+      const otherName = outgoing
+        ? (state?.targetName ?? null)
+        : (state?.sourceName ?? null);
+      const otherPublished = outgoing
+        ? (state?.targetPublished ?? false)
+        : (state?.sourcePublished ?? false);
+
+      // Only asked for the ones a reviewer might publish. An edge already live
+      // has nothing outstanding, and reading its revisions for every row would
+      // put the dialog back on an N+1.
+      const hasPendingRevision =
+        !pageIsPublic(edge) && !approvedRevisionId(edge.revision_id)
+          ? newestPendingRevision(await edgeRevisions(db, edge.id)) !==
+            undefined
+          : false;
+
+      return {
+        id: edge.id,
+        type: edge.type,
+        name: typeof edge.name === "string" && edge.name ? edge.name : null,
+        direction: outgoing ? "outgoing" : "incoming",
+        otherId,
+        otherName,
+        otherPublished,
+        published: pageIsPublic(edge),
+        hasPendingRevision,
+        // The subject page is the one being published, so only the far end can
+        // hold a relation back. A self-edge has no far end, and is therefore
+        // never the thing standing in the way.
+        publishable: otherId === query.nodeId ? true : otherPublished,
+      };
+    }),
+  );
+
+  // Unpublished first, and the ones that are ready before the ones blocked on
+  // a draft - the dialog is a work queue, so what needs a decision goes on top.
+  relations.sort((a, b) => {
+    if (a.published !== b.published) return a.published ? 1 : -1;
+    if (a.publishable !== b.publishable) return a.publishable ? -1 : 1;
+    return (a.otherName ?? a.otherId).localeCompare(
+      b.otherName ?? b.otherId,
+      "pl",
+    );
+  });
+
+  return {
+    relations,
+    nodePublished: nodeDoc.exists && pageIsPublic(nodeDoc.data() ?? {}),
+  };
+});
