@@ -39,12 +39,22 @@
       @click:append-inner="showPassword = !showPassword"
     />
 
+    <div v-if="isLogin" class="text-right mb-2">
+      <a href="javascript:void(0)" class="text-caption" @click="resetPassword">
+        Nie pamiętasz hasła?
+      </a>
+    </div>
+
     <v-btn type="submit" block color="primary" size="large" :loading="loading">
       {{ isLogin ? "Zaloguj się" : "Stwórz konto" }}
     </v-btn>
 
     <v-alert v-if="error" type="error" density="compact" class="mt-4">
       {{ error }}
+    </v-alert>
+
+    <v-alert v-if="info" type="success" density="compact" class="mt-4">
+      {{ info }}
     </v-alert>
   </v-form>
 </template>
@@ -70,13 +80,19 @@ const email = ref("");
 const password = ref("");
 const showPassword = ref(false);
 const error = ref<string | null>(null);
+const info = ref<string | null>(null);
 const loading = ref(false);
 
 const auth = useFirebaseAuth()!;
-const { login: authLogin, register: authRegister } = useAuthState();
+const {
+  login: authLogin,
+  register: authRegister,
+  resetPassword: authResetPassword,
+} = useAuthState();
 
 const login = async () => {
   error.value = null;
+  info.value = null;
   loading.value = true;
   try {
     await authLogin(email.value, password.value);
@@ -93,6 +109,7 @@ const login = async () => {
 
 const loginWithGoogle = async () => {
   error.value = null;
+  info.value = null;
   loading.value = true;
   try {
     const provider = new GoogleAuthProvider();
@@ -108,8 +125,32 @@ const loginWithGoogle = async () => {
   }
 };
 
+const resetPassword = async () => {
+  error.value = null;
+  info.value = null;
+
+  if (!email.value) {
+    error.value = "Podaj swój adres email, i wyślemy Ci link do zmiany hasła.";
+    return;
+  }
+
+  loading.value = true;
+  try {
+    await authResetPassword(email.value);
+    // Deliberately worded so it does not reveal whether the account exists.
+    info.value = `Jeśli konto dla ${email.value} istnieje, wysłaliśmy na nie link do ustawienia nowego hasła. Sprawdź swoją skrzynkę.`;
+  } catch (err: unknown) {
+    const errorObj = err as { code: string; message: string };
+    console.error("Password reset error:", errorObj.code, errorObj.message);
+    error.value = getErrorMessage(errorObj.code);
+  } finally {
+    loading.value = false;
+  }
+};
+
 const register = async () => {
   error.value = null;
+  info.value = null;
   loading.value = true;
   try {
     const userCredential = await authRegister(email.value, password.value);
@@ -147,6 +188,11 @@ const getErrorMessage = (errorCode: string) => {
       return "Ten email jest już w użyciu.";
     case "auth/weak-password":
       return "Hasło jest zbyt słabe. Powinno mieć co najmniej 6 znaków.";
+    case "auth/invalid-email":
+    case "auth/missing-email":
+      return "Podaj poprawny adres email.";
+    case "auth/too-many-requests":
+      return "Zbyt wiele prób. Spróbuj ponownie za chwilę.";
     default:
       return "Wystąpił nieoczekiwany błąd. Spróbuj ponownie.";
   }

@@ -4,26 +4,32 @@ import { ref } from "vue";
 import { useAuthState } from "@/composables/auth";
 
 // Hoisted variables for mocks
-const { mockIdTokenFn, mockAuth, mockUseFetchSpy, mockUseDocumentSpy } =
-  vi.hoisted(() => {
-    const fn = vi.fn();
-    const tokenFn = vi.fn();
-    const docFn = vi.fn();
-    return {
-      mockUseFetchSpy: fn,
-      mockIdTokenFn: tokenFn,
-      mockUseDocumentSpy: docFn,
-      mockAuth: {
-        currentUser: {
-          uid: "test-uid",
-          getIdToken: tokenFn,
-          getIdTokenResult: vi
-            .fn()
-            .mockResolvedValue({ claims: { admin: false }, token: "token" }),
-        },
+const {
+  mockIdTokenFn,
+  mockAuth,
+  mockUseFetchSpy,
+  mockUseDocumentSpy,
+  mockSendPasswordResetEmail,
+} = vi.hoisted(() => {
+  const fn = vi.fn();
+  const tokenFn = vi.fn();
+  const docFn = vi.fn();
+  return {
+    mockUseFetchSpy: fn,
+    mockIdTokenFn: tokenFn,
+    mockUseDocumentSpy: docFn,
+    mockSendPasswordResetEmail: vi.fn(),
+    mockAuth: {
+      currentUser: {
+        uid: "test-uid",
+        getIdToken: tokenFn,
+        getIdTokenResult: vi
+          .fn()
+          .mockResolvedValue({ claims: { admin: false }, token: "token" }),
       },
-    };
-  });
+    },
+  };
+});
 
 // Mock firebase/auth used by the composable
 vi.mock("firebase/auth", async () => {
@@ -33,6 +39,7 @@ vi.mock("firebase/auth", async () => {
     signOut: vi.fn(),
     signInWithEmailAndPassword: vi.fn(),
     createUserWithEmailAndPassword: vi.fn(),
+    sendPasswordResetEmail: mockSendPasswordResetEmail,
     GoogleAuthProvider: vi.fn(),
     Auth: {},
   };
@@ -79,5 +86,15 @@ describe("useAuthState", () => {
     expect(state.logout).toBeTypeOf("function");
     expect(state.login).toBeTypeOf("function");
     expect(state.register).toBeTypeOf("function");
+    expect(state.resetPassword).toBeTypeOf("function");
+  });
+
+  it("resetPassword sends the reset email for the given address", async () => {
+    const state = useAuthState();
+    await state.resetPassword("someone@example.com");
+    expect(mockSendPasswordResetEmail).toHaveBeenCalledWith(
+      mockAuth,
+      "someone@example.com",
+    );
   });
 });
