@@ -19,7 +19,21 @@ export type EdgeNode = {
   by_election?: boolean;
 };
 
-const edgeTypeLabels: Record<string, string> = {
+/** "1 powiązanie", "2 powiązania", "5 powiązań".
+ *
+ * Polish counts three ways, and the admin surfaces report counts often enough
+ * that getting it wrong reads as machine-written every time. */
+export function relationsPlural(count: number): string {
+  if (count === 1) return "powiązanie";
+  const tens = count % 100;
+  const units = count % 10;
+  if (units >= 2 && units <= 4 && (tens < 12 || tens > 14)) return "powiązania";
+  return "powiązań";
+}
+
+/** What a relation is called on screen, when it has no name of its own. Shared
+ * with the admin views, which list edges outside any graph. */
+export const edgeTypeLabels: Record<string, string> = {
   employed: "Zatrudniony/a w",
   owns: "Właściciel",
   connection: "Powiązanie z",
