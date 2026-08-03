@@ -31,15 +31,17 @@ test.describe("Admin notes queue", () => {
       .doc(companyId)
       .set({ name: `Spółka Notatkowa ${stamp}`, type: "place" });
 
-    // The queue is ordered by when the note was written, so the company note is
-    // the newer of the two and has to come first.
+    // The queue is ordered by `createdAt` - when the note was written, not when
+    // an admin last touched it - so the company note is the newer of the two
+    // and has to come first. A note seeded without that field is undated and
+    // sorts below every dated one, whatever `updatedAt` says.
     await db
       .collection("notes")
       .doc(`${personId}_test-user`)
       .set({
         nodeId: personId,
         userUid: "test-user",
-        updatedAt: new Date(stamp - 60_000).toISOString(),
+        createdAt: new Date(stamp - 60_000).toISOString(),
         sources: [
           { note: `stara notatka ${stamp}`, kind: "source" },
           {
@@ -55,11 +57,15 @@ test.describe("Admin notes queue", () => {
       .set({
         nodeId: companyId,
         userUid: "test-user",
-        updatedAt: new Date(stamp).toISOString(),
+        createdAt: new Date(stamp).toISOString(),
         sources: [{ note: `nowa notatka ${stamp}`, kind: "missing" }],
       });
 
-    await page.goto(`/login?redirect=${encodeURIComponent("/admin/notatki")}`);
+    // Every view is narrowed to this run's stamp. The emulator is shared with
+    // whatever else seeded notes, so "the newest note" is not this spec's to
+    // claim - but "the newest of the two carrying this stamp" is.
+    const queue = `/admin/notatki?q=${stamp}`;
+    await page.goto(`/login?redirect=${encodeURIComponent(queue)}`);
     await waitForLoginFormHydrated(page);
     await page.locator("input#email").fill("admin@koryta.pl");
     await page.locator("input#password").fill("password123");
@@ -108,7 +114,7 @@ test.describe("Admin notes queue", () => {
 
     // Clearing the type filter and asking for what is still open hides the
     // entry an admin already signed off.
-    await page.goto("/admin/notatki?status=unresolved", {
+    await page.goto(`${queue}&status=unresolved`, {
       waitUntil: "domcontentloaded",
     });
     await expect(page.locator("tbody")).not.toContainText(
@@ -117,7 +123,7 @@ test.describe("Admin notes queue", () => {
     );
 
     // The node name opens the same side panel as /eksploruj/tabela.
-    await page.goto("/admin/notatki", { waitUntil: "domcontentloaded" });
+    await page.goto(queue, { waitUntil: "domcontentloaded" });
     await expect(rows.first()).toContainText(`Spółka Notatkowa ${stamp}`, {
       timeout: 30000,
     });
