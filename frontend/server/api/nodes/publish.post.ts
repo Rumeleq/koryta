@@ -1,6 +1,7 @@
 import { getFirestore } from "firebase-admin/firestore";
 import { getApp } from "firebase-admin/app";
-import { getUser } from "~~/server/utils/auth";
+import { requireAdmin } from "~~/server/utils/auth";
+import { recordAudit } from "~~/server/utils/audit";
 import { z } from "zod";
 
 const bodyValidator = z.object({
@@ -17,13 +18,7 @@ export default defineEventHandler(async (event) => {
     bodyValidator.parse(body),
   );
 
-  const user = await getUser(event);
-  if (user.admin !== true) {
-    throw createError({
-      statusCode: 403,
-      message: "Tylko administrator może publikować strony.",
-    });
-  }
+  const user = await requireAdmin(event);
 
   const db = getFirestore(getApp(), "koryta-pl");
   const nodeRef = db.collection("nodes").doc(body.node_id);
@@ -43,10 +38,22 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  await nodeRef.update({ published: body.published });
-  console.info(
-    `Set published=${body.published} on node=${body.node_id} by user=${user.uid}`,
+  // The node keeps only the answer, so without this nothing said who gave it
+  // or when - the one decision that settles what the public sees was the one
+  // decision leaving no trace.
+  const batch = db.batch();
+  batch.update(nodeRef, { published: body.published });
+  recordAudit(
+    db,
+    {
+      action: body.published ? "publish" : "unpublish",
+      collection: "nodes",
+      target_id: body.node_id,
+      user: user.uid,
+    },
+    batch,
   );
+  await batch.commit();
 
   return { id: body.node_id, published: body.published };
 });

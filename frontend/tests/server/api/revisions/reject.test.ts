@@ -3,6 +3,8 @@ import { requireAdmin } from "../../../../server/utils/auth";
 import handler from "../../../../server/api/revisions/reject.post";
 
 const mockUpdate = vi.fn();
+const mockBatchSet = vi.fn();
+const mockCommit = vi.fn();
 
 let stored: Record<string, Record<string, unknown> | undefined> = {};
 
@@ -19,9 +21,16 @@ function docRef(collection: string, id: string) {
   };
 }
 
+/** The rejection and its audit entry go in one batch, so `update` here stands
+ * in for the batched write the handler makes rather than a direct one. */
 const mockDb = {
   collection: vi.fn((collection: string) => ({
-    doc: vi.fn((id: string) => docRef(collection, id)),
+    doc: vi.fn((id?: string) => docRef(collection, id ?? "generated-id")),
+  })),
+  batch: vi.fn(() => ({
+    update: (_ref: unknown, data: unknown) => mockUpdate(data),
+    set: (ref: { path: string }, data: unknown) => mockBatchSet(ref.path, data),
+    commit: mockCommit,
   })),
 };
 
@@ -69,6 +78,28 @@ describe("api/revisions/reject", () => {
       review_time: "now",
     });
     expect(result).toMatchObject({ status: "rejected" });
+  });
+
+  it("files who turned it down, and why, in the audit log", async () => {
+    // `review_user` on the revision holds only the latest verdict; the log is
+    // what survives the next admin revisiting the same suggestion.
+    stored["revisions/rev-1"] = { node_id: "node-1", data: { name: "X" } };
+    stored["nodes/node-1"] = { name: "Y" };
+
+    await handler({} as never);
+
+    expect(mockBatchSet).toHaveBeenCalledWith(
+      "audit/generated-id",
+      expect.objectContaining({
+        action: "reject",
+        collection: "nodes",
+        target_id: "node-1",
+        revision_id: "rev-1",
+        user: "admin-uid",
+        reason: "brak źródła",
+      }),
+    );
+    expect(mockCommit).toHaveBeenCalled();
   });
 
   it("refuses to reject the revision the page is serving", async () => {

@@ -5,6 +5,7 @@ import type {
 } from "firebase-admin/firestore";
 import type { Edge, Node, Revision } from "~~/shared/model";
 import { revisionCollection } from "~~/shared/model";
+import { recordAudit } from "~~/server/utils/audit";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 
 export interface BatchResult {
@@ -229,6 +230,20 @@ export async function applyRevision(
     review_time: timestamp,
     reject_reason: FieldValue.delete(),
   });
+  // In the same commit as the approval it describes - `review_user` on the
+  // revision holds only the latest verdict, so it cannot say who chose the
+  // version that an older re-approval has since replaced.
+  recordAudit(
+    db,
+    {
+      action: "approve",
+      collection: targetRef.parent.id === "edges" ? "edges" : "nodes",
+      target_id: targetRef.id,
+      revision_id: revisionRef.id,
+      user: user.uid,
+    },
+    batch,
+  );
   await batch.commit();
 
   console.info(

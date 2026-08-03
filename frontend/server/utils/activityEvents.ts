@@ -21,17 +21,18 @@ export type CollectedEvents = {
 /** Read every human interaction recorded on or after `sinceIso`, from each of
  * the collections that records one, and flatten them into a single event list.
  *
- * The four reads are independent, so they run together; each is a range scan
+ * The five reads are independent, so they run together; each is a range scan
  * on a single field, which Firestore indexes without a composite. */
 export async function collectActivityEvents(
   db: Firestore,
   sinceIso: string,
 ): Promise<CollectedEvents> {
-  const [votes, notes, revisions, comments] = await Promise.all([
+  const [votes, notes, revisions, comments, decisions] = await Promise.all([
     collectVotes(db, sinceIso),
     collectNoteSources(db, sinceIso),
     collectRevisions(db, sinceIso),
     collectComments(db, sinceIso),
+    collectAdminDecisions(db, sinceIso),
   ]);
 
   return {
@@ -40,14 +41,51 @@ export async function collectActivityEvents(
       ...notes.events,
       ...revisions.events,
       ...comments.events,
+      ...decisions.events,
     ],
     truncated: [
       ...votes.truncated,
       ...notes.truncated,
       ...revisions.truncated,
       ...comments.truncated,
+      ...decisions.truncated,
     ],
   };
+}
+
+/** Approvals, rejections and changes of visibility.
+ *
+ * Read from `audit` rather than from `review_user` on the revisions: that field
+ * is overwritten by the next verdict, so counting it would lose every decision
+ * an admin later revisited - which is exactly the history worth showing. It
+ * also cannot see a publication, which touches no revision at all.
+ *
+ * This does not double-count against `revision`: that kind counts a change
+ * being *proposed* (`update_time`), and this one counts it being settled.
+ */
+async function collectAdminDecisions(
+  db: Firestore,
+  sinceIso: string,
+): Promise<CollectedEvents> {
+  const snap = await db
+    .collection("audit")
+    .where("at", ">=", sinceIso)
+    .orderBy("at", "desc")
+    .select("user", "at")
+    .limit(SCAN_CAP)
+    .get();
+
+  const events: ActivityEvent[] = [];
+  for (const doc of snap.docs) {
+    const uid = doc.get("user");
+    const at = doc.get("at");
+    if (typeof uid !== "string" || typeof at !== "string") continue;
+    events.push({ uid, at, kind: "adminDecision" });
+  }
+
+  const truncated: ActivityKind[] =
+    snap.size >= SCAN_CAP ? ["adminDecision"] : [];
+  return { events, truncated };
 }
 
 /** A vote document is one per (target, voter), merged in place, so `updatedAt`

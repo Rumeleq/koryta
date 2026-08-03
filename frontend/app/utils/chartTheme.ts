@@ -7,15 +7,20 @@ import type { ActivityKind } from "~~/shared/activity";
  * the combinations in use were run through its validator against this app's
  * white card surface rather than picked by eye:
  *
- * - the five `activityColors` are categorical slots 1-5, checked as a stack
- *   (adjacent pairs): worst CVD ΔE 9.1, worst normal-vision ΔE 19.6;
+ * - the six `activityColors` are categorical slots 1-6, checked as a stack
+ *   (adjacent pairs) against this surface: worst CVD ΔE 9.1 (protan,
+ *   yellow↔aqua), worst normal-vision ΔE 19.6 (magenta↔yellow). Slot 6 joined
+ *   them for `adminDecision` and moved neither figure - green sits next to
+ *   magenta, which is not the pair either bound is set by;
  * - `diverging.negative` / `diverging.positive` are slots 8 and 1, checked
  *   all-pairs: CVD ΔE 21.6.
  *
  * Aqua, yellow and magenta sit below 3:1 against white, which the method allows
  * only with relief — so every chart using them ships a table view of the same
- * numbers. Do not add a sixth activity colour without re-running the validator;
- * the slot *order* is the colourblind-safety mechanism, not decoration.
+ * numbers. Do not add a seventh activity colour without re-running the
+ * validator; the slot *order* is the colourblind-safety mechanism, not
+ * decoration, so a new kind takes the next slot rather than a hue picked to
+ * suit it.
  *
  * The app has one theme (light), so there are no dark steps to select.
  */
@@ -71,6 +76,7 @@ export const activityColors: Record<ActivityKind, string> = {
   revision: categorical[2],
   noteSource: categorical[3],
   comment: categorical[4],
+  adminDecision: categorical[5],
 };
 
 const FONT_FAMILY = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
