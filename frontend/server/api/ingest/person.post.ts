@@ -4,10 +4,18 @@ import { getUser } from "~~/server/utils/auth";
 import {
   baseNodeFields,
   createRevisionTransaction,
+  proposeRevisionTransaction,
+  withoutInternalFields,
 } from "~~/server/utils/revisions";
-import { edgeDocumentId, edgeIdentity, findEdges } from "~~/server/utils/edges";
+import {
+  edgeDocumentId,
+  edgeIdentity,
+  enrichedEdge,
+  findEdgeMatches,
+} from "~~/server/utils/edges";
 import { electionPositions } from "~~/shared/misc";
 import type { Edge, Article, Person, ElectionPosition } from "~~/shared/model";
+import { pageIsPublic } from "~~/shared/model";
 import {
   personRequestSchema,
   type EntityResult,
@@ -210,6 +218,17 @@ class Context {
    */
   readonly edgeOccurrences = new Map<string, number>();
 
+  /** Stored edges this request has already matched a payload row onto.
+   *
+   * Enrichment picks the first stored candidacy that a row could be a
+   * better-informed version of, and several rows of one payload routinely have
+   * the same candidates - three indistinguishable 2024 bids in one powiat are
+   * three candidates for all three rows. Without this the second row would
+   * enrich the document the first one just did, and two facts would be written
+   * over one.
+   */
+  readonly claimedEdgeIds = new Set<string>();
+
   constructor(
     readonly db: FirebaseFirestore.Firestore,
     readonly user: { uid: string },
@@ -371,7 +390,17 @@ async function createElection(
     edgeData.start_date = `${election.election_year}-01-01`;
   }
 
-  const edgeId = await findEdgeOrCreate(ctx, edgeData);
+  // Whether a change to a candidacy the database already holds is written out
+  // or only proposed. The scrapers set this when the committee is one their
+  // curated table names, which is a judgement a human has already made about
+  // that exact committee - a candidacy carrying one has nothing left to review.
+  // An unrecognised committee is usually a one-gmina KWW and harmless, but it
+  // is also where a newly-worded national committee hides, so those wait.
+  const edgeId = await findEdgeOrCreate(
+    ctx,
+    edgeData,
+    election.party_from_committee ?? false,
+  );
   if (!edgeId) throw new Error("Failed to create edge");
   return {
     nodeId: regionId,
@@ -452,20 +481,87 @@ async function lookupNode(
  * each row back onto the edge it made last time and the collection stops at
  * `max(rows in the payload, edges already stored)` - never fewer, never more.
  */
-async function findEdgeOrCreate(ctx: Context, edge: Edge) {
+async function findEdgeOrCreate(
+  ctx: Context,
+  edge: Edge,
+  /** Whether a change to an edge that already exists may be written straight
+   * out, rather than left for a reviewer. See `createElection`. */
+  vouched: boolean = false,
+) {
   // Counted before the first await, so the concurrent employments dispatched
   // through Promise.all cannot interleave between the read and the write.
   const identity = edgeIdentity(edge);
   const occurrence = ctx.edgeOccurrences.get(identity) ?? 0;
   ctx.edgeOccurrences.set(identity, occurrence + 1);
 
-  const stored = await findEdges(ctx.db, edge);
-  const existing = stored[occurrence];
-  if (existing) return existing;
+  const { same, enrichable, ids } = await findEdgeMatches(ctx.db, edge);
 
-  const edgeRef = ctx.db
-    .collection("edges")
-    .doc(edgeDocumentId(edge, occurrence));
+  // Skipping what this request has already taken is what keeps two rows from
+  // landing on one document. The query cannot help: nothing is committed until
+  // the end, so a row enriched a moment ago still reads back as it was, and a
+  // later row carrying less would match it exactly and be silently dropped.
+  const existing = same.filter((id) => !ctx.claimedEdgeIds.has(id))[occurrence];
+  if (existing) {
+    ctx.claimedEdgeIds.add(existing);
+    return existing;
+  }
+
+  // Nothing says this, but something may say a poorer version of it. Only
+  // reachable for an `enrichable` type, and those are resolved in a sequential
+  // loop, so the read above cannot interleave with another row's claim the way
+  // the concurrent employments would.
+  const candidate = enrichable.find((c) => !ctx.claimedEdgeIds.has(c.id));
+  if (candidate) {
+    ctx.claimedEdgeIds.add(candidate.id);
+    const edgeRef = ctx.db.collection("edges").doc(candidate.id);
+    const enriched = enrichedEdge(
+      withoutInternalFields(candidate.stored),
+      edge,
+    );
+
+    if (vouched || ctx.autoapprove) {
+      createRevisionTransaction(
+        ctx.db,
+        ctx.batch,
+        ctx.user,
+        edgeRef,
+        enriched,
+        true,
+        true,
+        // Carried across rather than decided here, so learning a committee
+        // neither publishes a candidacy that was awaiting review nor hides one
+        // that was live.
+        pageIsPublic(candidate.stored),
+      );
+    } else {
+      proposeRevisionTransaction(
+        ctx.db,
+        ctx.batch,
+        ctx.user,
+        edgeRef,
+        enriched,
+        {
+          automatic: true,
+          // What the edge would assert, not the text it would say it in: PKW
+          // writes one committee in whatever case that year's file had, and
+          // re-filing the same offer under every spelling is how a review queue
+          // fills up with duplicates of itself.
+          key: identity,
+        },
+      );
+    }
+    return edgeRef.id;
+  }
+
+  // A new document, at an id no stored edge already occupies. Normally
+  // `occurrence` is enough, but an enriched edge keeps the id it was created
+  // under while its fields have moved on, so a later row carrying less can hash
+  // straight back onto it - and `createRevisionTransaction` ends in a `set`,
+  // which would erase the committee that was just written there.
+  let copy = occurrence;
+  while (ids.has(edgeDocumentId(edge, copy))) copy++;
+
+  const edgeRef = ctx.db.collection("edges").doc(edgeDocumentId(edge, copy));
   createRevisionTransaction(
     ctx.db,
     ctx.batch,
@@ -476,5 +572,6 @@ async function findEdgeOrCreate(ctx: Context, edge: Edge) {
     ctx.autoapprove,
     ctx.autoapprove,
   );
+  ctx.claimedEdgeIds.add(edgeRef.id);
   return edgeRef.id;
 }

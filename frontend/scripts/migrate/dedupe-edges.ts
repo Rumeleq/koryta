@@ -30,11 +30,17 @@ import { pageIsPublic } from "../../shared/model";
  *     start as a minimum over one connection set, so two rows agreeing on them
  *     describe one spell; a real second spell has a different start, which is
  *     what "employed there again after a break" means. `election` is NOT safe
- *     at any level of agreement: the office, the committee and the run-off
- *     round are all destroyed upstream, so a burmistrz bid and a rada bid in
- *     one town in 2024 are byte-identical, and so is one mayoral bid that went
- *     to a second round. Nothing stored separates them, so they are reported
- *     and left alone.
+ *     at any level of agreement: the office and the run-off round are destroyed
+ *     upstream, so a burmistrz bid and a rada bid in one town in 2024 are
+ *     byte-identical, and so is one mayoral bid that went to a second round.
+ *     Nothing stored separates them, so they are reported and left alone.
+ *
+ *     The committee is no longer destroyed - the ingest accepts it, and
+ *     `enriches` in server/utils/edges.ts writes it onto the candidacies stored
+ *     before it did. That does not make collapsing safe: `position` is still
+ *     bucketed to "Samorząd" for all six 2024 PKW files, so two bids under the
+ *     *same* committee stay indistinguishable. Do not read the smaller list of
+ *     losses as a reason to flip `identicalMeansSame`.
  *
  *   authored (connection, and any type this codebase does not know) — a person
  *     wrote it. Two notes about one pair are two notes. Never touched.
