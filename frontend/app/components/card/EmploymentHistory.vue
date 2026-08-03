@@ -23,6 +23,13 @@
           <span class="text-caption text-medium-emphasis text-wrap">
             {{ edgeLabel(edge) }}
           </span>
+          <PartyChip v-if="partyOf(edge)" :party="partyOf(edge)!" />
+          <span
+            v-if="committeeOf(edge)"
+            class="text-caption text-medium-emphasis text-wrap"
+          >
+            {{ committeeOf(edge) }}
+          </span>
           <ChipPublicCompany :company="asCompany(edge)" />
         </div>
 
@@ -98,6 +105,33 @@ const maxEnd = computed(() => {
 
 function edgeLabel(edge: EdgeNode) {
   return edge.label;
+}
+
+/** The party a candidacy was run for, on the edges that assert one.
+ *
+ * Only `election` edges carry it in the schema, but the check is explicit: a
+ * hand-made edge of another type that picked up a stray `party` should not
+ * start rendering a party chip on somebody's profile.
+ */
+function partyOf(edge: EdgeNode): string | undefined {
+  return edge.type === "election" ? edge.party || undefined : undefined;
+}
+
+/** The electoral committee a candidacy was run under.
+ *
+ * Shown next to the party rather than instead of it: `party` is the national
+ * brand a committee was mapped onto, `committee` its full registered name, and
+ * for a local committee ("KWW Wspólny Kalisz") there is no party at all. Both
+ * are dropped when they say the same thing, which is the case for the committees
+ * whose name *is* the party.
+ */
+function committeeOf(edge: EdgeNode): string | undefined {
+  if (edge.type !== "election" || !edge.committee) return undefined;
+  const party = partyOf(edge);
+  if (party && party.toLowerCase() === edge.committee.toLowerCase()) {
+    return undefined;
+  }
+  return edge.committee;
 }
 
 /** Whether the edge asserts a period at all.
