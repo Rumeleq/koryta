@@ -6,7 +6,7 @@ All direct psycopg access is encapsulated here.
 import logging
 import os
 import time
-from collections import Counter
+from collections import Counter, defaultdict, deque
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Callable
@@ -60,8 +60,6 @@ def _host_of(url: str) -> str:
 def _interleave_by_host(items: list[CrawlQueueItem]) -> list[CrawlQueueItem]:
     """Round-robin a claimed batch by host so the work queue that HTTP workers
     drain FIFO hands consecutive workers different domains."""
-    from collections import defaultdict, deque
-
     groups: dict[str, deque] = defaultdict(deque)
     for item in items:
         groups[_host_of(item.url)].append(item)
@@ -201,36 +199,16 @@ class PostgresCrawlQueue(CrawlQueue):
                 );
                 """
             )
-            # Existing tables predate host_bucket; adding a nullable column is a
-            # metadata-only change (no table rewrite / long lock).
+            # We assume a fresh database: host_bucket is part of the CREATE TABLE
+            # above and every insert populates it, so there is no migration path
+            # for pre-existing rows. If you must adopt an already-populated
+            # website_index, backfill host_bucket and build this index out of
+            # band before switching to diversified get_batch (NULL-bucket rows
+            # are never claimed).
             transaction.execute(
-                "ALTER TABLE website_index "
-                "ADD COLUMN IF NOT EXISTS host_bucket SMALLINT;"
+                f"CREATE INDEX IF NOT EXISTS {_HOST_BUCKET_INDEX} "
+                "ON website_index (host_bucket, priority, id) WHERE done = FALSE;"
             )
-            transaction.execute("SELECT EXISTS (SELECT 1 FROM website_index);")
-            has_rows = bool(transaction.fetchone()[0])
-            transaction.execute(
-                "SELECT 1 FROM pg_indexes WHERE indexname = %s;",
-                (_HOST_BUCKET_INDEX,),
-            )
-            has_bucket_index = transaction.fetchone() is not None
-            if not has_bucket_index:
-                if has_rows:
-                    # Building the index inline would take an ACCESS EXCLUSIVE lock
-                    # for minutes on the live queue, and old rows still need their
-                    # host_bucket backfilled. Defer to the online migration script.
-                    logger.warning(
-                        "website_index has rows but no %s and possibly NULL "
-                        "host_bucket values. Domain-diversified claiming will "
-                        "under-serve until you run scripts/migrate_host_bucket.py "
-                        "(backfills host_bucket and builds the index CONCURRENTLY).",
-                        _HOST_BUCKET_INDEX,
-                    )
-                else:
-                    transaction.execute(
-                        f"CREATE INDEX {_HOST_BUCKET_INDEX} ON website_index "
-                        "(host_bucket, priority, id) WHERE done = FALSE;"
-                    )
             transaction.execute(
                 """
                 CREATE TABLE IF NOT EXISTS blocked_domains (
@@ -451,10 +429,10 @@ class PostgresCrawlQueue(CrawlQueue):
             n_bytes = len(normalized.encode("utf-8"))
             if n_bytes > _MAX_URL_BYTES:
                 logger.warning(
-                    "Dropping over-long URL (%d bytes > %d, unindexable): %s...",
+                    "Dropping over-long URL (%d bytes > %d, unindexable): %s",
                     n_bytes,
                     _MAX_URL_BYTES,
-                    normalized[:200],
+                    normalized,
                 )
                 continue
             rows.append((normalized, priority, now))
