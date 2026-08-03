@@ -38,7 +38,22 @@ export default defineEventHandler(async (event) => {
   };
 
   const batch = db.batch();
-  createRevisionTransaction(db, batch, user, edgeRef, revisionData);
+  // `published: false` said out loud rather than left off. Both readings hide
+  // the relation - `pageIsPublic` wants the flag to be `true` - but Firestore
+  // matches no filter against a field a document does not have, so an edge
+  // written without it is invisible to `where("published", "==", false)` and
+  // would never reach the queue in /admin/krawedzie that is supposed to find
+  // it. Same reasoning as /api/revisions/create for a brand new node.
+  createRevisionTransaction(
+    db,
+    batch,
+    user,
+    edgeRef,
+    revisionData,
+    false,
+    false,
+    false,
+  );
 
   await batch.commit();
 
