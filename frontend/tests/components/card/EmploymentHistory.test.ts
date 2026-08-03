@@ -2,6 +2,17 @@ import { describe, it, expect } from "vitest";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 import EmploymentHistory from "../../../app/components/card/EmploymentHistory.vue";
 import type { EdgeNode } from "../../../app/composables/edges";
+import { describe, it, expect } from "vitest";
+import { mount } from "@vue/test-utils";
+import { createVuetify } from "vuetify";
+import * as components from "vuetify/components";
+import * as directives from "vuetify/directives";
+import EmploymentHistory from "../../../app/components/card/EmploymentHistory.vue";
+import PartyChip from "../../../app/components/PartyChip.vue";
+import ChipPublicCompany from "../../../app/components/chip/PublicCompany.vue";
+import ChipRelativeDuration from "../../../app/components/chip/RelativeDuration.vue";
+
+const vuetify = createVuetify({ components, directives });
 
 function edge(fields: Partial<EdgeNode>): EdgeNode {
   return {
@@ -46,5 +57,78 @@ describe("CardEmploymentHistory", () => {
   it("never renders undefined for an undated employment", async () => {
     const wrapper = await render([edge({ label: "zastępca prezesa" })]);
     expect(wrapper.text()).not.toContain("undefined");
+  });
+});
+
+/** The shape `useEdges` hands the card, narrowed to what this card reads. */
+function edge(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "e1",
+    type: "election",
+    label: "Kandydował/a w",
+    source: "person1",
+    target: "teryt1261",
+    start_date: "2024-01-01",
+    richNode: { id: "teryt1261", type: "region", name: "Kraków" },
+    ...overrides,
+  };
+}
+
+function mountHistory(edges: unknown[]) {
+  return mount(EmploymentHistory, {
+    global: {
+      plugins: [vuetify],
+      components: { PartyChip, ChipPublicCompany, ChipRelativeDuration },
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    props: { edges: edges as any },
+  });
+}
+
+describe("EmploymentHistory", () => {
+  it("names the party and the committee of a candidacy", () => {
+    const wrapper = mountHistory([
+      edge({
+        party: "PiS",
+        committee: "Komitet Wyborczy Prawo i Sprawiedliwość",
+      }),
+    ]);
+
+    expect(wrapper.text()).toContain("Kraków");
+    expect(wrapper.text()).toContain("PiS");
+    expect(wrapper.text()).toContain("Komitet Wyborczy Prawo i Sprawiedliwość");
+  });
+
+  it("names a local committee that maps onto no party", () => {
+    const wrapper = mountHistory([
+      edge({ committee: "Komitet Wyborczy Wyborców Wspólny Kalisz" }),
+    ]);
+
+    expect(wrapper.text()).toContain(
+      "Komitet Wyborczy Wyborców Wspólny Kalisz",
+    );
+    expect(wrapper.findComponent(PartyChip).exists()).toBe(false);
+  });
+
+  it("does not repeat a committee that is spelled like its party", () => {
+    const wrapper = mountHistory([edge({ party: "PSL", committee: "psl" })]);
+
+    expect(wrapper.findComponent(PartyChip).exists()).toBe(true);
+    expect(wrapper.text()).not.toContain("psl");
+  });
+
+  it("leaves a candidacy with neither field as it was", () => {
+    const wrapper = mountHistory([edge()]);
+
+    expect(wrapper.text()).toContain("Kandydował/a w");
+    expect(wrapper.findComponent(PartyChip).exists()).toBe(false);
+  });
+
+  it("shows no party chip for an employment that carries one", () => {
+    const wrapper = mountHistory([
+      edge({ type: "employed", label: "Prezes", party: "PiS" }),
+    ]);
+
+    expect(wrapper.findComponent(PartyChip).exists()).toBe(false);
   });
 });
