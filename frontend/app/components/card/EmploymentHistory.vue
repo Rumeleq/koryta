@@ -26,7 +26,7 @@
           <ChipPublicCompany :company="asCompany(edge)" />
         </div>
 
-        <div class="d-md-none mt-2 pb-2">
+        <div v-if="isDated(edge)" class="d-md-none mt-2 pb-2">
           <ChipRelativeDuration
             :start="edge.start_date"
             :end="edge.end_date"
@@ -36,7 +36,7 @@
         </div>
 
         <template #append>
-          <div class="d-none d-md-flex">
+          <div v-if="isDated(edge)" class="d-none d-md-flex">
             <ChipRelativeDuration
               :start="edge.start_date"
               :end="edge.end_date"
@@ -98,6 +98,16 @@ const maxEnd = computed(() => {
 
 function edgeLabel(edge: EdgeNode) {
   return edge.label;
+}
+
+/** Whether the edge asserts a period at all.
+ *
+ * The card lists every relation a person has, not only the employment it is
+ * named after, and some kinds carry no dates by construction - a `connection`
+ * has no date fields in the schema. Drawing a full-width bar for those claims a
+ * span nobody recorded, so they get the label and nothing else. */
+function isDated(edge: EdgeNode): boolean {
+  return !!(edge.start_date || edge.end_date);
 }
 
 /** The company behind an edge, when the edge leads to one at all. */
