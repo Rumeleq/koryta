@@ -28,7 +28,7 @@ from scrapers.article.pipelines.incremental import IncrementalJsonlPipeline
 from scrapers.article.pipelines.pipeline_utils import llm_model
 from scrapers.stores import VERSIONED_DIR, Context, LLMRequest
 
-VERIFY_VERSION = 1
+VERIFY_VERSION = 3
 MAX_TOKENS = 4000
 TEMPERATURE = 0.0
 
@@ -45,7 +45,7 @@ _JSON_ANY_RE = re.compile(r"\{.*\}", flags=re.DOTALL)
 # The labeling rulebook is embedded here so the pipeline is self-contained (no
 # external file dependency). Keep it in sync with any labeling-policy changes.
 _RULES = """\
-# Facts Extraction — Labeling Rulebook (v1)
+# Facts Extraction — Labeling Rulebook (v3)
 
 Rules for labeling extracted facts (employment / party_membership /
 personal_relation) as **correct / incorrect / insufficient**, and — by
@@ -115,6 +115,37 @@ When several rules fire, precedence is **incorrect > insufficient > correct**
   (e.g. party `EPP` when the span is only *"Ursula von der Leyen"*)
   → **incorrect**. The extractor must not emit ungrounded fields.
 
+### 3.1 Standard form (required, so entities can be matched later)
+
+`organization` and `role` must be normalized, not copied as declined in the
+span. Judge form as well as grounding:
+
+- **Nominative normalization is EXPECTED — never a defect.** A value written in
+  base/nominative form when the span has it declined is **correct**, as long as
+  it is entailed: span *"prezesa Alior Banku"* ⇒ `organization=Alior Bank`,
+  `role=prezes` → accept. Do not require the value to match the span verbatim.
+- **Acronym ⇔ full official name is the SAME entity — never a mismatch.**
+  `PKN Orlen` = `Orlen`, `PiS` = `Prawo i Sprawiedliwość`, `KNF` = `Komisja
+  Nadzoru Finansowego` → **correct**. Do not mark these as contradicted or
+  over-specific.
+- **`organization` must be a NAMED institution.** A description or anonymized
+  placeholder — `firma B`, `pewna spółka`, `firma zajmująca się kredytami`,
+  `ta placówka` — is not an organization → **incorrect** (it should have been
+  left empty).
+- **`organization` must be an institution, not a bare place.** A city / gmina /
+  województwo / country *alone* in the org slot (`Paczków`, `Węgry`) →
+  **incorrect** (a local official's org is the office, e.g. `Urząd Miejski w
+  Paczkowie`). BUT an institution whose *name* legitimately contains a place or
+  country is fine when the span supports it — `Rząd Węgier`, `Ambasada Polski we
+  Francji`, `Prokuratura Okręgowa w Katowicach` → **correct**.
+- **`role` must be the bare title only.** A role that also carries the
+  institution, domain, or unit (`minister sprawiedliwości`, `szef Generalnej
+  Dyrekcji`, `szef klubu`, `przewodniczący rady powiatu`) → **incorrect**; the
+  bare form (`minister`, `szef`, `przewodniczący`) is what is correct. (This
+  applies to the `role` field only — an `organization` may contain a place.)
+- **`role` must be a position noun, not a verb.** `pracował`, `kierował`,
+  `nadzorował` are activities, not roles → **incorrect**.
+
 ## 4. Relations (personal_relation)
 
 - `subject` and `object` must be the **correct way round** per the span
@@ -144,6 +175,11 @@ When several rules fire, precedence is **incorrect > insufficient > correct**
 | Field in a non-Polish language | incorrect |
 | Subject is a bare initial / role / description | incorrect |
 | Attribute contradicted, absent (ungrounded), or garbled | incorrect |
+| `organization` is a description / placeholder / anonymized (`firma B`) | incorrect |
+| `organization` is a place, not an institution (`Paczków`) | incorrect |
+| `role` carries the org/domain/country (`minister sprawiedliwości`) | incorrect |
+| `role` is a verb, not a position noun (`pracował`) | incorrect |
+| Value normalized to nominative but entailed by span (`Alior Bank`) | correct |
 | Relation endpoints swapped or unnamed | incorrect |
 """
 
