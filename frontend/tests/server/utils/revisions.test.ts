@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   getRevisionsForNodes,
   createRevisionTransaction,
+  proposalId,
+  proposeRevisionTransaction,
   sanitizeFirestoreData,
+  withoutInternalFields,
 } from "../../../server/utils/revisions";
 import type {
   Firestore,
@@ -206,6 +209,122 @@ describe("createRevisionTransaction", () => {
       node_id: "edge-1",
       collection: "edges",
     });
+  });
+});
+
+describe("withoutInternalFields", () => {
+  it("drops the pointer to the revision the document currently says it by", () => {
+    // Carrying it into a proposal would freeze a stale answer into it.
+    expect(
+      withoutInternalFields({
+        type: "election",
+        committee: "KW PiS",
+        revision_id: { id: "old-rev" },
+        stats: { people: 3 },
+        visibility: true,
+      }),
+    ).toEqual({ type: "election", committee: "KW PiS" });
+  });
+});
+
+describe("proposeRevisionTransaction", () => {
+  const user = { uid: "test-user" };
+  const targetRef = {
+    id: "edge-1",
+    parent: { id: "edges" },
+  } as unknown as DocumentReference;
+  const data = { source: "p", target: "r", type: "election", party: "PiS" };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(mockCollection().doc).mockReturnValue({
+      id: "new-rev-id",
+    } as unknown as DocumentReference);
+  });
+
+  it("leaves the live document alone", () => {
+    // createRevisionTransaction cannot do this: it writes the target either
+    // way, so it can record a change to a document being created but cannot
+    // propose one about a document that is already there.
+    proposeRevisionTransaction(mockDb, mockBatch, user, targetRef, data, {
+      automatic: true,
+    });
+
+    expect(mockBatch.set).toHaveBeenCalledTimes(1);
+    const [ref, written] = vi.mocked(mockBatch.set).mock.calls[0]!;
+    expect(ref).not.toBe(targetRef);
+    expect(written).toMatchObject({
+      node_id: "edge-1",
+      data,
+      update_user: "test-user",
+      update_automatic: true,
+      status: "pending",
+      collection: "edges",
+    });
+  });
+
+  it("says which collection the target is in", () => {
+    // `node_id` is the target's id whatever the target is, so this is the only
+    // thing that makes "the pending changes to edges" a query.
+    proposeRevisionTransaction(
+      mockDb,
+      mockBatch,
+      user,
+      { id: "node-1", parent: { id: "nodes" } } as unknown as DocumentReference,
+      data,
+    );
+    expect(vi.mocked(mockBatch.set).mock.calls[0]![1]).toMatchObject({
+      collection: "nodes",
+    });
+  });
+
+  it("addresses a standing proposal by what it proposes", () => {
+    // `committee_to_party` names about twenty-five committees, so most
+    // candidacies stay pending; with a fresh id per run the pipeline would add
+    // a revision per candidacy per night, forever.
+    proposeRevisionTransaction(mockDb, mockBatch, user, targetRef, data);
+    expect(vi.mocked(mockCollection().doc)).toHaveBeenCalledWith(
+      proposalId("edge-1", data),
+    );
+  });
+});
+
+describe("proposalId", () => {
+  it("does not depend on the order the content was assembled in", () => {
+    // The proposal is built by spreading the stored edge and the payload
+    // together, and property order there follows insertion.
+    expect(proposalId("edge-1", { a: 1, b: 2 })).toBe(
+      proposalId("edge-1", { b: 2, a: 1 }),
+    );
+  });
+
+  it("keeps two different proposals about one edge apart", () => {
+    expect(proposalId("edge-1", { committee: "KW PiS" })).not.toBe(
+      proposalId("edge-1", { committee: "KW Nowa Lewica" }),
+    );
+  });
+
+  it("keeps the same proposal about two edges apart", () => {
+    expect(proposalId("edge-1", { committee: "KW PiS" })).not.toBe(
+      proposalId("edge-2", { committee: "KW PiS" }),
+    );
+  });
+
+  it("produces an id Firestore will accept", () => {
+    const id = proposalId("edge_p_teryt1465_election_aBcDeFgHiJ", {
+      committee: "KW PiS",
+    });
+    expect(id).not.toContain("/");
+    expect(id.length).toBeLessThan(1500);
+  });
+
+  it("files one offer once, however the caller says it is worded", () => {
+    // The ingest passes `edgeIdentity`, which folds the case and spacing PKW
+    // varies. Without that, a re-scrape in a different case would file a second
+    // proposal saying the same thing.
+    expect(proposalId("edge-1", { committee: "KW PIS" }, "same-fact")).toBe(
+      proposalId("edge-1", { committee: "Kw Pis" }, "same-fact"),
+    );
   });
 });
 

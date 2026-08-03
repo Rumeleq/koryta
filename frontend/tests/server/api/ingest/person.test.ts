@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createRevisionTransaction } from "../../../../server/utils/revisions";
+import {
+  createRevisionTransaction,
+  proposeRevisionTransaction,
+} from "../../../../server/utils/revisions";
+import { edgeDocumentId, type EdgeLike } from "../../../../server/utils/edges";
 import handler from "../../../../server/api/ingest/person.post";
 
 // Mock dependencies
@@ -53,13 +57,24 @@ vi.mock("../../../../server/utils/auth", () => ({
 
 const mockBaseNodeFields = vi.fn().mockResolvedValue({});
 
-vi.mock("../../../../server/utils/revisions", () => ({
-  createRevisionTransaction: vi.fn(() => ({
-    revisionRef: { id: "mock-revision-id", path: "mock/path" },
-    targetRef: { id: "mock-target-id", path: "mock/target/path" },
-  })),
-  baseNodeFields: (...args: unknown[]) => mockBaseNodeFields(...args),
-}));
+vi.mock("../../../../server/utils/revisions", async (importOriginal) => {
+  // `withoutInternalFields` is pure and is what decides which of the stored
+  // edge's fields a proposal carries, so the tests below want the real one.
+  const actual =
+    await importOriginal<typeof import("../../../../server/utils/revisions")>();
+  return {
+    ...actual,
+    createRevisionTransaction: vi.fn(() => ({
+      revisionRef: { id: "mock-revision-id", path: "mock/path" },
+      targetRef: { id: "mock-target-id", path: "mock/target/path" },
+    })),
+    proposeRevisionTransaction: vi.fn(() => ({
+      revisionRef: { id: "mock-revision-id", path: "mock/path" },
+      targetRef: { id: "mock-target-id", path: "mock/target/path" },
+    })),
+    baseNodeFields: (...args: unknown[]) => mockBaseNodeFields(...args),
+  };
+});
 
 const { mockReadBody } = vi.hoisted(() => {
   const mockReadBody = vi.fn();
@@ -217,6 +232,319 @@ describe("api/ingest/person", () => {
       false,
       false,
     );
+  });
+
+  describe("a candidacy the database already has", () => {
+    /** The shape every one of the 10476 stored candidacies has today: written
+     * before the ingest accepted a committee, so carrying none. */
+    const storedCandidacy = {
+      source: "person-id",
+      target: "teryt1465",
+      type: "election",
+      name: "kandydatura",
+      position: "Samorząd",
+      start_date: "2024-01-01",
+    };
+
+    /** Queue the three lookups one election payload makes: the person, the
+     * region, and the edges already between them. */
+    function personWithStoredEdges(
+      stored: Record<string, unknown>[],
+      ids: string[] = stored.map((_, i) => `stored-${i}`),
+    ) {
+      mockGet.mockReset();
+      mockDoc.mockReset();
+      mockDoc.mockImplementation((id?: string) => ({
+        id: id ?? "new-doc-id",
+        ref: mockRef,
+      }));
+      mockBaseNodeFields.mockResolvedValue({
+        name: "Test Person",
+        type: "person",
+        parties: [],
+      });
+
+      mockGet.mockResolvedValueOnce({
+        empty: false,
+        docs: [{ id: "person-id", ref: mockRef }],
+      });
+      mockGet.mockResolvedValueOnce({
+        empty: false,
+        docs: [{ ref: { id: "teryt1465" }, id: "teryt1465" }],
+      });
+      mockGet.mockResolvedValueOnce({
+        empty: stored.length === 0,
+        docs: stored.map((edge, index) => ({
+          id: ids[index],
+          data: () => edge,
+        })),
+      });
+    }
+
+    function payload(election: Record<string, unknown>) {
+      return {
+        name: "Test Person",
+        parties: [],
+        companies: [],
+        elections: [{ election_type: "Samorząd", teryt: "1465", ...election }],
+      };
+    }
+
+    it("writes onto the stored candidacy, not beside it", async () => {
+      // The whole point: `committee` is part of edgeIdentity, so without this
+      // the restated candidacy hashes to a new document id and 10476 edges
+      // become 20952.
+      personWithStoredEdges([storedCandidacy]);
+      mockReadBody.mockResolvedValue(
+        payload({
+          election_year: "2024",
+          committee: "Komitet Wyborczy Prawo i Sprawiedliwość",
+          party: "PiS",
+          party_from_committee: true,
+        }),
+      );
+
+      await handler({} as any);
+
+      expect(proposeRevisionTransaction).not.toHaveBeenCalled();
+      // The committee map vouched for this one, so it is written out rather
+      // than proposed - through the same path any approved revision takes.
+      expect(createRevisionTransaction).toHaveBeenCalledTimes(1);
+      const call = vi.mocked(createRevisionTransaction).mock.calls[0]!;
+      expect(call[3]).toEqual({ id: "stored-0", ref: mockRef });
+      expect(call[4]).toEqual({
+        ...storedCandidacy,
+        committee: "Komitet Wyborczy Prawo i Sprawiedliwość",
+        party: "PiS",
+      });
+      expect(call[6]).toBe(true); // approve
+    });
+
+    it("leaves an unrecognised committee for a reviewer", async () => {
+      // A one-gmina KWW is usually harmless, but it is also where a misspelt
+      // national committee hides, and nothing has vouched for this one.
+      personWithStoredEdges([storedCandidacy]);
+      mockReadBody.mockResolvedValue(
+        payload({
+          election_year: "2024",
+          committee: "Komitet Wyborczy Wyborców Wspólny Kalisz",
+        }),
+      );
+
+      await handler({} as any);
+
+      expect(createRevisionTransaction).not.toHaveBeenCalled();
+      expect(proposeRevisionTransaction).toHaveBeenCalledTimes(1);
+      expect(
+        vi.mocked(proposeRevisionTransaction).mock.calls[0]![5],
+      ).toMatchObject({ automatic: true });
+    });
+
+    it("keeps a candidacy off the public site if that is where it was", async () => {
+      // 9123 of the 10476 have no revision_id. Learning their committee is not
+      // a decision to publish them.
+      personWithStoredEdges([storedCandidacy]);
+      mockReadBody.mockResolvedValue(
+        payload({
+          election_year: "2024",
+          committee: "Komitet Wyborczy Prawo i Sprawiedliwość",
+          party_from_committee: true,
+        }),
+      );
+
+      await handler({} as any);
+
+      expect(vi.mocked(createRevisionTransaction).mock.calls[0]![7]).toBe(
+        false,
+      );
+    });
+
+    it("keeps a published candidacy published", async () => {
+      personWithStoredEdges([{ ...storedCandidacy, published: true }]);
+      mockReadBody.mockResolvedValue(
+        payload({
+          election_year: "2024",
+          committee: "Komitet Wyborczy Prawo i Sprawiedliwość",
+          party_from_committee: true,
+        }),
+      );
+
+      await handler({} as any);
+
+      const call = vi.mocked(createRevisionTransaction).mock.calls[0]!;
+      expect(call[7]).toBe(true);
+      // The pointer to the old revision is not copied into the new one.
+      expect(call[4]).not.toHaveProperty("revision_id");
+    });
+
+    it("says nothing when it has nothing to add", async () => {
+      // Re-running the pipeline must not leave a revision per candidacy per
+      // night.
+      personWithStoredEdges([
+        {
+          ...storedCandidacy,
+          committee: "Komitet Wyborczy Prawo i Sprawiedliwość",
+          party: "PiS",
+        },
+      ]);
+      mockReadBody.mockResolvedValue(
+        payload({
+          election_year: "2024",
+          committee: "Komitet Wyborczy Prawo i Sprawiedliwość",
+          party: "PiS",
+          party_from_committee: true,
+        }),
+      );
+
+      await handler({} as any);
+
+      expect(proposeRevisionTransaction).not.toHaveBeenCalled();
+      expect(createRevisionTransaction).not.toHaveBeenCalled();
+    });
+
+    it("gives two committees two candidacies, not one twice", async () => {
+      // Three indistinguishable 2024 bids in one powiat are candidates for
+      // every row. Without a claim per row the second would be written over
+      // the document the first just took.
+      personWithStoredEdges([storedCandidacy, storedCandidacy]);
+      mockReadBody.mockResolvedValue({
+        name: "Test Person",
+        parties: [],
+        companies: [],
+        elections: [
+          {
+            election_type: "Samorząd",
+            teryt: "1465",
+            election_year: "2024",
+            committee: "Komitet Wyborczy Prawo i Sprawiedliwość",
+            party_from_committee: true,
+          },
+          {
+            election_type: "Samorząd",
+            teryt: "1465",
+            election_year: "2024",
+            committee: "Komitet Wyborczy Nowa Lewica",
+            party_from_committee: true,
+          },
+        ],
+      });
+      // The second election repeats the region lookup and the edge query.
+      mockGet.mockResolvedValueOnce({
+        empty: false,
+        docs: [{ ref: { id: "teryt1465" }, id: "teryt1465" }],
+      });
+      mockGet.mockResolvedValueOnce({
+        empty: false,
+        docs: [storedCandidacy, storedCandidacy].map((edge, index) => ({
+          id: `stored-${index}`,
+          data: () => edge,
+        })),
+      });
+
+      await handler({} as any);
+
+      expect(createRevisionTransaction).toHaveBeenCalledTimes(2);
+      const targets = vi
+        .mocked(createRevisionTransaction)
+        .mock.calls.map((call) => (call[3] as { id: string }).id);
+      expect(targets).toEqual(["stored-0", "stored-1"]);
+    });
+
+    it("does not let a bare row re-take the candidacy it just enriched", async () => {
+      // The query cannot see the uncommitted batch, so the enriched edge still
+      // reads back bare - and a row carrying no committee matches it exactly.
+      // Taking it again would silently drop a second, real candidacy.
+      personWithStoredEdges([storedCandidacy]);
+      mockReadBody.mockResolvedValue({
+        name: "Test Person",
+        parties: [],
+        companies: [],
+        elections: [
+          {
+            election_type: "Samorząd",
+            teryt: "1465",
+            election_year: "2024",
+            committee: "Komitet Wyborczy Prawo i Sprawiedliwość",
+            party_from_committee: true,
+          },
+          { election_type: "Samorząd", teryt: "1465", election_year: "2024" },
+        ],
+      });
+      mockGet.mockResolvedValueOnce({
+        empty: false,
+        docs: [{ ref: { id: "teryt1465" }, id: "teryt1465" }],
+      });
+      mockGet.mockResolvedValueOnce({
+        empty: false,
+        docs: [{ id: "stored-0", data: () => storedCandidacy }],
+      });
+
+      const result = await handler({} as any);
+
+      // One enriched in place, one created as a second candidacy.
+      expect(createRevisionTransaction).toHaveBeenCalledTimes(2);
+      expect(result.elections).toHaveLength(2);
+      const [enriched, created] = result.elections!;
+      expect(enriched!.edgeId).toBe("stored-0");
+      expect(created!.edgeId).not.toBe("stored-0");
+    });
+
+    it("does not create a new candidacy on top of an enriched one", async () => {
+      // An enriched edge keeps the id it was created under while its fields
+      // have moved on, so a later bare row hashes straight back onto it - and
+      // the create path ends in a `set`, which would erase the committee.
+      // The id has to be the one the bare row really computes, or this passes
+      // whatever the code does.
+      const enrichedId = edgeDocumentId(storedCandidacy as EdgeLike, 0);
+      personWithStoredEdges([storedCandidacy], [enrichedId]);
+      mockReadBody.mockResolvedValue({
+        name: "Test Person",
+        parties: [],
+        companies: [],
+        elections: [
+          {
+            election_type: "Samorząd",
+            teryt: "1465",
+            election_year: "2024",
+            committee: "Komitet Wyborczy Prawo i Sprawiedliwość",
+            party_from_committee: true,
+          },
+          { election_type: "Samorząd", teryt: "1465", election_year: "2024" },
+        ],
+      });
+      mockGet.mockResolvedValueOnce({
+        empty: false,
+        docs: [{ ref: { id: "teryt1465" }, id: "teryt1465" }],
+      });
+      mockGet.mockResolvedValueOnce({
+        empty: false,
+        docs: [{ id: enrichedId, data: () => storedCandidacy }],
+      });
+
+      const result = await handler({} as any);
+
+      // Call 0 is the enrichment of the stored edge; call 1 is the second
+      // candidacy, which must not land on the document call 0 just rewrote.
+      const created = vi.mocked(createRevisionTransaction).mock.calls[1]!;
+      expect((created[3] as { id: string }).id).not.toBe(enrichedId);
+      expect(result.elections![1]!.edgeId).not.toBe(enrichedId);
+    });
+
+    it("still creates a candidacy the database does not have", async () => {
+      personWithStoredEdges([]);
+      mockReadBody.mockResolvedValue(
+        payload({
+          election_year: "2024",
+          committee: "Komitet Wyborczy Prawo i Sprawiedliwość",
+          party_from_committee: true,
+        }),
+      );
+
+      await handler({} as any);
+
+      expect(proposeRevisionTransaction).not.toHaveBeenCalled();
+      expect(createRevisionTransaction).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("a person the database already has", () => {

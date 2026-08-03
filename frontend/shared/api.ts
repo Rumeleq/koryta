@@ -51,6 +51,18 @@ const electionRequestSchema = z.object({
    * zod strips it: the pipeline has emitted it all along, which is why no
    * stored candidacy carries one. */
   committee: z.string().optional(),
+  /** Whether `party` was read off the scrapers' curated committee → party
+   * table (`scrapers/pkw/elections.py`) rather than guessed.
+   *
+   * It is what decides whether a revision enriching an already-stored
+   * candidacy is published outright or left for a reviewer. The table matches
+   * exact committee names precisely because local committees borrow national
+   * brands, so a hit is a human's judgement, already made; a miss is usually a
+   * one-gmina KWW but is also where a newly-worded national committee hides.
+   *
+   * True for a coalition as well, where the map knows the committee but `party`
+   * stays empty because a joint list names no single party. */
+  party_from_committee: z.boolean().optional(),
   election_year: z.string().optional(),
   election_type: z.enum([
     "Samorząd",
@@ -71,6 +83,7 @@ const electionRequestSchema = z.object({
 export type ElectionRequest = {
   party?: string;
   committee?: string;
+  party_from_committee?: boolean;
   election_year?: string;
   election_type: ElectionPosition;
   teryt?: string;
