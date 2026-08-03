@@ -3,6 +3,9 @@
 *.csv
 *.json
 *.jsonl
+!package.json
+!package-lock.json
+!src/**/verified_selectors.json
 
 .coverage
 
@@ -19,6 +22,8 @@ koryta-pl*.json
 # The nightly's expected row counts and column coverage - tracked on purpose
 !src/tests/e2e/baseline.json
 crawler_output
+logs/
+node_modules/
 
 # from pytest-fast-first
 .pytest-runtimes
