@@ -22,11 +22,16 @@ function docRef(collection: string, id: string) {
 function queryCollection(
   collection: string,
   field: string,
+  op: string,
   value: unknown,
 ): { id: string; data: () => Record<string, unknown> }[] {
   return Object.entries(stored)
     .filter(([path]) => path.startsWith(`${collection}/`))
-    .filter(([, data]) => data?.[field] === value)
+    .filter(([, data]) =>
+      op === "in"
+        ? (value as unknown[]).includes(data?.[field])
+        : data?.[field] === value,
+    )
     .map(([path, data]) => ({
       id: path.slice(collection.length + 1),
       data: () => data as Record<string, unknown>,
@@ -40,11 +45,11 @@ const mockWhere = vi.fn();
 const mockDb = {
   collection: vi.fn((collection: string) => ({
     doc: vi.fn((id?: string) => docRef(collection, id ?? "generated-id")),
-    where: vi.fn((field: string, _op: string, value: unknown) => {
+    where: vi.fn((field: string, op: string, value: unknown) => {
       mockWhere(collection, field, value);
       return {
         get: vi.fn(async () => {
-          const docs = queryCollection(collection, field, value);
+          const docs = queryCollection(collection, field, op, value);
           return { docs, size: docs.length, empty: docs.length === 0 };
         }),
       };
@@ -434,6 +439,90 @@ describe("api/edges/byNode", () => {
 
     await expect(callHandler()).rejects.toMatchObject({ statusCode: 403 });
     expect(mockWhere).not.toHaveBeenCalled();
+  });
+
+  it("names the revision publishing would approve, whatever its status", async () => {
+    // What the reviewer needs to know is which version goes live, not whether
+    // somebody happened to stamp it "pending". Reporting every unpointed
+    // relation as a proposal awaiting a verdict said the same thing about all
+    // of them and was wrong about most.
+    stored["nodes/node-2"] = publishedNode("Firma A");
+    stored["edges/e-1"] = {
+      source: "node-1",
+      target: "node-2",
+      type: "employed",
+    };
+    stored["revisions/rev-1"] = {
+      node_id: "e-1",
+      status: "approved",
+      update_time: "2026-01-01T00:00:00.000Z",
+      data: {},
+    };
+
+    const relations = byId(await callHandler());
+
+    expect(relations["e-1"]).toMatchObject({
+      revisionToApprove: "rev-1",
+      hasPendingRevision: false,
+    });
+  });
+
+  it("still says so when a revision really is awaiting a verdict", async () => {
+    stored["nodes/node-2"] = publishedNode("Firma A");
+    stored["edges/e-1"] = {
+      source: "node-1",
+      target: "node-2",
+      type: "employed",
+    };
+    stored["revisions/rev-1"] = {
+      node_id: "e-1",
+      status: "pending",
+      update_time: "2026-01-01T00:00:00.000Z",
+      data: {},
+    };
+
+    const relations = byId(await callHandler());
+
+    expect(relations["e-1"]).toMatchObject({
+      revisionToApprove: "rev-1",
+      hasPendingRevision: true,
+    });
+  });
+
+  it("has nothing to approve for a relation with no revision at all", async () => {
+    stored["nodes/node-2"] = publishedNode("Firma A");
+    stored["edges/e-1"] = {
+      source: "node-1",
+      target: "node-2",
+      type: "employed",
+    };
+
+    const relations = byId(await callHandler());
+
+    expect(relations["e-1"]).toMatchObject({
+      revisionToApprove: null,
+      hasPendingRevision: false,
+    });
+  });
+
+  it("reads revisions for the whole batch rather than one relation at a time", async () => {
+    // A node with fifty relations would otherwise cost fifty round trips just
+    // to render the dialog.
+    stored["nodes/node-2"] = publishedNode("Firma A");
+    for (let i = 0; i < 5; i += 1) {
+      stored[`edges/e-${i}`] = {
+        source: "node-1",
+        target: "node-2",
+        type: "employed",
+      };
+    }
+
+    await callHandler();
+
+    const revisionQueries = mockWhere.mock.calls.filter(
+      (call) => call[0] === "revisions",
+    );
+    expect(revisionQueries).toHaveLength(1);
   });
 
   it("refuses a request that names no node", async () => {

@@ -3,8 +3,8 @@ import { getApp } from "firebase-admin/app";
 import { requireAdmin } from "~~/server/utils/auth";
 import {
   EDGE_PUBLISH_CHUNK,
-  edgeRevisions,
-  newestPendingRevision,
+  edgeRevisionsForMany,
+  publishCandidateRevision,
   publishEdgeInBatch,
   resolveEdgeEndpoints,
   unpublishEdgeInBatch,
@@ -101,21 +101,20 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const pending = await Promise.all(
-    edges.map(async (edge) =>
-      newestPendingRevision(await edgeRevisions(db, edge.id)),
-    ),
+  const revisions = await edgeRevisionsForMany(
+    db,
+    edges.map((edge) => edge.id),
   );
 
   const batch = db.batch();
   const approved: string[] = [];
-  edges.forEach((edge, index) => {
+  edges.forEach((edge) => {
     const result = publishEdgeInBatch(
       db,
       batch,
       db.collection("edges").doc(edge.id),
       edge as unknown as Record<string, unknown>,
-      pending[index],
+      publishCandidateRevision(revisions.get(edge.id) ?? []),
       user,
     );
     if (result.approvedRevision) approved.push(result.approvedRevision);
