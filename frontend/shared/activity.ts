@@ -17,6 +17,7 @@ export const activityKinds = [
   "revision",
   "noteSource",
   "comment",
+  "adminDecision",
 ] as const;
 
 export type ActivityKind = (typeof activityKinds)[number];
@@ -32,6 +33,7 @@ export function emptyActivityCounts(): ActivityCounts {
     revision: 0,
     noteSource: 0,
     comment: 0,
+    adminDecision: 0,
   };
 }
 
@@ -45,6 +47,7 @@ export const activityKindLabels: Record<ActivityKind, string> = {
   revision: "Propozycja zmiany",
   noteSource: "Źródło lub zgłoszenie",
   comment: "Komentarz",
+  adminDecision: "Decyzja administratora",
 };
 
 /** One sentence per kind, for the tooltip that explains what is being counted.
@@ -59,4 +62,6 @@ export const activityKindDescriptions: Record<ActivityKind, string> = {
   noteSource:
     "Wpis w notatce: podlinkowane źródło, prośba o poprawkę albo zgłoszenie brakujących danych.",
   comment: "Komentarz pod osobą, powiązaniem albo w wątku zgłoszenia.",
+  adminDecision:
+    "Rozstrzygnięcie administratora: zatwierdzenie albo odrzucenie rewizji, opublikowanie albo ukrycie strony.",
 };

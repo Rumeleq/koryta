@@ -2,6 +2,7 @@ import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { getApp } from "firebase-admin/app";
 import { requireAdmin } from "~~/server/utils/auth";
 import { revisionTargetRef } from "~~/server/utils/revisions";
+import { recordAudit } from "~~/server/utils/audit";
 import { approvedRevisionId } from "~~/shared/model";
 import { z } from "zod";
 
@@ -47,16 +48,26 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  await revisionRef.update({
+  const batch = db.batch();
+  batch.update(revisionRef, {
     status: "rejected",
     reject_reason: body.reason,
     review_user: user.uid,
     review_time: Timestamp.now(),
   });
-
-  console.info(
-    `Rejected revision=${body.revision_id} target=${targetId} by=${user.uid}`,
+  recordAudit(
+    db,
+    {
+      action: "reject",
+      collection: targetRef.parent.id === "edges" ? "edges" : "nodes",
+      target_id: targetId,
+      revision_id: body.revision_id,
+      user: user.uid,
+      reason: body.reason,
+    },
+    batch,
   );
+  await batch.commit();
 
   return { revision_id: body.revision_id, status: "rejected" };
 });

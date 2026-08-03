@@ -65,6 +65,11 @@ function writtenRevision() {
   return mockBatchUpdate.mock.calls[0]![1];
 }
 
+/** The audit entry, which shares the batch with the two writes above. */
+function writtenAudit() {
+  return mockBatchSet.mock.calls[1]![1];
+}
+
 describe("api/revisions/approve", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -94,6 +99,28 @@ describe("api/revisions/approve", () => {
       review_user: "admin-uid",
     });
     expect(result).toMatchObject({ id: "node-1", collection: "nodes" });
+  });
+
+  it("files who approved it, in the same batch as the approval", async () => {
+    // `review_user` above holds only the latest verdict, so re-approving an
+    // older version would erase who chose the newer one. The log does not.
+    stored["revisions/rev-1"] = {
+      node_id: "node-1",
+      collection: "nodes",
+      data: { name: "Sylwia Sobolewska" },
+    };
+    stored["nodes/node-1"] = { name: "Sylwia Sobolewski" };
+
+    await handler({} as never);
+
+    expect(writtenAudit()).toMatchObject({
+      action: "approve",
+      collection: "nodes",
+      target_id: "node-1",
+      revision_id: "rev-1",
+      user: "admin-uid",
+    });
+    expect(mockCommit).toHaveBeenCalledTimes(1);
   });
 
   it("leaves a hidden page hidden", async () => {
