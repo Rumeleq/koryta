@@ -1,6 +1,19 @@
 <template>
   <v-list class="px-2" variant="flat">
-    <h3 class="text-h6 mb-2">Historia powiązań</h3>
+    <div class="d-flex align-center justify-space-between mb-2">
+      <h3 class="text-h6">Historia powiązań</h3>
+      <v-btn
+        v-if="canAdd"
+        variant="text"
+        size="small"
+        color="primary"
+        :prepend-icon="mdiPlus"
+        data-testid="add-relation-employment"
+        @click="emit('add')"
+      >
+        Dodaj
+      </v-btn>
+    </div>
 
     <div class="pa-1">
       <v-list-item
@@ -63,6 +76,7 @@ import {
   mdiOfficeBuildingOutline,
   mdiFileDocumentOutline,
   mdiCommentArrowRightOutline,
+  mdiPlus,
 } from "@mdi/js";
 import type { Company } from "~~/shared/model";
 
@@ -81,7 +95,11 @@ function getIcon(type: string) {
 
 const props = defineProps<{
   edges: EdgeNode[];
+  /** Whether this section offers adding a relation. */
+  canAdd?: boolean;
 }>();
+
+const emit = defineEmits<{ add: [] }>();
 
 const edgesSorted = computed(() => {
   return props.edges.toSorted((a, b) => {

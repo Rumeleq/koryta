@@ -34,6 +34,11 @@ export type edgeTypeOption = {
   sourceLabel?: string;
   targetLabel?: string;
   realType: EdgeType;
+  /** How the relation reads from the page it is being added on, per direction:
+   * "outgoing" is the sentence with this page as the subject. The composer
+   * shows these as its choices, so they have to be verbs rather than the
+   * "Dodaj …" imperatives the old button list used. */
+  verbs?: Partial<Record<"outgoing" | "incoming", string>>;
   allowedDirections?: ("outgoing" | "incoming")[];
   buttons?: Partial<Record<"outgoing" | "incoming", ButtonConfig>>;
 };
@@ -41,6 +46,7 @@ export type edgeTypeOption = {
 export const edgeTypeOptions: Record<edgeTypeExt, edgeTypeOption> = {
   owns_parent: {
     value: "owns_parent",
+    verbs: { incoming: "należy do", outgoing: "jest właścicielem" },
     label: "Właściciel",
     sourceType: "place",
     targetType: "place",
@@ -57,6 +63,7 @@ export const edgeTypeOptions: Record<edgeTypeExt, edgeTypeOption> = {
   },
   owns_child: {
     value: "owns_child",
+    verbs: { outgoing: "jest właścicielem", incoming: "należy do" },
     label: "Właściciel",
     sourceType: "place",
     targetType: "place",
@@ -73,6 +80,7 @@ export const edgeTypeOptions: Record<edgeTypeExt, edgeTypeOption> = {
   },
   owns_region: {
     value: "owns_region",
+    verbs: { outgoing: "zarządza", incoming: "podlega pod" },
     label: "Region właściciel",
     sourceType: "region",
     targetType: "place",
@@ -88,6 +96,7 @@ export const edgeTypeOptions: Record<edgeTypeExt, edgeTypeOption> = {
   },
   connection: {
     value: "connection",
+    verbs: { outgoing: "jest powiązany/a z", incoming: "jest powiązany/a z" },
     label: "Powiązanie z",
     sourceType: "person",
     targetType: "person",
@@ -103,6 +112,7 @@ export const edgeTypeOptions: Record<edgeTypeExt, edgeTypeOption> = {
   },
   mentioned_person: {
     value: "mentioned_person",
+    verbs: { outgoing: "wspomina", incoming: "jest wspomniany/a w" },
     label: "Wspomina osobę",
     sourceType: "article",
     targetType: "person",
@@ -122,6 +132,7 @@ export const edgeTypeOptions: Record<edgeTypeExt, edgeTypeOption> = {
   },
   mentioned_company: {
     value: "mentioned_company",
+    verbs: { outgoing: "wspomina", incoming: "jest wspomniany/a w" },
     label: "Wspomina firmę/urząd",
     sourceType: "article",
     targetType: "place",
@@ -141,6 +152,7 @@ export const edgeTypeOptions: Record<edgeTypeExt, edgeTypeOption> = {
   },
   employed: {
     value: "employed",
+    verbs: { outgoing: "pracował/a w", incoming: "zatrudniał/a" },
     label: "Zatrudniony/a w",
     sourceType: "person",
     targetType: "place",
@@ -160,6 +172,7 @@ export const edgeTypeOptions: Record<edgeTypeExt, edgeTypeOption> = {
   },
   election: {
     value: "election",
+    verbs: { outgoing: "kandydował/a w", incoming: "miał kandydata" },
     label: "Kandydował/a w",
     sourceType: "person",
     targetType: "region",
@@ -218,4 +231,65 @@ export function useEdgeButtons(nodeName: string): NewEdgeButton[] {
   }
 
   return result;
+}
+
+/** One way the page being viewed can be joined to another entity. */
+export type RelationChoice = {
+  edgeTypeExt: edgeTypeExt;
+  direction: "outgoing" | "incoming";
+  /** How it reads with this page as the subject. */
+  verb: string;
+  icon?: string;
+};
+
+/** Every relation that makes sense between the page you are on and the entity
+ * you just picked.
+ *
+ * The composer asks "who" before "how" on purpose, and this is what makes that
+ * order work: once both kinds are known most pairs leave one or two verbs, so
+ * the question is a couple of chips rather than the list of every relation the
+ * schema has. Direction never reaches the reader - it is folded into the verb,
+ * which is why the same edge type can appear once for each way round.
+ *
+ * @param allowed narrows to the relations a particular section offers.
+ */
+export function relationChoices(
+  nodeType: NodeType,
+  otherType: NodeType,
+  allowed?: edgeTypeExt[],
+): RelationChoice[] {
+  const choices: RelationChoice[] = [];
+
+  for (const option of Object.values(edgeTypeOptions)) {
+    if (allowed && !allowed.includes(option.value)) continue;
+    const directions = option.allowedDirections ?? ["outgoing", "incoming"];
+
+    for (const direction of directions) {
+      const subject =
+        direction === "outgoing" ? option.sourceType : option.targetType;
+      const object =
+        direction === "outgoing" ? option.targetType : option.sourceType;
+      if (subject !== nodeType || object !== otherType) continue;
+
+      const verb = option.verbs?.[direction];
+      if (!verb) continue;
+      choices.push({
+        edgeTypeExt: option.value,
+        direction,
+        verb,
+        icon: option.buttons?.[direction]?.icon,
+      });
+    }
+  }
+
+  // `owns` is stored once but offered as owns_parent and owns_child, which for
+  // a place-to-place pair describe the same two sentences twice over. Keep the
+  // first of each reading.
+  const seen = new Set<string>();
+  return choices.filter((choice) => {
+    const key = `${edgeTypeOptions[choice.edgeTypeExt].realType}:${choice.verb}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }

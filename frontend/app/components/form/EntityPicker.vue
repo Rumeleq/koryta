@@ -20,16 +20,19 @@
          state - the entry you want may well be a different Jan Kowalski than
          the one that did match. -->
       <template #append-item>
-        <template v-if="canCreate && createName">
+        <template v-if="createName && creatableTypes.length > 0">
           <v-divider class="my-1" />
           <v-list-item
-            data-testid="entity-picker-add-new-entity"
+            v-for="kind in creatableTypes"
+            :key="kind"
+            :data-testid="`entity-picker-add-new-${kind}`"
             :prepend-icon="mdiPlus"
-            @click="openCreate"
+            @click="openCreate(kind)"
           >
             <v-list-item-title>
               Dodaj "<strong>{{ createName }}</strong
-              >" do bazy.
+              >"
+              {{ creatableTypes.length > 1 ? asKindLabel[kind] : "do bazy." }}
             </v-list-item-title>
           </v-list-item>
         </template>
@@ -47,7 +50,7 @@
     <DialogProposeEditNode
       v-if="canCreate"
       ref="createDialog"
-      :create-type="props.entity"
+      :create-type="pendingCreateType"
       :initial-name="pendingCreateName"
       hide-activator
       skip-redirect
@@ -70,7 +73,10 @@ defineOptions({
 const props = defineProps<{
   label?: string;
   hint?: string;
-  entity: NodeType;
+  /** What may be picked. Several kinds when the caller does not care which -
+   * the relation composer offers whatever the current page can be joined to,
+   * and only works out the relation once one is chosen. */
+  entity: NodeType | NodeType[];
 }>();
 
 const model = defineModel<Link<NodeType> | undefined>();
@@ -82,15 +88,36 @@ const results = ref<Link<NodeType>[]>([]);
 
 const user = useCurrentUser();
 
-/** Only a person or a place can be proposed from here: /api/revisions/create
- * validates against the person and company schemas and knows no other kind. */
-const canCreate = computed(
-  () => props.entity === "person" || props.entity === "place",
+const entityTypes = computed<NodeType[]>(() =>
+  Array.isArray(props.entity) ? props.entity : [props.entity],
 );
 
+/** What can be proposed from here. /api/revisions/create validates against the
+ * person and company schemas and knows no other kind, so a region cannot be
+ * created even where one can be picked.
+ *
+ * Where the picker offers several kinds it offers one entry per creatable kind
+ * rather than none: somebody searching for a person who is not in the base yet
+ * still has to be able to add them, and naming the kind on the row answers
+ * "which?" without asking it as a separate question. */
+const creatableTypes = computed<NodeType[]>(() =>
+  entityTypes.value.filter((kind) => kind === "person" || kind === "place"),
+);
+
+const asKindLabel: Partial<Record<NodeType, string>> = {
+  person: "jako osobę.",
+  place: "jako firmę lub instytucję.",
+};
+
+const canCreate = computed(() => creatableTypes.value.length > 0);
+
+/** Which kind the open dialog is creating. */
+const pendingCreateType = ref<NodeType>("person");
+
 /** `/api/search` indexes people, places and regions by name prefix. Articles
- * are not in that index, so they are listed rather than searched. */
-const isSearchable = computed(() => props.entity !== "article");
+ * are not in that index, so they are listed rather than searched - which only
+ * works when articles are the whole of what was asked for. */
+const isSearchable = computed(() => !entityTypes.value.includes("article"));
 
 /** Every article, fetched once when the picker is first opened. Kept out of
  * setup so a form that never opens the source picker does not pay for it. */
@@ -123,8 +150,12 @@ async function search_(term: string) {
       Array<{ id: string; name: string; type: string }>
     >("/api/search", { query: { q: term, latest: true } });
     results.value = response
-      .filter((node) => node.type === props.entity)
-      .map((node) => ({ type: props.entity, id: node.id, name: node.name }));
+      .filter((node) => entityTypes.value.includes(node.type as NodeType))
+      .map((node) => ({
+        type: node.type as NodeType,
+        id: node.id,
+        name: node.name,
+      }));
   } catch (e) {
     // A search that fails should offer nothing rather than spin forever.
     console.error("Search failed", e);
@@ -186,14 +217,15 @@ const createName = computed(() => {
 const pendingCreateName = ref("");
 const createDialog = ref<{ open: () => void } | null>(null);
 
-function openCreate() {
+function openCreate(kind: NodeType) {
   pendingCreateName.value = createName.value;
+  pendingCreateType.value = kind;
   createDialog.value?.open();
 }
 
 function onCreated(id: string) {
   const created = {
-    type: props.entity,
+    type: pendingCreateType.value,
     id,
     name: pendingCreateName.value,
   };

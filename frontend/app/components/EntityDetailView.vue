@@ -165,8 +165,25 @@
 
         <div class="mt-4">
           <template v-if="entity?.type === 'place'">
-            <CardConnectionList :edges="owners" title="Właściciele" />
-            <CardConnectionList :edges="subsidiaries" title="Spółki zależne" />
+            <CardConnectionList
+              :edges="owners"
+              title="Właściciele"
+              :can-add="canAddRelations"
+              add-testid="owners"
+              @add="openAdd(['owns_parent'], 'Dodaj właściciela')"
+            />
+            <CardConnectionList
+              :edges="subsidiaries"
+              title="Spółki zależne"
+              :can-add="canAddRelations"
+              add-testid="subsidiaries"
+              @add="openAdd(['owns_child'], 'Dodaj spółkę zależną')"
+            />
+            <CardEmploymentHistory
+              :edges="edges"
+              :can-add="canAddRelations"
+              @add="openAdd(['employed'], 'Dodaj osobę pracującą tutaj')"
+            />
           </template>
           <template v-if="entity?.type === 'region'">
             <CardConnectionList :edges="owners" title="Część regionu" />
@@ -174,7 +191,11 @@
             <CardConnectionList :edges="subsidiaries" title="Spółki zależne" />
           </template>
           <template v-if="entity?.type === 'person'">
-            <CardEmploymentHistory :edges="edges" />
+            <CardEmploymentHistory
+              :edges="edges"
+              :can-add="canAddRelations"
+              @add="openAdd(undefined, 'Dodaj powiązanie')"
+            />
           </template>
           <v-row v-else>
             <v-col
@@ -211,15 +232,15 @@
           </v-row>
         </div>
 
-        <FormAddRelation
-          v-if="entity && (entity.type === 'person' || entity.type === 'place')"
-          :key="node"
+        <FormAddRelationDialog
+          v-if="entity"
+          v-model="addRelationOpen"
           :node-id="node"
           :node-type="entity.type"
           :node-name="entity.name"
-          :types="relationTypes"
+          :types="addRelationTypes"
+          :title="addRelationTitle"
           @added="refreshEdges()"
-          @login="handleLoginRedirect()"
         />
 
         <div v-if="referencedIn.length" class="mt-4">
@@ -338,7 +359,7 @@ import type {
   Revision,
 } from "~~/shared/model";
 import CommentsSection from "@/components/comment/CommentsSection.vue";
-import FormAddRelation from "~/components/form/AddRelation.vue";
+import FormAddRelationDialog from "~/components/form/AddRelationDialog.vue";
 import type { edgeTypeExt } from "~/composables/useEdgeTypes";
 import { useDisplay } from "vuetify";
 
@@ -450,5 +471,23 @@ const subsidiaries = computed(() => {
 /** The relations a reader may add by hand: who somebody knows, and where they
  * work. Ownership and candidacies come from the registers rather than from a
  * form, and an article's mentions are added while reading the article. */
-const relationTypes: edgeTypeExt[] = ["connection", "employed"];
+/** Adding is for signed in readers; a logged out one is sent to /login by the
+ * button rather than shown a form they cannot submit. */
+const canAddRelations = computed(() => !!user.value);
+
+const addRelationOpen = ref(false);
+const addRelationTypes = ref<edgeTypeExt[] | undefined>(undefined);
+const addRelationTitle = ref("Dodaj powiązanie");
+
+/** Opens the composer scoped to whichever section asked for it, so the verb
+ * chips inside are usually down to one or two. */
+function openAdd(types: edgeTypeExt[] | undefined, title: string) {
+  if (!user.value) {
+    handleLoginRedirect();
+    return;
+  }
+  addRelationTypes.value = types;
+  addRelationTitle.value = title;
+  addRelationOpen.value = true;
+}
 </script>
