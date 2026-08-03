@@ -120,21 +120,16 @@ export type ElectionPosition =
  * are close enough to swap by accident, so check which question is being asked
  * before reaching for either.
  */
-export function pageIsPublic(node: {
-  published?: unknown;
-  revision_id?: unknown;
-  deleted?: unknown;
-}) {
+export function pageIsPublic(node: { published?: unknown; deleted?: unknown }) {
   // An approved removal outranks everything else: the page is only still here
   // so that the decision, and the reason for it, stay on the record.
   if (node.deleted === true) return false;
 
-  if (node.published !== undefined) {
-    return node.published === true;
-  }
-  // Legacy fallback for documents written before the `published` field
-  // existed; /api/nodes/migratePublished backfills it.
-  return !!node.revision_id;
+  // `published` is the whole answer. It used to fall back to `!!revision_id`
+  // for documents written before the field existed; /api/nodes/migratePublished
+  // has since backfilled every one of them, and an absent field now means what
+  // it says - a draft nobody has put live.
+  return node.published === true;
 }
 
 export type NodeType = "person" | "place" | "article" | "region";

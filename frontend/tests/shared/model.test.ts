@@ -12,23 +12,24 @@ describe("pageIsPublic", () => {
     expect(pageIsPublic({ published: false })).toBe(false);
   });
 
-  it("falls back to the approved revision for documents written before it", () => {
-    // /api/nodes/migratePublished backfills these; until it has run, an
-    // approved page has to keep being treated as a public one.
-    expect(pageIsPublic({ revision_id: "revisions/r1" })).toBe(true);
+  it("keeps a page with no flag hidden", () => {
+    // Until the backfill ran this fell back to the approved revision, so an
+    // absent flag on an approved page meant public. Every document carries the
+    // field now, and an absent one is a draft nobody has put live.
     expect(pageIsPublic({})).toBe(false);
   });
 
-  it("an unpublished page stays hidden even with an approved revision", () => {
-    expect(
-      pageIsPublic({ published: false, revision_id: "revisions/r1" }),
-    ).toBe(false);
+  it("ignores the approved revision entirely", () => {
+    // Approval says what the page would show, publication says who may see it.
+    // The two came apart deliberately, so `revision_id` no longer votes - it
+    // is not even a field this function reads any more.
+    const approvedButHidden = { published: false, revision_id: "revisions/r1" };
+    expect(pageIsPublic(approvedButHidden)).toBe(false);
+    expect(pageIsPublic({ published: true })).toBe(true);
   });
 
   it("an approved removal outranks everything", () => {
-    expect(
-      pageIsPublic({ deleted: true, published: true, revision_id: "r1" }),
-    ).toBe(false);
+    expect(pageIsPublic({ deleted: true, published: true })).toBe(false);
   });
 });
 
