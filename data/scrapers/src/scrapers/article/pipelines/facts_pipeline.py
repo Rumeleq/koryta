@@ -30,7 +30,7 @@ from scrapers.article.pipelines.pipeline_utils import (
 )
 from scrapers.stores import VERSIONED_DIR, Context, LLMRequest
 
-PROMPT_VERSION = 13
+PROMPT_VERSION = 15
 TEXT_LIMIT = 100000
 MAX_TOKENS = 20000
 TEMPERATURE = 0.1
@@ -94,31 +94,56 @@ _PROMPT = (
     "cytatami z tego samego miejsca artykułu; nie sklejaj odległych zdań). "
     "Cytat powinien zawierać imię i nazwisko osoby — wybierz ciągły fragment "
     "(w razie potrzeby z [...]), który jednocześnie nazywa osobę i potwierdza "
-    "fakt. Jeśli taki dosłowny fragment nie istnieje, ustaw justification= (nie "
-    "wymyślaj cytatu).\n"
-    "Każde pole faktu (organization, role, party, object, relation) musi wynikać "
-    "wprost z cytatu justification. Nie dodawaj partii, organizacji, kraju ani "
-    "funkcji z wiedzy ogólnej, jeśli nie ma ich w cytacie.\n"
+    "fakt. Jeśli nie potrafisz skopiować dosłownego, ciągłego fragmentu, ustaw "
+    "justification= — NIGDY nie parafrazuj, nie streszczaj i nie sklejaj słów "
+    "(lepiej pusty justification niż przepisany własnymi słowami).\n"
+    "GRUNTOWANIE (najważniejsza zasada): sam cytat justification — bez reszty "
+    "artykułu i bez wiedzy ogólnej — musi (a) zawierać PEŁNE imię i nazwisko "
+    "osoby (dla personal_relation imiona i nazwiska OBU osób) oraz (b) "
+    "potwierdzać KAŻDE pole, które podajesz (organization, role, party, object, "
+    "relation).\n"
+    "- Jeśli w cytacie osoba występuje tylko jako zaimek lub opis ('jego brat', "
+    "'jej mąż', 'były burmistrz') i nie pada jej nazwisko — rozszerz cytat przez "
+    "[...], aż nazwisko znajdzie się w cytacie, albo pomiń ten fakt.\n"
+    "- role i party MUSZĄ być tym, co mówi ten cytat: gdy cytat nazywa osobę "
+    "'posłem', role='poseł', a nie 'minister' z Twojej wiedzy; gdy cytat nie "
+    "wymienia partii, NIE dopisuj party.\n"
+    "- Jeśli danego pola nie ma w cytacie, rozszerz cytat tak, aby je objąć, "
+    "albo w ogóle nie podawaj tego pola. Nie dodawaj kraju, województwa ani "
+    "innej nazwy, której cytat nie zawiera.\n"
     "Cytat justification musi potwierdzać STANOWISKO i INSTYTUCJĘ właśnie tej "
     "osoby, a nie tylko ją wymieniać. Jeśli w tekście nie ma dosłownego fragmentu "
     "wiążącego osobę z jej stanowiskiem i instytucją, nie zwracaj tego faktu.\n"
-    "Pole organization skopiuj tak, jak nazywa je cytat. NIE uogólniaj: gdy tekst "
-    "mówi 'minister zdrowia', organization to 'Ministerstwo Zdrowia', a nie "
-    "'rząd'; gdy mówi 'poseł', nie dopisuj nazwy izby. NIE dodawaj kraju, "
-    "województwa, miasta ani pełnej nazwy, jeśli nie ma ich w cytacie (gdy tekst "
-    "mówi 'tej placówki' albo 'Sąd Najwyższy', nie dopisuj 'w Kladnie' ani "
-    "'Ukrainy').\n"
-    "Podawaj PEŁNĄ nazwę instytucji z cytatu, nie skracaj jej do jednego słowa "
-    "(np. 'Agencja Restrukturyzacji i Modernizacji Rolnictwa', a nie 'Agencja'; "
-    "'Centralne Biuro Antykorupcyjne', a nie 'Biuro'). Organization musi być "
-    "instytucją, nie osobą — gdy tekst mówi 'rzeczniczka Zełenskiego', "
-    "organizacją nie jest 'Zełenski'.\n"
-    "NAJWAŻNIEJSZE: wartość organization musi być dosłownym fragmentem cytatu "
-    "justification (te same słowa co w cytacie). Jeśli w cytacie nie pada nazwa "
-    "instytucji, rozszerz cytat przez [...], aby ją objąć, albo zostaw "
-    "organization puste — NIGDY nie uzupełniaj z wiedzy ogólnej: 'minister "
-    "gospodarki' to nie 'Francja', 'poseł' to nie 'Izba Poselska', 'Sąd "
-    "Najwyższy' to nie 'Sąd Najwyższy Ukrainy'.\n"
+    "STANDARYZACJA (WAŻNE — pola muszą się później łączyć w encje): organization "
+    "i role zapisuj ZAWSZE w formie standardowej, a nie dosłownie tak, jak są "
+    "odmienione w zdaniu.\n"
+    "- organization: pełna, oficjalna nazwa instytucji w MIANOWNIKU (cytat "
+    "'prezesa Alior Banku' → organization=Alior Bank; 'ministra sprawiedliwości' "
+    "→ organization=Ministerstwo Sprawiedliwości). Nie skracaj do jednego słowa "
+    "('Agencja Restrukturyzacji i Modernizacji Rolnictwa', a nie 'Agencja'; "
+    "'Centralne Biuro Antykorupcyjne', a nie 'Biuro').\n"
+    "- organization musi być NAZWANĄ instytucją. Jeśli tekst podaje tylko opis "
+    "albo ją anonimizuje ('pewna firma', 'firma B', 'spółka zajmująca się "
+    "kredytami', 'ta placówka'), zostaw organization puste — NIGDY nie wpisuj "
+    "opisu ani placeholdera.\n"
+    "- organization to instytucja/urząd, NIE miejsce ani osoba. Nie wpisuj "
+    "miasta, gminy, województwa ani kraju jako organization (dla 'burmistrza "
+    "Paczkowa' organization=Urząd Miejski w Paczkowie albo puste, a nie "
+    "'Paczków'; dla 'rzeczniczki Zełenskiego' organizacją nie jest 'Zełenski').\n"
+    "- role: TYLKO sama nazwa stanowiska w formie podstawowej (mianownik), bez "
+    "instytucji, dziedziny, kraju ani jednostki (cytat 'minister sprawiedliwości' "
+    "→ role=minister; 'premier Węgier' → role=premier; 'szef Centrum Projektów "
+    "Informatycznych' → role=szef; 'szef klubu PSL' → role=szef; 'przewodniczący "
+    "rady powiatu' → role=przewodniczący — jednostkę ('klubu', 'rady powiatu') "
+    "podaj w organization).\n"
+    "- role to RZECZOWNIK nazywający stanowisko, nigdy czasownik ani fraza "
+    "opisowa ('pracował', 'kierował', 'stojący na czele' to NIE jest role; jeśli "
+    "brak nazwy stanowiska, zostaw role puste).\n"
+    "organization i role muszą wynikać z cytatu (nazwane wprost lub jednoznacznie "
+    "wskazane przez stanowisko) — zapisz je tylko w formie standardowej, nie "
+    "zgaduj z wiedzy ogólnej: nie dodawaj kraju ani nazwy, której cytat nie "
+    "wskazuje ('Sąd Najwyższy' to nie 'Sąd Najwyższy Ukrainy'; 'poseł' to nie "
+    "'Izba Poselska').\n"
     "Do żadnego pola nie wpisuj komentarzy, uzasadnień ani placeholderów typu "
     "'(nie podano)' czy '→ odrzucam'. Jeśli danych brak, pomiń pole albo cały "
     "fakt.\n"
@@ -174,6 +199,18 @@ _PROMPT = (
     "- justification=Firmę prowadzi Marek Zieliński wraz z żoną Ewą Zielińską "
     "| personal_relation | subject=Marek Zieliński | object=Ewa Zielińska "
     "| relation=żona\n\n"
+    "Artykuł: Były burmistrz Paczkowa Bogdan W. usłyszał zarzuty. Wcześniej "
+    "pracował w pewnej firmie zajmującej się kredytami.\n"
+    "<think>\n"
+    "- Bogdan W. — burmistrz Paczkowa (employment); role=burmistrz (mianownik), "
+    "instytucja to urząd, nie miasto → organization=Urząd Miejski w Paczkowie\n"
+    "- 'pracował w pewnej firmie...': 'pracował' to czasownik (nie role), a firma "
+    "jest tylko opisana, nie nazwana → odrzucam ten fakt\n"
+    "</think>\n"
+    "facts:\n"
+    "- justification=Były burmistrz Paczkowa Bogdan W. usłyszał zarzuty "
+    "| employment | person=Bogdan W. | organization=Urząd Miejski w Paczkowie "
+    "| role=burmistrz\n\n"
     "Teraz przeanalizuj poniższy artykuł w ten sam sposób.\n"
     "Artykuł:\n{text}"
 )
@@ -670,6 +707,10 @@ def _coerce_fact(
     justification_in_text = _find_justification_in_text(
         justification,
         article_text,
+        subject_hint=str(
+            raw_fact.get("person") or raw_fact.get("subject") or ""
+        ).strip()
+        or None,
     )
     if fact_type == "employment":
         person = str(raw_fact.get("person") or "").strip()
@@ -745,7 +786,7 @@ def _coerce_fact(
 
 
 def _find_justification_in_text(
-    justification: str, article_text: str
+    justification: str, article_text: str, subject_hint: str | None = None
 ) -> str | None:
     # The result must be a VERBATIM substring of article_text so it can be
     # found with ctrl+F / highlighted in the source HTML. Every branch below
@@ -767,22 +808,33 @@ def _find_justification_in_text(
         m = re.search(pattern, article_text, re.DOTALL)
         if m is not None:
             return m.group(0)
+        # Strict wildcard missed (a fragment drifted, or fragments overlap /
+        # are out of order). Fuzzy-match each fragment and stitch the span.
+        stitched = _stitch_fuzzy_fragments(candidate, article_text, subject_hint)
+        if stitched is not None:
+            return stitched
 
     # Fuzzy fallback: the LLM may have dropped/altered a word (e.g. ate "też").
     # Return the real article span that matches, not the LLM text.
     return _fuzzy_verbatim_span(candidate, article_text)
 
 
+# Ellipsis placeholders the LLM uses to cut the middle of a long quote, and the
+# max chars the article may span across one such cut (shared by the strict
+# wildcard and the fuzzy stitch fallback so both stay local).
+_ELLIPSIS_SPLIT_RE = re.compile(r"(?:\[\.\.\.\]|\[…\]|…)")
+_WILDCARD_GAP = 1000
+
+
 def _justification_wildcard_pattern(justification: str) -> str | None:
-    placeholders = ("[...]", "[…]", "…")
-    if not any(placeholder in justification for placeholder in placeholders):
+    if not _ELLIPSIS_SPLIT_RE.search(justification):
         return None
 
-    parts = re.split(r"(?:\[\.\.\.\]|\[…\]|…)", justification)
+    parts = _ELLIPSIS_SPLIT_RE.split(justification)
     escaped = [re.escape(part.strip()) for part in parts if part.strip()]
     if not escaped:
         return None
-    return r".{0,1000}?".join(escaped)
+    return (r".{0,%d}?" % _WILDCARD_GAP).join(escaped)
 
 
 def _strip_edge_ellipsis(justification: str) -> str:
@@ -812,13 +864,16 @@ def _article_word_offsets(article_text: str) -> list[tuple[str, int, int]]:
     return words
 
 
-def _fuzzy_verbatim_span(justification: str, article_text: str) -> str | None:
-    """Find the verbatim article substring that best matches the justification.
+def _fuzzy_verbatim_offsets(
+    justification: str, article_text: str
+) -> tuple[int, int] | None:
+    """Char offsets (start, end) of the verbatim article slice that best matches
+    the justification, or None. Core of _fuzzy_verbatim_span; separated out so
+    fragment matching can stitch adjacent spans by offset.
 
     Anchors on distinctive needle tokens, then flexes the span's start and end
-    by a few tokens to absorb words the LLM dropped/added, and returns the actual
-    article slice (guaranteed to be a substring) if the fuzzy ratio clears the
-    threshold. Returns None otherwise.
+    by a few tokens to absorb words the LLM dropped/added, accepting the slice
+    only if the fuzzy ratio clears the threshold.
     """
     needle_tokens = _normalize_justification_text(justification).split()
     if len(needle_tokens) < 3:
@@ -855,14 +910,15 @@ def _fuzzy_verbatim_span(justification: str, article_text: str) -> str | None:
                 base_starts.add(start)
 
     best_diff = _MAX_FUZZY_CHAR_DIFF + 1
-    best_span: str | None = None
+    best_offsets: tuple[int, int] | None = None
     slack = _JUSTIFICATION_SLACK
     for base in base_starts:
         for start in range(max(0, base - slack), min(len(words), base + slack + 1)):
             end_lo = max(start, start + n - 1 - slack)
             end_hi = min(len(words), start + n + slack)
             for end in range(end_lo, end_hi):
-                span = article_text[words[start][1] : words[end][2]]
+                s_char, e_char = words[start][1], words[end][2]
+                span = article_text[s_char:e_char]
                 sm = difflib.SequenceMatcher(
                     None, needle, _normalize_justification_text(span)
                 )
@@ -878,8 +934,78 @@ def _fuzzy_verbatim_span(justification: str, article_text: str) -> str | None:
                 )
                 if diff < best_diff:
                     best_diff = diff
-                    best_span = span
-    return best_span if best_diff <= _MAX_FUZZY_CHAR_DIFF else None
+                    best_offsets = (s_char, e_char)
+    return best_offsets if best_diff <= _MAX_FUZZY_CHAR_DIFF else None
+
+
+def _fuzzy_verbatim_span(justification: str, article_text: str) -> str | None:
+    offsets = _fuzzy_verbatim_offsets(justification, article_text)
+    return article_text[offsets[0] : offsets[1]] if offsets is not None else None
+
+
+def _subject_stem(subject: str | None) -> str:
+    """A distinctive lowercase stem of the subject's name for loose (inflection-
+    tolerant) containment checks, or '' if the name has no usable token."""
+    norm = _normalize_justification_text(subject or "")
+    tokens = [t for t in norm.split() if len(t) >= 4]
+    if not tokens:
+        return ""
+    return max(tokens, key=len)[:6]
+
+
+def _stitch_fuzzy_fragments(
+    candidate: str, article_text: str, subject_hint: str | None = None
+) -> str | None:
+    """Recover a `[...]`-joined justification whose strict wildcard failed.
+
+    The strict wildcard (`_justification_wildcard_pattern`) needs *every*
+    fragment verbatim and in order; one drifted word — or fragments that overlap
+    / appear out of order — blanks the whole span. Here we locate each fragment
+    independently (exact match, else fuzzy) and return the article slice covering
+    the matched fragments, extending only across the same gap budget the wildcard
+    allowed so the stitched span stays local rather than swallowing the page.
+    """
+    fragments = [
+        part.strip() for part in _ELLIPSIS_SPLIT_RE.split(candidate) if part.strip()
+    ]
+    if len(fragments) < 2:
+        return None
+
+    intervals: list[tuple[int, int]] = []
+    for fragment in fragments:
+        idx = article_text.find(fragment)
+        if idx != -1:
+            intervals.append((idx, idx + len(fragment)))
+            continue
+        offsets = _fuzzy_verbatim_offsets(fragment, article_text)
+        if offsets is not None:
+            intervals.append(offsets)
+    if not intervals:
+        return None
+
+    intervals.sort()
+    total_start = intervals[0][0]
+    total_end = max(end for _, end in intervals)
+    # Cover the whole matched region if the fragments sit within the same gap
+    # budget the strict wildcard allowed (per cut), so the name-bearing fragment
+    # isn't dropped. If they're farther apart than that, don't swallow the page —
+    # fall back to the longest single fragment (the most self-contained quote).
+    if total_end - total_start <= _WILDCARD_GAP * len(fragments):
+        return article_text[total_start:total_end]
+    # Too far apart to stitch: prefer the fragment that actually names the
+    # subject (that is the span the verifier needs), else the longest fragment.
+    stem = _subject_stem(subject_hint)
+    if stem:
+        named = [
+            iv
+            for iv in intervals
+            if stem in _normalize_justification_text(article_text[iv[0] : iv[1]])
+        ]
+        if named:
+            best = max(named, key=lambda iv: iv[1] - iv[0])
+            return article_text[best[0] : best[1]]
+    longest = max(intervals, key=lambda iv: iv[1] - iv[0])
+    return article_text[longest[0] : longest[1]]
 
 
 def _normalize_justification_text(text: str) -> str:
