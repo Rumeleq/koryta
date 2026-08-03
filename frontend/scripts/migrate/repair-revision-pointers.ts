@@ -1,7 +1,10 @@
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { INTERNAL_FIELDS } from "../../server/utils/revisions";
-import { firestoreDatabaseFromEnv } from "../../shared/firebase-env";
+import {
+  adminProjectFromEnv,
+  firestoreDatabaseFromEnv,
+} from "../../shared/firebase-env";
 
 /**
  * One-time migration: give documents whose `revision_id` points nowhere a real
@@ -42,7 +45,7 @@ if (!isProd) {
   process.env.GCLOUD_PROJECT = "koryta-pl";
 }
 
-const app = initializeApp({ projectId: "koryta-pl" });
+const app = initializeApp({ projectId: adminProjectFromEnv() });
 
 /** Attributed to the pipeline rather than to a person, since no person made
  * this edit — the same distinction `computeVoteStats` draws for votes. */

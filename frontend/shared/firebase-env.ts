@@ -1,95 +1,234 @@
-// Which set of Firebase data a build talks to.
+// Which Firebase project a build talks to.
 //
-// The interesting one is `preview`: a deployment of a feature branch, reachable
-// from a phone, that must not be able to touch the data koryta.pl serves. It
-// runs in the same Firebase project as production - same web app, same Auth
-// users, same App Check registration, so nothing has to be set up twice - but
-// against its own Firestore database and its own Realtime Database instance,
-// both refreshed from the nightly export.
+// Production is `koryta-pl`. A preview deployment - a branch on a real URL, so
+// a change can be looked at on a phone - is `koryta-pl-preview`, a project of
+// its own. It began as a second database inside the production project, which
+// works, but only for as long as every call site keeps taking its database id
+// from configuration: one `getFirestore()` with a literal, one script run with
+// the wrong flag, and a throwaway environment is writing to koryta.pl. A
+// separate project needs no such vigilance. The preview backend runs as a
+// service account with no grant on koryta-pl at all, so the isolation is the
+// same thing that stops any other GCP project reading it.
 //
-// Sharing the project means one wrong string is the difference between a
-// throwaway environment and writing into production, so the values are pinned
-// here and asserted at boot rather than left to whatever the environment
-// happens to supply. See assertFirebaseTarget below.
+// The price is that everything has to exist twice - Auth users, rules,
+// functions, data - which is what scripts/setup-preview-env.sh builds and
+// development.md explains. Auth users are synthetic (seed-preview-auth.ts):
+// production's are not copied, so nothing anyone does on the preview site can
+// change a real person's password or delete their account.
+//
+// Because the two projects are otherwise identical - same Firestore database
+// ids, same rules, same trigger definitions - the project id is the *whole*
+// difference between them. So the values below are per-project, and the checks
+// are about which project a build believes it is in versus which one it is
+// actually running in. See assertProjectMatchesEnv / assertRunningInProject.
 export type KorytaEnv = "local" | "preview" | "prod";
 
 export const KORYTA_ENVS: readonly KorytaEnv[] = ["local", "preview", "prod"];
 
-export type FirebaseTarget = {
-  /** Firestore database id within the project - not the project id. */
-  firestoreDatabase: string;
-  /**
-   * Where the `users` collection lives. Production keeps it in the unnamed
-   * database rather than alongside everything else - useFirestore(), which is
-   * what those two call sites used, returns "(default)" - and moving it would
-   * be a data migration, not a deployment change. Preview has no such history,
-   * so it folds `users` into its one database.
-   */
-  usersDatabase: string;
-  /** Realtime Database instance URL, as the SDKs want it. */
-  databaseURL: string;
-};
+export const PROD_PROJECT_ID = "koryta-pl";
+export const PREVIEW_PROJECT_ID = "koryta-pl-preview";
+/** The emulators' project. `demo-` prefixed, so the SDKs refuse to leave. */
+export const LOCAL_PROJECT_ID = "demo-koryta-pl";
 
-// Named so scripts outside Nuxt can default to it without importing a target.
-export const PROD_FIRESTORE_DATABASE_ID = "koryta-pl";
+/**
+ * The Firestore database holding everything the site reads.
+ *
+ * Named rather than `(default)` in production for historical reasons, and the
+ * same name in the preview project on purpose: the export imports one-for-one,
+ * firestore.rules deploys unchanged, and the triggers in functions/src - which
+ * name `database: "koryta-pl"` - are deployable to either project as they are.
+ */
+export const FIRESTORE_DATABASE_ID = "koryta-pl";
 
-// The emulator hosts the production database id (firebase.json pins it), so an
-// export drops straight in. Nothing here reaches a real project anyway.
-const LOCAL: FirebaseTarget = {
-  firestoreDatabase: PROD_FIRESTORE_DATABASE_ID,
-  usersDatabase: "(default)",
-  // Replaced by localTarget() with the URL of whichever project is being
-  // emulated; this is only what the default one works out to.
-  databaseURL: "https://demo-koryta-pl-default-rtdb.firebaseio.com",
-};
+/**
+ * Where the `users` collection lives. Production keeps it in the unnamed
+ * database - useFirestore(), which is what those call sites used, returns
+ * "(default)" - and moving it would be a data migration, not a deployment
+ * change. Preview mirrors that rather than tidying it, so the preview is a
+ * faithful rehearsal of production and not of something nicer.
+ */
+export const USERS_DATABASE_ID = "(default)";
 
-const PROD: FirebaseTarget = {
-  firestoreDatabase: PROD_FIRESTORE_DATABASE_ID,
-  usersDatabase: "(default)",
-  // What the client SDK derives from the project id when no URL is given,
-  // which is how this app addressed the instance before the URL was explicit.
-  databaseURL: "https://koryta-pl-default-rtdb.firebaseio.com",
-};
-
-// Created by scripts/setup-preview-env.sh. Every field differs from PROD,
-// which is the property assertFirebaseTarget checks.
-const PREVIEW: FirebaseTarget = {
-  firestoreDatabase: "koryta-pl-preview",
-  usersDatabase: "koryta-pl-preview",
-  databaseURL: "https://koryta-pl-preview.firebaseio.com",
-};
-
-export const FIREBASE_TARGETS: Record<KorytaEnv, FirebaseTarget> = {
-  local: LOCAL,
-  preview: PREVIEW,
-  prod: PROD,
+/** The Firebase project each environment belongs to. */
+export const PROJECT_IDS: Record<KorytaEnv, string> = {
+  local: LOCAL_PROJECT_ID,
+  preview: PREVIEW_PROJECT_ID,
+  prod: PROD_PROJECT_ID,
 };
 
 /**
- * The local target for whichever project is being emulated - `demo-koryta-pl`
- * normally, `koryta-pl` under USE_PROD_PROJECT.
- *
- * The Realtime Database namespace has to keep following the project id: that
- * is what the client SDK derived before the URL was written out, and it is the
- * namespace the emulator already has rules for.
+ * The web app registration a build initialises the client SDKs with. Public
+ * values - they identify the project, they do not authorise anything.
  */
-export function localTarget(projectId: string): FirebaseTarget {
+export type FirebaseWebConfig = {
+  projectId: string;
+  apiKey: string;
+  authDomain: string;
+  databaseURL: string;
+  appId: string;
+  messagingSenderId?: string;
+  storageBucket?: string;
+};
+
+const PROD_WEB_CONFIG: FirebaseWebConfig = {
+  projectId: PROD_PROJECT_ID,
+  apiKey: "AIzaSyD54RK-k0TIcJtVbZerx2947XiduteqvaM",
+  authDomain: `${PROD_PROJECT_ID}.firebaseapp.com`,
+  // Spelled out rather than left to the SDK's <projectId>-default-rtdb guess,
+  // because a preview build has to be able to name a different instance.
+  databaseURL: `https://${PROD_PROJECT_ID}-default-rtdb.firebaseio.com`,
+  appId: "1:735903577811:web:53e6461c641b947a4e8626",
+  messagingSenderId: "735903577811",
+  storageBucket: `${PROD_PROJECT_ID}.firebasestorage.app`,
+};
+
+/**
+ * The emulated project. Everything is intercepted before it leaves the
+ * machine, so only the ids that the emulator suite itself keys off matter;
+ * storage and messaging are left unset the way they always were.
+ */
+export function localWebConfig(projectId: string): FirebaseWebConfig {
+  const prodProject = projectId === PROD_PROJECT_ID;
   return {
-    ...LOCAL,
+    projectId,
+    apiKey: PROD_WEB_CONFIG.apiKey,
+    authDomain: `${projectId}.firebaseapp.com`,
     databaseURL: `https://${projectId}-default-rtdb.firebaseio.com`,
+    appId: PROD_WEB_CONFIG.appId,
+    messagingSenderId: prodProject
+      ? PROD_WEB_CONFIG.messagingSenderId
+      : undefined,
+    storageBucket: prodProject ? PROD_WEB_CONFIG.storageBucket : undefined,
   };
 }
 
 /**
- * The Firestore database id for the one-off scripts under scripts/ and the
- * e2e specs, which build their own admin app instead of going through Nuxt.
+ * Where a preview build gets the ids of its own project.
  *
- * Defaults to the production id, which the emulator also serves, so pointing a
- * migration at the preview copy is NUXT_PUBLIC_FIRESTORE_DATABASE away.
+ * Not from this file: a web app registration is created with the project, so
+ * its api key and app id are not knowable when this is written. App Hosting
+ * puts them in FIREBASE_WEBAPP_CONFIG during a build, for the project the
+ * backend lives in - which is precisely the answer wanted here, and one no
+ * environment variable can get wrong. The overrides exist for a build outside
+ * App Hosting, and are printed by `npm run preview:setup`.
+ */
+export type PreviewConfigSources = {
+  /** FIREBASE_WEBAPP_CONFIG, as App Hosting sets it: a JSON object. */
+  injected?: string;
+  /** NUXT_PUBLIC_FIREBASE_* / NUXT_PUBLIC_DATABASE_URL, if any are set. */
+  overrides?: Partial<FirebaseWebConfig>;
+};
+
+export function previewWebConfig({
+  injected,
+  overrides,
+}: PreviewConfigSources = {}): FirebaseWebConfig {
+  const fromInjected = parseInjectedConfig(injected);
+  const merged: Partial<FirebaseWebConfig> = {
+    ...fromInjected,
+    ...definedOnly(overrides ?? {}),
+  };
+
+  // A missing api key would otherwise surface as a browser error on a page
+  // that already rendered, long after the build that could have said so.
+  const missing = (["apiKey", "appId"] as const).filter((key) => !merged[key]);
+  if (missing.length > 0) {
+    throw new Error(
+      `Cannot build for KORYTA_ENV=preview: ${missing.join(" and ")} unknown. ` +
+        "App Hosting supplies FIREBASE_WEBAPP_CONFIG when the backend has a " +
+        "web app linked; outside it, set NUXT_PUBLIC_FIREBASE_API_KEY and " +
+        "NUXT_PUBLIC_FIREBASE_APP_ID (`npm run preview:setup` prints them).",
+    );
+  }
+
+  const projectId = merged.projectId ?? PREVIEW_PROJECT_ID;
+  if (projectId === PROD_PROJECT_ID) {
+    throw new Error(
+      "Refusing to build: KORYTA_ENV=preview but the Firebase web app " +
+        `belongs to ${PROD_PROJECT_ID}. A preview backend must live in ` +
+        `${PREVIEW_PROJECT_ID}.`,
+    );
+  }
+
+  return {
+    projectId,
+    apiKey: merged.apiKey!,
+    appId: merged.appId!,
+    authDomain: merged.authDomain ?? `${projectId}.firebaseapp.com`,
+    // The default instance of a project created in us-central1. Everywhere
+    // else it is <id>.<region>.firebasedatabase.app, which is why this is only
+    // a fallback: the injected config carries the real one.
+    databaseURL:
+      merged.databaseURL ?? `https://${projectId}-default-rtdb.firebaseio.com`,
+    messagingSenderId: merged.messagingSenderId,
+    storageBucket: merged.storageBucket ?? `${projectId}.firebasestorage.app`,
+  };
+}
+
+/**
+ * The web config for an environment, given the project it resolves to.
+ * `sources` is only consulted for preview; the other two are known here.
+ */
+export function resolveWebConfig(
+  env: KorytaEnv,
+  projectId: string,
+  sources?: PreviewConfigSources,
+): FirebaseWebConfig {
+  if (env === "local") return localWebConfig(projectId);
+  if (env === "preview") return previewWebConfig(sources);
+  return PROD_WEB_CONFIG;
+}
+
+function parseInjectedConfig(
+  injected: string | undefined,
+): Partial<FirebaseWebConfig> {
+  if (!injected) return {};
+  try {
+    const parsed = JSON.parse(injected) as Partial<FirebaseWebConfig>;
+    return definedOnly(parsed);
+  } catch (error) {
+    // Guessing past this would mean building against whatever the fallbacks
+    // happen to be, which for a truncated config is production's api key.
+    throw new Error(
+      `FIREBASE_WEBAPP_CONFIG is not valid JSON: ${(error as Error).message}`,
+    );
+  }
+}
+
+function definedOnly(
+  config: Partial<FirebaseWebConfig>,
+): Partial<FirebaseWebConfig> {
+  // Empty counts as absent: an App Hosting variable that was declared and
+  // never given a value arrives as "", and would otherwise shadow the
+  // injected config with nothing.
+  return Object.fromEntries(
+    Object.entries(config).filter(([, value]) => !!value),
+  ) as Partial<FirebaseWebConfig>;
+}
+
+/**
+ * The Firestore database id for the one-off scripts under scripts/ and the e2e
+ * specs, which build their own admin app instead of going through Nuxt. The
+ * name is the same in every project; which project is selected by the
+ * credentials the script runs with.
  */
 export function firestoreDatabaseFromEnv(): string {
+  return process.env.NUXT_PUBLIC_FIRESTORE_DATABASE || FIRESTORE_DATABASE_ID;
+}
+
+/**
+ * The project the scripts under scripts/migrate/ run against.
+ *
+ * Production unless told otherwise, because that is what a migration is for.
+ * Naming the preview project instead is how one is rehearsed on real-shaped
+ * data without being able to damage any: the databases are named the same in
+ * both, so the project is the whole of the choice.
+ */
+export function adminProjectFromEnv(): string {
   return (
-    process.env.NUXT_PUBLIC_FIRESTORE_DATABASE || PROD_FIRESTORE_DATABASE_ID
+    process.env.GOOGLE_CLOUD_PROJECT ||
+    process.env.GCLOUD_PROJECT ||
+    PROD_PROJECT_ID
   );
 }
 
@@ -117,54 +256,65 @@ export function resolveKorytaEnv(
 }
 
 /**
- * Refuses a target that does not match the environment it claims to be.
+ * Refuses a build that claims an environment but names another's project.
  *
- * The failure this exists for: a preview deployment whose env vars did not
- * arrive (or arrived empty) falls back to the defaults baked into the build,
- * which are production's - so it would come up looking fine and write into the
- * live database. Preview must differ from production on both stores, and
- * production must be exactly production.
+ * Local is exempt: it runs against the emulators as either `demo-koryta-pl` or
+ * `koryta-pl` (USE_PROD_PROJECT, for the prod-data export), and neither one
+ * reaches a real project.
  */
-export function assertFirebaseTarget(
+export function assertProjectMatchesEnv(
   env: KorytaEnv,
-  target: FirebaseTarget,
+  projectId: string,
 ): void {
-  const complain = (message: string) => {
-    throw new Error(`Refusing to start: ${message}`);
-  };
-
-  if (env === "preview") {
-    if (target.firestoreDatabase === PROD.firestoreDatabase) {
-      complain(
-        `KORYTA_ENV=preview but Firestore database is production's (${PROD.firestoreDatabase}). ` +
-          "Set NUXT_PUBLIC_FIRESTORE_DATABASE to the preview database.",
-      );
-    }
-    if (target.usersDatabase === PROD.usersDatabase) {
-      complain(
-        `KORYTA_ENV=preview but the users database is production's (${PROD.usersDatabase}). ` +
-          "Set NUXT_PUBLIC_USERS_DATABASE to the preview database.",
-      );
-    }
-    if (target.databaseURL === PROD.databaseURL) {
-      complain(
-        `KORYTA_ENV=preview but the Realtime Database URL is production's (${PROD.databaseURL}). ` +
-          "Set NUXT_PUBLIC_DATABASE_URL to the preview instance.",
-      );
-    }
-    return;
+  if (env === "local") return;
+  if (projectId !== PROJECT_IDS[env]) {
+    throw new Error(
+      `Refusing to start: KORYTA_ENV=${env} but the Firebase project is ` +
+        `${projectId}, and ${env} is ${PROJECT_IDS[env]}.`,
+    );
   }
+}
 
-  if (env === "prod") {
-    if (
-      target.firestoreDatabase !== PROD.firestoreDatabase ||
-      target.usersDatabase !== PROD.usersDatabase ||
-      target.databaseURL !== PROD.databaseURL
-    ) {
-      complain(
-        "KORYTA_ENV=prod but the Firebase target is not production's. " +
-          "Production reads no overrides; drop them or set KORYTA_ENV=preview.",
-      );
+/**
+ * Refuses a build running somewhere other than the project it was built for.
+ *
+ * This is the check that does not depend on anything arriving. A preview
+ * backend whose environment variables went missing builds as production -
+ * KORYTA_ENV is gone too, so nothing above notices - and would come up in the
+ * preview project holding production's project id and credentials it does not
+ * have. Cloud Run tells the container which project it is in; if that
+ * disagrees with what was built in, the rollout fails instead of serving.
+ *
+ * `host` is undefined outside Cloud Run (a laptop, a test), where there is no
+ * second opinion to be had and this passes.
+ */
+export function assertRunningInProject(
+  projectId: string,
+  host: string | undefined,
+): void {
+  if (!host || host === projectId) return;
+  throw new Error(
+    `Refusing to start: built for Firebase project ${projectId} but running ` +
+      `in ${host}. A deployment that lost its environment configuration comes ` +
+      "up like this; redeploy with the right apphosting.<env>.yaml.",
+  );
+}
+
+/**
+ * Which project the running container belongs to, according to the platform
+ * rather than the build. App Hosting sets FIREBASE_CONFIG at runtime;
+ * GCLOUD_PROJECT and friends come from the Cloud Run container contract.
+ */
+export function hostProjectId(
+  env: Record<string, string | undefined>,
+): string | undefined {
+  if (env.FIREBASE_CONFIG) {
+    try {
+      const parsed = JSON.parse(env.FIREBASE_CONFIG) as { projectId?: string };
+      if (parsed.projectId) return parsed.projectId;
+    } catch {
+      // Malformed is no evidence either way; fall through to the plain vars.
     }
   }
+  return env.GCLOUD_PROJECT || env.GOOGLE_CLOUD_PROJECT || env.PROJECT_ID;
 }

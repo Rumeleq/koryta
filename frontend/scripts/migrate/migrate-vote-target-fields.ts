@@ -1,6 +1,9 @@
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
-import { firestoreDatabaseFromEnv } from "../../shared/firebase-env";
+import {
+  adminProjectFromEnv,
+  firestoreDatabaseFromEnv,
+} from "../../shared/firebase-env";
 
 /**
  * One-time migration: give extraction votes their own target field.
@@ -27,7 +30,7 @@ if (!isProd) {
   process.env.GCLOUD_PROJECT = "koryta-pl";
 }
 
-const app = initializeApp({ projectId: "koryta-pl" });
+const app = initializeApp({ projectId: adminProjectFromEnv() });
 
 async function migrate() {
   const db = getFirestore(app, firestoreDatabaseFromEnv());

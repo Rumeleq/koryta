@@ -15,6 +15,11 @@ name: Preview deployment
 #   * Actions -> Preview deployment -> Run workflow, for a branch with no PR
 #
 # Forks get nothing: no OIDC token, and a rollout writes to the project.
+#
+# The project is koryta-pl-preview, not koryta-pl. The service account this
+# authenticates as needs roles/firebaseapphosting.admin there and nothing at
+# all on production - which is the whole reason the preview environment is a
+# separate project. See frontend/development.md.
 
 on:
   workflow_dispatch:
@@ -90,7 +95,7 @@ jobs:
           set -euo pipefail
           npx firebase apphosting:rollouts:create "$BACKEND" \
             --git-branch "$BRANCH" \
-            --project "${{ vars.FIREBASE_PROJECT || 'koryta-pl' }}" \
+            --project "${{ vars.PREVIEW_PROJECT || 'koryta-pl-preview' }}" \
             --force
 
       - name: Say where it is
@@ -105,7 +110,9 @@ jobs:
             echo "Branch: \`$BRANCH\`"
             echo "URL: ${URL:-set the PREVIEW_URL repository variable to the backend URL}"
             echo
-            echo "Reads the preview databases, refreshed by \`npm run db:preview:refresh\`."
+            echo "Runs in the koryta-pl-preview project, on a copy of the data refreshed"
+            echo "by \`npm run db:preview:refresh\`, with the accounts from"
+            echo "\`npm run preview:seed:auth\`."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Comment on the pull request
@@ -124,7 +131,8 @@ jobs:
               body: [
                 `Deploying \`${process.env.BRANCH}\` to the preview backend: ${url}`,
                 "",
-                "It serves the preview databases, not production. The build takes a few minutes;",
+                "It runs in the `koryta-pl-preview` project, with its own copy of the data and its",
+                "own accounts, and no access to production. The build takes a few minutes;",
                 "add the `preview` label again to redeploy after a push.",
               ].join("\n"),
             });

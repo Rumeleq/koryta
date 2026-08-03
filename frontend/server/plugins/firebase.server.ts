@@ -1,25 +1,31 @@
 import { initializeApp, getApps } from "firebase-admin/app";
-import { assertFirebaseTarget, isKorytaEnv } from "~~/shared/firebase-env";
+import {
+  assertProjectMatchesEnv,
+  assertRunningInProject,
+  hostProjectId,
+  isKorytaEnv,
+} from "~~/shared/firebase-env";
 
 export default defineNitroPlugin(() => {
   const config = useRuntimeConfig();
-  const { korytaEnv, firestoreDatabase, usersDatabase, databaseURL } =
-    config.public;
+  const { korytaEnv, databaseURL } = config.public;
+  const projectId = config.public.vuefire.config.projectId;
 
   // Runtime overrides arrive as strings from the environment, so this is the
-  // first place that can tell "preview" from a typo, or notice that a preview
-  // deployment came up pointing at production's data. Throwing here fails the
-  // rollout instead of serving a page that writes to the live database.
+  // first place that can tell "preview" from a typo. Throwing here fails the
+  // rollout instead of serving a page that writes to the wrong project.
   if (!isKorytaEnv(korytaEnv)) {
     throw new Error(
       `Refusing to start: unknown KORYTA_ENV ${JSON.stringify(korytaEnv)}`,
     );
   }
-  assertFirebaseTarget(korytaEnv, {
-    firestoreDatabase,
-    usersDatabase,
-    databaseURL,
-  });
+  assertProjectMatchesEnv(korytaEnv, projectId);
+  // And the check that needs nothing to have arrived: Cloud Run knows which
+  // project the container is in. A preview backend whose configuration went
+  // missing built itself as production, and this is where it stops.
+  if (korytaEnv !== "local") {
+    assertRunningInProject(projectId, hostProjectId(process.env));
+  }
 
   // Make sure we're not re-initializing the app on every hot-reload
   if (getApps().length === 0) {
@@ -31,7 +37,7 @@ export default defineNitroPlugin(() => {
     }
 
     initializeApp({
-      projectId: config.public.vuefire.config.projectId,
+      projectId,
       // Without this the admin SDK has nothing to resolve - it throws "Can't
       // determine Firebase Database URL" rather than guessing the way the
       // client SDK does.

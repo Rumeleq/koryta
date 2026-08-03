@@ -4,9 +4,15 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import {
-  assertFirebaseTarget,
-  FIREBASE_TARGETS,
+  assertProjectMatchesEnv,
+  assertRunningInProject,
+  hostProjectId,
+  PREVIEW_PROJECT_ID,
+  previewWebConfig,
+  PROD_PROJECT_ID,
+  PROJECT_IDS,
   resolveKorytaEnv,
+  resolveWebConfig,
 } from "../../shared/firebase-env";
 
 describe("resolveKorytaEnv", () => {
@@ -27,58 +33,145 @@ describe("resolveKorytaEnv", () => {
   });
 });
 
-describe("assertFirebaseTarget", () => {
-  it("accepts each environment paired with its own target", () => {
-    for (const env of ["local", "preview", "prod"] as const) {
+describe("previewWebConfig", () => {
+  const injected = JSON.stringify({
+    projectId: PREVIEW_PROJECT_ID,
+    apiKey: "preview-api-key",
+    appId: "1:1:web:preview",
+    authDomain: "koryta-pl-preview.firebaseapp.com",
+    databaseURL: "https://koryta-pl-preview-default-rtdb.firebaseio.com",
+    messagingSenderId: "1",
+    storageBucket: "koryta-pl-preview.firebasestorage.app",
+  });
+
+  it("takes the project's own registration from App Hosting", () => {
+    const config = previewWebConfig({ injected });
+    expect(config.projectId).toBe(PREVIEW_PROJECT_ID);
+    expect(config.apiKey).toBe("preview-api-key");
+    expect(config.databaseURL).toContain(PREVIEW_PROJECT_ID);
+  });
+
+  it("lets an explicit override win, for a build outside App Hosting", () => {
+    const config = previewWebConfig({
+      injected,
+      overrides: { apiKey: "pasted-key" },
+    });
+    expect(config.apiKey).toBe("pasted-key");
+  });
+
+  // Empty strings are what an unset App Hosting variable arrives as, and they
+  // would otherwise pass the "is it there" check and fail in the browser.
+  it("ignores empty values on both sides", () => {
+    expect(
+      previewWebConfig({ injected, overrides: { apiKey: "" } }).apiKey,
+    ).toBe("preview-api-key");
+    expect(() =>
+      previewWebConfig({ injected: JSON.stringify({ apiKey: "" }) }),
+    ).toThrow(/apiKey/);
+  });
+
+  it("says what to do when nothing supplied the ids", () => {
+    expect(() => previewWebConfig()).toThrow(/FIREBASE_WEBAPP_CONFIG/);
+    expect(() => previewWebConfig({ injected: "{oops" })).toThrow(
+      /not valid JSON/,
+    );
+  });
+
+  // The failure this exists for: a preview backend created in the production
+  // project would be handed production's web app, and the build would come up
+  // looking like a preview and writing to koryta.pl.
+  it("refuses a web app that belongs to production", () => {
+    expect(() =>
+      previewWebConfig({
+        injected: JSON.stringify({
+          projectId: PROD_PROJECT_ID,
+          apiKey: "k",
+          appId: "a",
+        }),
+      }),
+    ).toThrow(/must live in/);
+  });
+});
+
+describe("resolveWebConfig", () => {
+  it("gives production its own registration", () => {
+    const config = resolveWebConfig("prod", PROD_PROJECT_ID);
+    expect(config.projectId).toBe(PROD_PROJECT_ID);
+    expect(config.databaseURL).toBe(
+      "https://koryta-pl-default-rtdb.firebaseio.com",
+    );
+  });
+
+  it("keeps the emulated project off production's storage", () => {
+    const local = resolveWebConfig("local", "demo-koryta-pl");
+    expect(local.projectId).toBe("demo-koryta-pl");
+    expect(local.storageBucket).toBeUndefined();
+    expect(local.databaseURL).toContain("demo-koryta-pl");
+  });
+});
+
+describe("which project a build is in", () => {
+  it("pairs each environment with its project", () => {
+    for (const env of ["preview", "prod"] as const) {
       expect(() =>
-        assertFirebaseTarget(env, FIREBASE_TARGETS[env]),
+        assertProjectMatchesEnv(env, PROJECT_IDS[env]),
       ).not.toThrow();
     }
+    expect(() => assertProjectMatchesEnv("preview", PROD_PROJECT_ID)).toThrow(
+      /KORYTA_ENV=preview/,
+    );
+    expect(() => assertProjectMatchesEnv("prod", PREVIEW_PROJECT_ID)).toThrow(
+      /KORYTA_ENV=prod/,
+    );
   });
 
-  // The failure this guards: a preview deployment whose environment variables
-  // did not arrive falls back to the build's defaults, which are production's.
-  it("refuses a preview pointed at any production store", () => {
+  // Local runs against the emulators as demo-koryta-pl, or as koryta-pl when
+  // replaying the production export; neither reaches a real project.
+  it("leaves local alone", () => {
     expect(() =>
-      assertFirebaseTarget("preview", {
-        ...FIREBASE_TARGETS.preview,
-        firestoreDatabase: FIREBASE_TARGETS.prod.firestoreDatabase,
-      }),
-    ).toThrow(/Firestore database is production's/);
-
-    expect(() =>
-      assertFirebaseTarget("preview", {
-        ...FIREBASE_TARGETS.preview,
-        usersDatabase: FIREBASE_TARGETS.prod.usersDatabase,
-      }),
-    ).toThrow(/users database is production's/);
-
-    expect(() =>
-      assertFirebaseTarget("preview", {
-        ...FIREBASE_TARGETS.preview,
-        databaseURL: FIREBASE_TARGETS.prod.databaseURL,
-      }),
-    ).toThrow(/Realtime Database URL is production's/);
+      assertProjectMatchesEnv("local", PROD_PROJECT_ID),
+    ).not.toThrow();
   });
 
-  it("refuses production pointed anywhere else", () => {
+  // The check that survives losing every environment variable: a preview
+  // backend that built itself as production is still running in the preview
+  // project, and Cloud Run says so.
+  it("refuses a build running in a project it was not built for", () => {
     expect(() =>
-      assertFirebaseTarget("prod", FIREBASE_TARGETS.preview),
-    ).toThrow(/not production's/);
+      assertRunningInProject(PROD_PROJECT_ID, PREVIEW_PROJECT_ID),
+    ).toThrow(/built for Firebase project koryta-pl but running/);
+    expect(() =>
+      assertRunningInProject(PROD_PROJECT_ID, PROD_PROJECT_ID),
+    ).not.toThrow();
   });
 
-  it("keeps every preview store distinct from production's", () => {
-    const { preview, prod } = FIREBASE_TARGETS;
-    expect(preview.firestoreDatabase).not.toBe(prod.firestoreDatabase);
-    expect(preview.usersDatabase).not.toBe(prod.usersDatabase);
-    expect(preview.databaseURL).not.toBe(prod.databaseURL);
+  it("passes where nothing can say which project this is", () => {
+    expect(() =>
+      assertRunningInProject(PROD_PROJECT_ID, undefined),
+    ).not.toThrow();
+    expect(hostProjectId({})).toBeUndefined();
+  });
+
+  it("reads the project from what the platform sets", () => {
+    expect(
+      hostProjectId({
+        FIREBASE_CONFIG: JSON.stringify({ projectId: PREVIEW_PROJECT_ID }),
+        GCLOUD_PROJECT: PROD_PROJECT_ID,
+      }),
+    ).toBe(PREVIEW_PROJECT_ID);
+    expect(hostProjectId({ GCLOUD_PROJECT: PREVIEW_PROJECT_ID })).toBe(
+      PREVIEW_PROJECT_ID,
+    );
+    expect(
+      hostProjectId({ FIREBASE_CONFIG: "{", GOOGLE_CLOUD_PROJECT: "x" }),
+    ).toBe("x");
   });
 });
 
 describe("apphosting.preview.yaml", () => {
-  // The deployment only ever sees the yaml, and the boot check only asks
-  // whether the values differ from production - a typo in a database id would
-  // get past both and serve an empty site. This is what ties the two together.
+  // The deployment only ever sees the yaml. Everything else about the preview
+  // project now arrives from the project itself, so this is the whole of what
+  // has to be declared - and all of it has to be right.
   const yaml = readFileSync(
     resolve(
       dirname(fileURLToPath(import.meta.url)),
@@ -92,18 +185,17 @@ describe("apphosting.preview.yaml", () => {
       new RegExp(`- variable: ${name}\\s*\\n\\s*value: "?([^"\\n]+)"?`),
     )?.[1];
 
-  it("declares the ids that shared/firebase-env.ts calls preview", () => {
+  it("declares itself a preview to the build and to the runtime", () => {
     expect(envVar("KORYTA_ENV")).toBe("preview");
     expect(envVar("NUXT_PUBLIC_KORYTA_ENV")).toBe("preview");
-    expect(envVar("NUXT_PUBLIC_FIRESTORE_DATABASE")).toBe(
-      FIREBASE_TARGETS.preview.firestoreDatabase,
-    );
-    expect(envVar("NUXT_PUBLIC_USERS_DATABASE")).toBe(
-      FIREBASE_TARGETS.preview.usersDatabase,
-    );
-    expect(envVar("NUXT_PUBLIC_DATABASE_URL")).toBe(
-      FIREBASE_TARGETS.preview.databaseURL,
-    );
+  });
+
+  it("names no database or project id", () => {
+    // Those come from the project the backend lives in. A copy pinned here
+    // would be one more thing to keep in step, and the thing it would be
+    // pinning is the one that must not be pinned wrong.
+    expect(yaml).not.toContain("NUXT_PUBLIC_FIRESTORE_DATABASE");
+    expect(yaml).not.toContain("NUXT_PUBLIC_FIREBASE_API_KEY");
   });
 
   it("keeps the preview out of search results", () => {
@@ -114,9 +206,10 @@ describe("apphosting.preview.yaml", () => {
 describe("no hardcoded database ids", () => {
   const frontend = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
-  // A call site that names the database itself is a call site that ignores
-  // KORYTA_ENV, which in a preview deployment means writing to production.
-  // Everything goes through appFirestore/appDatabase instead.
+  // The two databases are not interchangeable - `users` is in the unnamed one
+  // and everything else is not - so a call site that names one itself is a
+  // call site that reads an empty collection the day the layout changes.
+  // Everything goes through appFirestore/appUsersFirestore/appDatabase.
   it("routes every Firestore and RTDB handle through the helpers", () => {
     const hits = grep(
       String.raw`getFirestore\([^)]*"(koryta-pl|\(default\))"|useDatabase\(\)|useFirestore\(\)`,

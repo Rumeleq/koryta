@@ -1,6 +1,9 @@
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { firestoreDatabaseFromEnv } from "../../shared/firebase-env";
+import {
+  adminProjectFromEnv,
+  firestoreDatabaseFromEnv,
+} from "../../shared/firebase-env";
 import {
   edgeIdentity,
   edgeSemantics,
@@ -59,7 +62,7 @@ if (!isProd) {
   process.env.GCLOUD_PROJECT = "koryta-pl";
 }
 
-const app = initializeApp({ projectId: "koryta-pl" });
+const app = initializeApp({ projectId: adminProjectFromEnv() });
 
 /** How much this copy knows, for choosing which one to keep. */
 function informativeness(doc: FirebaseFirestore.QueryDocumentSnapshot): number {

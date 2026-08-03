@@ -1,4 +1,4 @@
-import { type Query } from "firebase-admin/firestore";
+import type { Query } from "firebase-admin/firestore";
 import { adminFirestore } from "~~/server/utils/firebase";
 import {
   bucketNotes,

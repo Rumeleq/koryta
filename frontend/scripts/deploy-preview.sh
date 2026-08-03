@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-PROJECT="${FIREBASE_PROJECT:-koryta-pl}"
+PROJECT="${PREVIEW_PROJECT:-koryta-pl-preview}"
 BACKEND="${PREVIEW_BACKEND:-preview}"
 
 branch="${1:-}"

@@ -2,7 +2,10 @@ import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { computeVoteStats } from "../../shared/stats";
 import type { VoteDocument } from "../../shared/model";
-import { firestoreDatabaseFromEnv } from "../../shared/firebase-env";
+import {
+  adminProjectFromEnv,
+  firestoreDatabaseFromEnv,
+} from "../../shared/firebase-env";
 
 /**
  * One-time migration: give every extraction a `stats.votes` aggregate.
@@ -35,7 +38,7 @@ if (!isProd) {
   process.env.GCLOUD_PROJECT = "koryta-pl";
 }
 
-const app = initializeApp({ projectId: "koryta-pl" });
+const app = initializeApp({ projectId: adminProjectFromEnv() });
 
 async function backfill() {
   const db = getFirestore(app, firestoreDatabaseFromEnv());
