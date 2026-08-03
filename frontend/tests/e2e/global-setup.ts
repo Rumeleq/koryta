@@ -44,6 +44,9 @@ const LOGGED_IN_ROUTES = [
   // vite for the chunk that renders the buttons they click.
   "/admin/notatki",
   "/admin/notatki/kategoryzacja",
+  // The relation publishing queue, whose spec publishes an edge within its
+  // first few seconds.
+  "/admin/krawedzie",
   // The id does not have to resolve; the route's own chunk is what we want
   // compiled before a spec follows a revision link into it.
   "/admin/rewizje/warmup",

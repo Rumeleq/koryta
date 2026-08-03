@@ -243,6 +243,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import {
+  mdiGraphOutline,
   mdiHistory,
   mdiNoteEditOutline,
   mdiTextBoxSearchOutline,
@@ -271,6 +272,12 @@ const subpages = [
     to: "/admin/rewizje",
     icon: mdiHistory,
     desc: "Przeglądaj i akceptuj rewizje węzłów.",
+  },
+  {
+    title: "Powiązania",
+    to: "/admin/krawedzie",
+    icon: mdiGraphOutline,
+    desc: "Powiązania gotowe do publikacji - obie strony już opublikowane.",
   },
   {
     title: "Notatki",
