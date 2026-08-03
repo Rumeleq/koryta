@@ -19,7 +19,7 @@ from scrapers.article.pipelines.pipeline_utils import (
     llm_model,
     read_html_from_storage,
 )
-from scrapers.stores import Context, DoneUrl, LLMRequest, Pipeline
+from scrapers.stores import LLM, Context, DoneUrl, LLMRequest, Pipeline
 
 SELECTOR_PROMPT_VERSION = 1
 SELECTOR_MAX_TOKENS = 200
@@ -140,6 +140,7 @@ class ArticleDomainSelectors(Pipeline):
     backup_to_shared_cache = False  # keep article outputs local-only
 
     done_urls: ArticleDoneUrls
+    llm: LLM
 
     def process(self, ctx: Context):
 
@@ -186,8 +187,7 @@ async def _generate_selectors(
     *,
     model: str,
 ) -> list[dict[str, Any]]:
-    assert ctx.llm is not None
-    await ctx.llm.check_health()
+    await LLM.from_context(ctx).check_health()
     rows: list[dict[str, Any]] = []
     domain_concurrency = max(
         1,
@@ -285,7 +285,6 @@ async def _generate_selector_prompt_rows(
     *,
     model: str,
 ) -> list[dict[str, Any]]:
-    assert ctx.llm is not None
     pending: dict[int, str] = {}
     responses_by_domain: dict[str, list[str]] = {
         str(row["domain"]): [] for row in prompt_rows
@@ -301,7 +300,7 @@ async def _generate_selector_prompt_rows(
         mininterval=1.0,
         smoothing=0.05,
     ) as bar:
-        async with ctx.llm.response_pool() as pool:
+        async with LLM.from_context(ctx).response_pool() as pool:
             for row in prompt_rows:
                 domain = str(row["domain"])
                 for prompt in row.get("prompts") or []:

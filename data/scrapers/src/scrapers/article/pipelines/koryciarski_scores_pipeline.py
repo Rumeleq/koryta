@@ -11,7 +11,7 @@ from entities.article import KoryciarskiScore
 from scrapers.article.pipelines.incremental import IncrementalJsonlPipeline
 from scrapers.article.pipelines.parsed_pipeline import ArticleParsed
 from scrapers.article.pipelines.pipeline_utils import llm_model
-from scrapers.stores import VERSIONED_DIR, Context, LLMRequest
+from scrapers.stores import LLM, VERSIONED_DIR, Context, LLMRequest
 
 PROMPT_VERSION = 1
 TEXT_LIMIT = 100000
@@ -57,6 +57,7 @@ class ArticleKoryciarskiScores(IncrementalJsonlPipeline[KoryciarskiScore]):
     interrupt_note = "will save partial scores"
 
     article_parsed: ArticleParsed
+    llm: LLM
 
     @property
     def output_class(self):
@@ -142,8 +143,7 @@ async def _score_records(
     *,
     model: str,
 ) -> list[dict[str, Any]]:
-    assert ctx.llm is not None
-    await ctx.llm.check_health()
+    await LLM.from_context(ctx).check_health()
     pending: dict[int, dict[str, Any]] = {}
     uncached = _emit_cached_scores(ctx, records, existing, model)
 
@@ -155,7 +155,7 @@ async def _score_records(
         mininterval=1.0,
         smoothing=0.05,
     ) as bar:
-        async with ctx.llm.response_pool() as pool:
+        async with LLM.from_context(ctx).response_pool() as pool:
             for record in uncached:
                 while pool.is_full():
                     request_id, response = await pool.get_response()
@@ -386,9 +386,7 @@ def _normalize_scoring_result(parsed: dict[str, Any]) -> tuple[bool, int | None,
 
 
 def _print_llm_usage(ctx: Context) -> None:
-    llm = ctx.llm
-    if llm is None:
-        return
+    llm = LLM.from_context(ctx)
     requests = int(getattr(llm, "request_count", 0) or 0)
     prompt_tokens = int(getattr(llm, "prompt_tokens", 0) or 0)
     completion_tokens = int(getattr(llm, "completion_tokens", 0) or 0)

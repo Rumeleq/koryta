@@ -9,22 +9,13 @@ from conductor import setup_context
 from pipelines import PIPELINES
 from scrapers.article.pipelines import pipeline_utils as article_args
 from scrapers.stores import (
+    ContextResource,
     Pipeline,
     ProcessPolicy,
     iterate_pipeline_dict,
+    required_resources,
 )
 from scrapers.wiki import dump as wiki_dump_args
-
-# Pipelines that need the LLM client on the Context.
-ARTICLE_PIPELINES = {
-    "ArticleAnalyzed",
-    "ArticleDoneUrls",
-    "ArticleDomainSelectors",
-    "ArticleExtractedFacts",
-    "ArticleFactsVerified",
-    "ArticleKoryciarskiScores",
-    "ArticleParsed",
-}
 
 
 class Printer:
@@ -101,6 +92,35 @@ def get_args():
     return args
 
 
+def select_pipelines(args) -> set[str]:
+    pipeline_names = set(pt.__name__ for pt in PIPELINES)
+    exclude = set(args.exclude)
+    unknown = (exclude | set(args.pipeline)) - pipeline_names
+    if unknown:
+        raise ValueError(
+            f"Pipeline(s) not found: {' '.join(sorted(unknown))}. "
+            f"Available: {' '.join(sorted(pipeline_names))}"
+        )
+
+    if args.all:
+        if args.pipeline:
+            raise ValueError("--all runs everything, so it takes no pipeline names")
+        # ScrapeRejestrIO bills per query -- never part of a bulk run.
+        return pipeline_names - {"ScrapeRejestrIO"} - exclude
+    if args.pipeline:
+        return set(args.pipeline) - exclude
+    raise ValueError("No pipeline specified, use koryta PipelineName or --all")
+
+
+def selected_resources(selected: set[str]) -> set[type[ContextResource]]:
+    """The clients the selected pipelines declared, their sources' included."""
+    required: set[type[ContextResource]] = set()
+    for p_type in PIPELINES:
+        if p_type.__name__ in selected:
+            required |= required_resources(p_type)
+    return required
+
+
 def main():
     args = get_args()
     if args.no_backup:
@@ -116,31 +136,17 @@ def main():
 
     policy = ProcessPolicy.with_default(refresh, exclude_refresh=exclude_refresh)
 
-    pipeline_names = set(pt.__name__ for pt in PIPELINES)
-    exclude = set(args.exclude)
-    unknown = (exclude | set(args.pipeline)) - pipeline_names
-    if unknown:
-        raise ValueError(
-            f"Pipeline(s) not found: {' '.join(sorted(unknown))}. "
-            f"Available: {' '.join(sorted(pipeline_names))}"
-        )
-
-    if args.all:
-        if args.pipeline:
-            raise ValueError("--all runs everything, so it takes no pipeline names")
-        # ScrapeRejestrIO bills per query -- never part of a bulk run.
-        selected = pipeline_names - {"ScrapeRejestrIO"} - exclude
-    elif args.pipeline:
-        selected = set(args.pipeline) - exclude
-    else:
-        raise ValueError("No pipeline specified, use koryta PipelineName or --all")
-
-    ctx, dumper = setup_context(
-        False, use_llm=bool(selected & ARTICLE_PIPELINES), policy=policy
-    )
+    selected = select_pipelines(args)
+    required = selected_resources(selected)
+    ctx, dumper = setup_context(required, policy=policy)
 
     for p_name in sorted(selected):
         print(f"Will run pipeline: {p_name}")
+    if required:
+        print(
+            "Setting up context clients: "
+            + " ".join(sorted(r.__name__ for r in required))
+        )
 
     printer = Printer(args)
     try:

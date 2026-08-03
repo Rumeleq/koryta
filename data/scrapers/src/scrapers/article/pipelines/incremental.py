@@ -66,6 +66,7 @@ class IncrementalJsonlPipeline(Pipeline[T]):
             self._cached_result = pd.DataFrame()
             return self._cached_result
 
+        self.bind_requirements(ctx)
         self.preprocess_sources(ctx, ctx.refresh_policy)
         graceful = True
         try:

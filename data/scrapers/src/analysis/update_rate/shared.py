@@ -23,7 +23,7 @@ METHODS_OF_INTEREST = [
 
 def make_context():
     """Create a read-only pipeline context."""
-    return setup_context(False)[0]
+    return setup_context()[0]
 
 
 def load_already_scraped(ctx) -> pd.DataFrame:
