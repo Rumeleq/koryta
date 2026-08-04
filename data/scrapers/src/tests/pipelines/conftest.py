@@ -20,4 +20,4 @@ def snapshot() -> Snapshot:
     a failure against the data that produced it, or to tell a regression apart
     from a difference between two days.
     """
-    return load_snapshot(setup_context(False)[0], os.environ.get("KORYTA_EXPORT"))
+    return load_snapshot(setup_context()[0], os.environ.get("KORYTA_EXPORT"))

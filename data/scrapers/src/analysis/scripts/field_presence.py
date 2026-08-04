@@ -215,7 +215,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    snapshot = load_snapshot(setup_context(False)[0], args.export)
+    snapshot = load_snapshot(setup_context()[0], args.export)
 
     for collection in args.collections:
         df = load_collection(snapshot, collection)

@@ -231,7 +231,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    ctx = setup_context(False)[0]
+    ctx = setup_context()[0]
     snapshot = load_snapshot(ctx, args.export)
     edges = snapshot.collection("edges")
     print(f"Loaded {len(edges)} edges from {snapshot.date}.")

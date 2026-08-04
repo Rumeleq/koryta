@@ -192,7 +192,7 @@ class CompanyUploader(Uploader):
         """
         if self._company_payloads is None:
             print("Loading company payloads from Companies pipeline")
-            df = Companies().read_or_process(setup_context(False)[0])
+            df = Companies().read_or_process(setup_context()[0])
             self._company_payloads = {c["krs"]: c for c in iterate_pipeline_dict(df)}
         return self._company_payloads
 

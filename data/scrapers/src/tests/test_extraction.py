@@ -194,7 +194,7 @@ COMPANIES_EXPECTED = {
 
 @pytest.fixture
 def ctx():
-    return setup_context(False)[0]
+    return setup_context()[0]
 
 
 def list_test_files():

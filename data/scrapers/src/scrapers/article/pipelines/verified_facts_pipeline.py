@@ -26,7 +26,7 @@ from entities.article import ArticleFactsVerified as ArticleFactsVerifiedRecord
 from scrapers.article.pipelines.facts_pipeline import ArticleExtractedFacts
 from scrapers.article.pipelines.incremental import IncrementalJsonlPipeline
 from scrapers.article.pipelines.pipeline_utils import llm_model
-from scrapers.stores import VERSIONED_DIR, Context, LLMRequest
+from scrapers.stores import LLM, VERSIONED_DIR, Context, LLMRequest
 
 VERIFY_VERSION = 4
 MAX_TOKENS = 4000
@@ -208,6 +208,7 @@ class ArticleFactsVerified(IncrementalJsonlPipeline[ArticleFactsVerifiedRecord])
     interrupt_note = "will save partial verifications"
 
     extracted_facts: ArticleExtractedFacts
+    llm: LLM
 
     @property
     def output_class(self):
@@ -365,8 +366,7 @@ async def _verify_rows(
     *,
     model: str,
 ) -> None:
-    assert ctx.llm is not None
-    await ctx.llm.check_health()
+    await LLM.from_context(ctx).check_health()
 
     # Reuse cache and collect fact-level tasks for the rest.
     to_judge: list[dict[str, Any]] = []
@@ -406,7 +406,7 @@ async def _verify_rows(
     ]
 
     with tqdm(total=total_facts, desc="Verifying facts", unit="fact") as bar:
-        async with ctx.llm.response_pool() as pool:
+        async with LLM.from_context(ctx).response_pool() as pool:
             for state, idx in tasks:
                 while pool.is_full():
                     await _drain_one(ctx, pool, inflight, model, bar)
@@ -434,9 +434,7 @@ async def _drain_one(ctx, pool, inflight, model, bar) -> None:
 
 
 def _print_llm_usage(ctx: Context) -> None:
-    llm = ctx.llm
-    if llm is None:
-        return
+    llm = LLM.from_context(ctx)
     print(
         "Verify LLM usage: "
         f"{int(getattr(llm, 'request_count', 0) or 0)} requests, "

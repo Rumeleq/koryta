@@ -11,13 +11,17 @@ from tqdm import tqdm
 from scrapers.article.crawler import parse_hostname, uuid7
 from scrapers.stores import (
     IO,
+    LLM,
+    NLP,
     CloudStorage,
     Context,
+    ContextResource,
     CrawlQueue,
     DataRef,
     File,
     LocalFile,
     ProcessPolicy,
+    RejestrIO,
 )
 from scrapers.stores.file import (
     DownloadableFile,
@@ -222,25 +226,36 @@ class Conductor(IO):
 
 
 def setup_context(
-    use_rejestr_io: bool = False,
-    use_nlp: bool = False,
-    use_llm: bool = False,
+    requires: typing.Iterable[type[ContextResource]] = (),
     policy: ProcessPolicy | None = None,
     crawl_queue: CrawlQueue | None = None,
     batch_upload: bool = False,
 ) -> tuple[Context, EntityDumper]:
+    """Build the Context, with the clients `requires` names and no others.
+
+    Callers get `requires` from `required_resources` on the pipelines they are
+    about to run, so what a run sets up follows from what the pipelines declare
+    rather than from a list kept in step by hand.
+    """
+    required = set(requires)
+    if CrawlQueue in required and crawl_queue is None:
+        raise ValueError(
+            "A selected pipeline requires the crawl queue, which is backed by "
+            "postgres and only the crawler CLI opens -- pass crawl_queue= to "
+            "setup_context."
+        )
     if policy is None:
         policy = ProcessPolicy.with_default()
     dumper = EntityDumper()
-    llm = _build_llm() if use_llm else None
+    llm = _build_llm() if LLM in required else None
     conductor = Conductor(dumper, llm=llm, batch_upload=batch_upload)
     rejestr_io = None
-    if use_rejestr_io:
+    if RejestrIO in required:
         print("Initializing RejestrIO as a data source")
         rejestr_io = Rejestr()
 
     nlp = None
-    if use_nlp:
+    if NLP in required:
         # We're importing dynamically here
         # to avoid big dependency on spacy
         from stores.nlp import NLPImpl  # noqa: PLC0415
@@ -249,12 +264,13 @@ def setup_context(
 
     ctx = Context(
         io=conductor,
-        rejestr_io=rejestr_io,  # type: ignore
+        # Rejestr matches RejestrIO by shape, not by inheritance.
+        rejestr_io=rejestr_io,  # type: ignore[arg-type]
         con=duckdb.connect(),
         utils=UtilsImpl(),
         web=WebImpl(),
         crawl_queue=crawl_queue,
-        nlp=nlp,  # type: ignore
+        nlp=nlp,
         refresh_policy=policy,
         llm=llm,
     )

@@ -6,7 +6,7 @@ from pipelines import KRSAlreadyScraped
 
 @pytest.fixture(scope="module")
 def ctx():
-    return setup_context(False)[0]
+    return setup_context()[0]
 
 
 @pytest.mark.skip(reason="TODO it fails for KRS that are already closed")
