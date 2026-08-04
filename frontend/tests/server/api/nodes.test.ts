@@ -12,7 +12,6 @@ const {
 } = vi.hoisted(() => {
   globalThis.defineCachedFunction = (fn: any) => fn;
   globalThis.useEvent = () => ({ path: "/mock" });
-  globalThis.logEventPath = () => {};
   globalThis.getValidatedQuery = async (event: any, parser: any) =>
     parser(event.query);
   globalThis.defineEventHandler = (fn: any) => fn;

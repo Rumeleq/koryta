@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { parseNodeDoc, logEventPath } from "~~/server/utils/fetch";
+import { parseNodeDoc } from "~~/server/utils/fetch";
 import { getFirestore } from "firebase-admin/firestore";
 import { authCachedEventHandler } from "~~/server/utils/handlers";
 import { getValidatedQuery } from "h3";
@@ -32,10 +32,6 @@ export default authCachedEventHandler(async (event) => {
   const nodes = await firebaseQuery.get();
   const results = nodes.docs.map(parseNodeDoc<node>);
 
-  logEventPath("search", query.q || "", {
-    collection: "nodes",
-    size: results.length,
-  });
   return results.map((node) => {
     // The query that opens the table on this hit. A place is named by its node
     // id rather than by its KRS number, so that a ministry or an urząd - which

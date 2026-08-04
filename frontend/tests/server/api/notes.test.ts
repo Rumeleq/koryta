@@ -10,7 +10,6 @@ const { mockNotesGet, mockCountGet, mockNodesWhere, mockNodesGet } = vi.hoisted(
     g.defineCachedFunction = (fn: unknown) => fn;
     g.authCachedEventHandler = (fn: unknown) => fn;
     g.useEvent = () => ({ path: "/mock" });
-    g.logEventPath = () => {};
 
     return {
       mockNotesGet: vi.fn(),
