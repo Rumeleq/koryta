@@ -1,4 +1,5 @@
 import { getFirestore, FieldPath } from "firebase-admin/firestore";
+import type { Firestore } from "firebase-admin/firestore";
 import { defineEventHandler } from "h3";
 import { getUser } from "~~/server/utils/auth";
 import type { Note, NoteEntryKind } from "~~/shared/model";
@@ -28,16 +29,24 @@ export type AdminSummary = {
     }[];
   };
   revisions: {
-    // Nodes whose latest revision is not the approved one.
+    // Nodes whose latest revision is not the approved one, plus edge revisions
+    // nobody has settled. Counted per node but per *revision* for edges: an
+    // edge carries no `has_unapproved` flag, and /admin/rewizje-krawedzi - where
+    // this number sends a reviewer - lists one row per revision too.
     unapproved: number;
-    // Of the inspected unapproved nodes, those whose latest revision was made
-    // by a human (not an automatic import) and therefore needs review.
+    // Of those, the ones a human filed rather than an automatic import, and
+    // which therefore need review. For edges that is a reader proposing a
+    // relation; the ingest's own proposals are automatic and live at
+    // /admin/rewizje-krawedzi rather than being counted here.
     unapprovedManual: number;
     inspected: number;
-    // True when there are more unapproved nodes than we inspected, so
+    // True when there was more of either kind than we inspected, so
     // `unapprovedManual` is a lower bound.
     truncated: boolean;
     sample: {
+      // Which queue the entry belongs to, so the dashboard can link to the
+      // screen that can act on it.
+      kind: "node" | "edge";
       id: string;
       name: string | null;
       type: string;
@@ -131,9 +140,8 @@ export default defineEventHandler(async (event): Promise<AdminSummary> => {
     }
   }
 
-  let unapprovedManual = 0;
-  const revisionSampleRaw: { id: string; name: string | null; type: string }[] =
-    [];
+  let manualNodes = 0;
+  const nodeSample: AdminSummary["revisions"]["sample"] = [];
   for (const doc of nodeDocs) {
     const latestId = latestIdByNode.get(doc.id);
     // If we can't resolve the latest revision, treat it as manual so it isn't
@@ -142,9 +150,10 @@ export default defineEventHandler(async (event): Promise<AdminSummary> => {
       ? (automaticByRevId.get(latestId) ?? false)
       : false;
     if (!isAutomatic) {
-      unapprovedManual++;
-      if (revisionSampleRaw.length < SAMPLE_SIZE) {
-        revisionSampleRaw.push({
+      manualNodes++;
+      if (nodeSample.length < SAMPLE_SIZE) {
+        nodeSample.push({
+          kind: "node",
           id: doc.id,
           name: (doc.get("name") as string | undefined) ?? null,
           type: (doc.get("type") as string | undefined) ?? "",
@@ -152,6 +161,17 @@ export default defineEventHandler(async (event): Promise<AdminSummary> => {
       }
     }
   }
+
+  // --- Unsettled edge revisions ---------------------------------------------
+  // Edges have no `has_unapproved` flag to query - that field is maintained on
+  // the node document - so the proposals themselves are the queue. Same query
+  // as /api/revisions/pendingEdges, and the same composite index.
+  const {
+    total: unapprovedEdges,
+    manual: manualEdges,
+    inspected: inspectedEdges,
+    sample: edgeSample,
+  } = await summariseEdgeRevisions(db);
 
   // --- Resolve node names for the notes sample ------------------------------
   const sampleNodeIds = [...new Set(noteSampleRaw.map((n) => n.nodeId))];
@@ -176,11 +196,123 @@ export default defineEventHandler(async (event): Promise<AdminSummary> => {
       })),
     },
     revisions: {
-      unapproved,
-      unapprovedManual,
-      inspected: nodeDocs.length,
-      truncated: unapproved > nodeDocs.length,
-      sample: revisionSampleRaw,
+      unapproved: unapproved + unapprovedEdges,
+      unapprovedManual: manualNodes + manualEdges,
+      inspected: nodeDocs.length + inspectedEdges,
+      truncated:
+        unapproved > nodeDocs.length || unapprovedEdges > inspectedEdges,
+      // Neither kind is squeezed out of the list by the other having more:
+      // each is guaranteed half the slots and may spread into what the other
+      // leaves unused.
+      sample: mergeSamples(nodeSample, edgeSample),
     },
   };
 });
+
+/** How many edge proposals are waiting, how many of them a human filed, and a
+ * few to show. Mirrors the node half above: an exact total from aggregation,
+ * and a bounded read to split manual from automatic.
+ *
+ * Counted per revision rather than per edge. An edge can carry more than one
+ * proposal - they are addressed by what they assert, so the ingest can file a
+ * second about a different field - and the screen this sends a reviewer to
+ * lists them one per row, so a per-edge count would not match what they find.
+ */
+async function summariseEdgeRevisions(db: Firestore): Promise<{
+  total: number;
+  manual: number;
+  inspected: number;
+  sample: AdminSummary["revisions"]["sample"];
+}> {
+  const pending = db
+    .collection("revisions")
+    .where("collection", "==", "edges")
+    .where("status", "==", "pending");
+
+  const [countSnap, snapshot] = await Promise.all([
+    pending.count().get(),
+    pending.orderBy("update_time", "desc").limit(MANUAL_INSPECT_CAP).get(),
+  ]);
+
+  // A reader adding a relation leaves `update_automatic` unset; the ingest sets
+  // it. Same rule as the node half, so one number can cover both.
+  const manualDocs = snapshot.docs.filter(
+    (doc) => doc.get("update_automatic") !== true,
+  );
+  const sampleDocs = manualDocs.slice(0, SAMPLE_SIZE);
+
+  const result = {
+    total: countSnap.data().count,
+    manual: manualDocs.length,
+    inspected: snapshot.docs.length,
+    sample: [] as AdminSummary["revisions"]["sample"],
+  };
+  if (sampleDocs.length === 0) return result;
+
+  // Both ends of each sampled edge, so the list reads as "Jan Kowalski ->
+  // Powiat kaliski" rather than as a revision id. Bounded by SAMPLE_SIZE, so
+  // this is a handful of reads however long the queue is.
+  const edgeIds = [
+    ...new Set(sampleDocs.map((doc) => String(doc.get("node_id") ?? ""))),
+  ].filter(Boolean);
+  const edges = new Map<string, Record<string, unknown>>();
+  if (edgeIds.length > 0) {
+    for (const doc of await db.getAll(
+      ...edgeIds.map((id) => db.collection("edges").doc(id)),
+    )) {
+      if (doc.exists) edges.set(doc.id, doc.data() ?? {});
+    }
+  }
+
+  const endpointIds = new Set<string>();
+  for (const edge of edges.values()) {
+    for (const end of [edge.source, edge.target]) {
+      if (typeof end === "string" && end) endpointIds.add(end);
+    }
+  }
+  const endpointNames = new Map<string, string>();
+  if (endpointIds.size > 0) {
+    for (const doc of await db.getAll(
+      ...[...endpointIds].map((id) => db.collection("nodes").doc(id)),
+    )) {
+      const name = doc.get("name");
+      if (typeof name === "string") endpointNames.set(doc.id, name);
+    }
+  }
+
+  for (const doc of sampleDocs) {
+    const edgeId = String(doc.get("node_id") ?? "");
+    const edge = edges.get(edgeId);
+    // The edge was deleted after the proposal was filed. It still counts as
+    // waiting - /admin/rewizje-krawedzi is where that gets sorted out - but
+    // there is no pair to name it by.
+    const ends = edge
+      ? [edge.source, edge.target].map((end) =>
+          typeof end === "string" ? (endpointNames.get(end) ?? end) : "?",
+        )
+      : null;
+    result.sample.push({
+      kind: "edge",
+      id: doc.id,
+      name: ends ? `${ends[0]} → ${ends[1]}` : edgeId || null,
+      type: typeof edge?.type === "string" ? edge.type : "",
+    });
+  }
+
+  return result;
+}
+
+function mergeSamples(
+  nodes: AdminSummary["revisions"]["sample"],
+  edges: AdminSummary["revisions"]["sample"],
+): AdminSummary["revisions"]["sample"] {
+  const half = Math.floor(SAMPLE_SIZE / 2);
+  const fromNodes = Math.min(
+    nodes.length,
+    Math.max(half, SAMPLE_SIZE - edges.length),
+  );
+  return [
+    ...nodes.slice(0, fromNodes),
+    ...edges.slice(0, SAMPLE_SIZE - fromNodes),
+  ];
+}
