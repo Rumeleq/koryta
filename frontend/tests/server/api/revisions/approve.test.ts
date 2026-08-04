@@ -21,10 +21,25 @@ function docRef(collection: string, id: string) {
   };
 }
 
+/** The bulk read `resolveEdgeEndpoints` uses to fetch an edge's two nodes.
+ *
+ * Firestore has no join, so the endpoint check reads the nodes separately - and
+ * it reads them with `getAll` rather than a `get` each, which is a different
+ * entry point on the client than the rest of this fake serves.
+ */
+const mockGetAll = vi.fn(async (...refs: { id: string; path: string }[]) =>
+  refs.map((ref) => ({
+    id: ref.id,
+    exists: stored[ref.path] !== undefined,
+    data: () => stored[ref.path],
+  })),
+);
+
 const mockDb = {
   collection: vi.fn((collection: string) => ({
     doc: vi.fn((id: string) => docRef(collection, id)),
   })),
+  getAll: mockGetAll,
   batch: vi.fn(() => ({
     set: mockBatchSet,
     update: mockBatchUpdate,
@@ -68,6 +83,27 @@ function writtenRevision() {
 /** The audit entry, which shares the batch with the two writes above. */
 function writtenAudit() {
   return mockBatchSet.mock.calls[1]![1];
+}
+
+/** Makes the next request approve `rev-1`, with whatever else it asks for. */
+function requestApproval(extra: Record<string, unknown> = {}) {
+  mockReadValidatedBody.mockImplementation(async (_e, parse) =>
+    parse({ revision_id: "rev-1", ...extra }),
+  );
+}
+
+/** A pending edge revision on `edge-1`, plus the edge it describes.
+ *
+ * The stored edge defaults to the revision's own data because that is the usual
+ * case - the proposal changes a detail, not an end. Tests that check the moment
+ * an end moves pass the two separately.
+ */
+function storeEdgeRevision(
+  data: Record<string, unknown>,
+  edge: Record<string, unknown> = data,
+) {
+  stored["revisions/rev-1"] = { node_id: "edge-1", collection: "edges", data };
+  stored["edges/edge-1"] = edge;
 }
 
 describe("api/revisions/approve", () => {
@@ -231,6 +267,159 @@ describe("api/revisions/approve", () => {
     vi.mocked(requireAdmin).mockRejectedValueOnce({ statusCode: 403 });
     await expect(handler({} as never)).rejects.toMatchObject({
       statusCode: 403,
+    });
+  });
+
+  describe("keeping a relation inside its endpoints", () => {
+    // A relation is a claim about two pages, so showing it shows something
+    // about both. Approving is one of the two ways an edge can end up live -
+    // the reviewer asks for it, or the edge was already live and the snapshot
+    // carries that across - and both have to answer to the rule.
+
+    it("refuses to publish a relation whose source page is still a draft", async () => {
+      // The message names the page that is holding it back, which is the
+      // difference between fixing it in one step and hunting for which end of
+      // the relation is missing.
+      storeEdgeRevision({ source: "node-a", target: "node-b" });
+      stored["nodes/node-a"] = { name: "Anna Nowak" };
+      stored["nodes/node-b"] = { name: "Bogdan Lis", published: true };
+      requestApproval({ publish: true });
+
+      await expect(handler({} as never)).rejects.toMatchObject({
+        statusCode: 400,
+        message: expect.stringContaining("Anna Nowak"),
+      });
+      // Refused before anything is written, so there is no half-approved
+      // revision left pointing at a relation nobody may see.
+      expect(mockCommit).not.toHaveBeenCalled();
+    });
+
+    it("refuses to publish a relation whose target page is still a draft", async () => {
+      storeEdgeRevision({ source: "node-a", target: "node-b" });
+      stored["nodes/node-a"] = { name: "Anna Nowak", published: true };
+      stored["nodes/node-b"] = { name: "Bogdan Lis" };
+      requestApproval({ publish: true });
+
+      await expect(handler({} as never)).rejects.toMatchObject({
+        statusCode: 400,
+        message: expect.stringContaining("Bogdan Lis"),
+      });
+      expect(mockCommit).not.toHaveBeenCalled();
+    });
+
+    it("names both pages when neither of them is live", async () => {
+      storeEdgeRevision({ source: "node-a", target: "node-b" });
+      stored["nodes/node-a"] = { name: "Anna Nowak" };
+      stored["nodes/node-b"] = { name: "Bogdan Lis" };
+      requestApproval({ publish: true });
+
+      await expect(handler({} as never)).rejects.toMatchObject({
+        message: expect.stringMatching(/Anna Nowak.*Bogdan Lis/),
+      });
+    });
+
+    it("publishes a relation whose two pages are both live", async () => {
+      storeEdgeRevision({ source: "node-a", target: "node-b" });
+      stored["nodes/node-a"] = { name: "Anna Nowak", published: true };
+      stored["nodes/node-b"] = { name: "Bogdan Lis", published: true };
+      requestApproval({ publish: true });
+
+      const result = await handler({} as never);
+
+      expect(writtenTarget().published).toBe(true);
+      expect(result).toMatchObject({ id: "edge-1", published: true });
+    });
+
+    it("refuses to approve a live relation whose page has since been hidden", async () => {
+      // Nothing here asks to publish, but applying a revision carries the
+      // target's own `published` across, so approving would leave the relation
+      // up while one of its ends is a draft again.
+      storeEdgeRevision(
+        { source: "node-a", target: "node-b", type: "employed" },
+        {
+          source: "node-a",
+          target: "node-b",
+          type: "employed",
+          published: true,
+        },
+      );
+      stored["nodes/node-a"] = { name: "Anna Nowak", published: true };
+      stored["nodes/node-b"] = { name: "Bogdan Lis", published: false };
+
+      await expect(handler({} as never)).rejects.toMatchObject({
+        statusCode: 400,
+        message: expect.stringContaining("Bogdan Lis"),
+      });
+      expect(mockCommit).not.toHaveBeenCalled();
+    });
+
+    it("approves a hidden relation whatever state its pages are in", async () => {
+      // Approving says what the relation claims, not who may see it. A hidden
+      // edge shows nobody anything, so its endpoints have no say in whether the
+      // correction is accepted - refusing here would strand every proposal on a
+      // relation between two drafts.
+      storeEdgeRevision({ source: "node-a", target: "node-b", type: "owns" });
+      stored["nodes/node-a"] = { name: "Anna Nowak" };
+      stored["nodes/node-b"] = { name: "Bogdan Lis" };
+
+      const result = await handler({} as never);
+
+      expect(writtenTarget()).toMatchObject({ type: "owns", published: false });
+      expect(result.published).toBe(false);
+    });
+
+    it("lets an admin hide a relation and accept its revision in one step", async () => {
+      // `publish: false` is the reviewer taking the relation down, so the rule
+      // it would otherwise break is not in play.
+      storeEdgeRevision(
+        { source: "node-a", target: "node-b" },
+        { source: "node-a", target: "node-b", published: true },
+      );
+      stored["nodes/node-a"] = { name: "Anna Nowak" };
+      stored["nodes/node-b"] = { name: "Bogdan Lis" };
+      requestApproval({ publish: false });
+
+      const result = await handler({} as never);
+
+      expect(writtenTarget().published).toBe(false);
+      expect(result.published).toBe(false);
+    });
+
+    it("refuses a revision that moves a live relation onto a hidden page", async () => {
+      // The revision is itself what breaks the rule: both stored ends are live,
+      // and only the snapshot about to be written points at a draft. Checking
+      // what is stored rather than what is being written would let this one
+      // through.
+      storeEdgeRevision(
+        { source: "node-a", target: "node-c" },
+        { source: "node-a", target: "node-b", published: true },
+      );
+      stored["nodes/node-a"] = { name: "Anna Nowak", published: true };
+      stored["nodes/node-b"] = { name: "Bogdan Lis", published: true };
+      stored["nodes/node-c"] = { name: "Celina Mak" };
+
+      await expect(handler({} as never)).rejects.toMatchObject({
+        statusCode: 400,
+        message: expect.stringContaining("Celina Mak"),
+      });
+      expect(mockCommit).not.toHaveBeenCalled();
+    });
+
+    it("never subjects a node revision to the check", async () => {
+      // A node has no endpoints, so there is nothing to read and nothing that
+      // could refuse it - publishing a page is decided by /api/nodes/publish.
+      stored["revisions/rev-1"] = {
+        node_id: "node-1",
+        collection: "nodes",
+        data: { name: "Anna Nowak" },
+      };
+      stored["nodes/node-1"] = { name: "Anna Nowak" };
+      requestApproval({ publish: true });
+
+      const result = await handler({} as never);
+
+      expect(result.published).toBe(true);
+      expect(mockGetAll).not.toHaveBeenCalled();
     });
   });
 });

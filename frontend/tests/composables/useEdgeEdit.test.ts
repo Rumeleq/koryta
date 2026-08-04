@@ -1,136 +1,210 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { useEdgeEdit } from "../../app/composables/useEdgeEdit";
-import { ref, nextTick, computed } from "vue";
+import { ref } from "vue";
+import type { Edge, Link, NodeType } from "~~/shared/model";
+import { useEdgeEdit, type NodeRef } from "../../app/composables/useEdgeEdit";
 
-// Mocks
-const mockedFetch = vi.fn();
-vi.stubGlobal("$fetch", mockedFetch);
-vi.stubGlobal("alert", vi.fn());
-
-const mockOnUpdate = vi.fn();
-vi.stubGlobal("useAuthState", () => ({
-  user: ref(null),
-  idToken: ref("token"),
+const authRequest = vi.fn();
+vi.mock("~/composables/auth", () => ({
+  authRequest: (...args: unknown[]) => authRequest(...args),
 }));
 
-// Mock useState with actual shared state behavior
-const stateMap = new Map<string, any>();
-vi.mock("#app", () => ({
-  useState: (key: string, init: () => any) => {
-    if (!stateMap.has(key)) {
-      stateMap.set(key, ref(init()));
-    }
-    return stateMap.get(key);
-  },
-}));
+/** The node whose page the form was opened on. */
+function on(type: NodeType, id: string): NodeRef {
+  return { id, type, ref: ref<Link<NodeType> | undefined>(undefined) };
+}
 
-describe.todo("useEdgeEdit", () => {
-  let mockNodeId: string;
-  let mockNodeType: string;
-  let mockAuthHeaders: string;
+/** What `processEdge` sent, as the endpoint saw it. */
+function sentBody() {
+  return authRequest.mock.calls[0]![1].body;
+}
 
+describe("useEdgeEdit", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    mockedFetch.mockReset();
-
-    mockNodeId = ref("node-123");
-    mockNodeType = ref("person");
-    mockAuthHeaders = ref({ Authorization: "Bearer token" });
+    authRequest.mockReset();
+    authRequest.mockResolvedValue({ id: "new-edge" });
   });
 
-  it("initializes defaults", () => {
-    const { newEdge, edgeType } = useEdgeEdit({
-      fixedNode: computed(() => ({
-        id: mockNodeId.value,
-        type: mockNodeType.value,
-        name: "Test Node",
-      })),
-      authHeaders: mockAuthHeaders,
+  it("puts the page's person on the source end of a connection", () => {
+    const { layout, edgeLabel } = useEdgeEdit({
+      fixedNode: on("person", "jan"),
+      edgeType: "connection",
+      initialDirection: "outgoing",
     });
-    expect(newEdge.value.type).toBe("connection");
-    expect(edgeType.value).toBe("connection");
+
+    expect(layout.source.id.value).toBe("jan");
+    expect(layout.target.id.value).toBeUndefined();
+    expect(layout.target.type.value).toBe("person");
+    expect(edgeLabel.value).toBe("Powiązanie z");
   });
 
-  describe("Edge Logic", () => {
-    it("filters edge types for Person (direction-aware)", async () => {
-      mockNodeType.value = "person";
-      const { availableEdgeTypes, newEdge } = useEdgeEdit({
-        fixedNode: computed(() => ({
-          id: mockNodeId.value,
-          type: mockNodeType.value,
-          name: "Test Node",
-        })),
-        authHeaders: mockAuthHeaders,
-        stateKey: ref("test-person-logic"),
-      });
-
-      // Person Outgoing (Default)
-      // 'connection' (Source: Person) -> Include
-      // 'employed' (Source: Person) -> Include
-      // 'election' (Source: Person) -> Include
-      const types = availableEdgeTypes.value.map((o) => o.value);
-      expect(types).not.toContain("owns_parent");
-      expect(types).toContain("connection");
-      expect(types).toContain("employed");
-      expect(types).toContain("election");
-
-      // Change to incoming
-      newEdge.value.direction = "incoming";
-      await nextTick();
-      const typesIn = availableEdgeTypes.value.map((o) => o.value);
-
-      // Person Incoming
-      // 'connection' (Target: Person) -> Include
-      // 'mentioned_person' (Target: Person) -> Include
-      expect(typesIn).toContain("connection");
-      expect(typesIn).toContain("mentioned_person");
-      expect(typesIn).not.toContain("owns_parent");
-      expect(typesIn).not.toContain("employed");
+  it("writes a connection between two people", async () => {
+    const onUpdate = vi.fn();
+    const { layout, newEdge, readyToSubmit, processEdge } = useEdgeEdit({
+      fixedNode: on("person", "jan"),
+      edgeType: "connection",
+      initialDirection: "outgoing",
+      onUpdate,
     });
 
-    it("filters edge types for Place (direction-aware)", async () => {
-      mockNodeType.value = "place";
-      const { availableEdgeTypes, newEdge } = useEdgeEdit({
-        fixedNode: computed(() => ({
-          id: mockNodeId.value,
-          type: mockNodeType.value,
-          name: "Test Node",
-        })),
-        authHeaders: mockAuthHeaders,
-        stateKey: ref("test-place-logic"),
-      });
+    expect(readyToSubmit.value).toBe(false);
+    layout.target.ref.value = { type: "person", id: "anna", name: "Anna" };
+    newEdge.value.name = "żona";
+    expect(readyToSubmit.value).toBe(true);
 
-      // Place Outgoing (Default)
-      // 'owns' (Source: Place) -> Include
-      const types = availableEdgeTypes.value.map((o) => o.value);
-      expect(types).toContain("owns_child");
+    await processEdge();
 
-      // Change to incoming
-      newEdge.value.direction = "incoming";
-      await nextTick();
-      const typesIn = availableEdgeTypes.value.map((o) => o.value);
+    expect(authRequest).toHaveBeenCalledWith("/api/edges/create", {
+      method: "POST",
+      body: expect.objectContaining({
+        source: "jan",
+        target: "anna",
+        type: "connection",
+        name: "żona",
+      }),
+    });
+    expect(onUpdate).toHaveBeenCalled();
+  });
 
-      // Place Incoming
-      // 'owns' (Target: Place) -> Include
-      // 'employed' (Target: Place) -> Include
-      // 'mentioned_company' (Target: Place) -> Include
-      expect(typesIn).toContain("owns_parent");
-      expect(typesIn).toContain("employed");
-      expect(typesIn).toContain("mentioned_company");
+  it("writes an employment from the employee's page", async () => {
+    const { layout, newEdge, processEdge } = useEdgeEdit({
+      fixedNode: on("person", "jan"),
+      edgeType: "employed",
+      initialDirection: "outgoing",
+    });
+
+    expect(layout.target.type.value).toBe("place");
+    layout.target.ref.value = { type: "place", id: "spolka", name: "Spółka" };
+    newEdge.value.name = "prezes zarządu";
+    newEdge.value.start_date = "2020-01-01";
+
+    await processEdge();
+
+    expect(sentBody()).toMatchObject({
+      source: "jan",
+      target: "spolka",
+      type: "employed",
+      name: "prezes zarządu",
+      start_date: "2020-01-01",
     });
   });
 
-  describe("Edge Types Availability", () => {
-    const cases = [
+  it("keeps the company as the employer when opened on its page", async () => {
+    // Same relation from the other end: the page's node is the target, so the
+    // person goes on the source end rather than being written as the employer.
+    const { layout, processEdge } = useEdgeEdit({
+      fixedNode: on("place", "spolka"),
+      edgeType: "employed",
+      initialDirection: "incoming",
+    });
+
+    expect(layout.target.id.value).toBe("spolka");
+    expect(layout.source.id.value).toBeUndefined();
+    expect(layout.source.type.value).toBe("person");
+
+    layout.source.ref.value = { type: "person", id: "jan", name: "Jan" };
+    await processEdge();
+
+    expect(sentBody()).toMatchObject({
+      source: "jan",
+      target: "spolka",
+      type: "employed",
+    });
+  });
+
+  it("refuses to connect a node to itself", async () => {
+    const { layout, isSelfEdge, readyToSubmit, processEdge } = useEdgeEdit({
+      fixedNode: on("person", "jan"),
+      edgeType: "connection",
+      initialDirection: "outgoing",
+    });
+
+    layout.target.ref.value = { type: "person", id: "jan", name: "Jan" };
+
+    expect(isSelfEdge.value).toBe(true);
+    expect(readyToSubmit.value).toBe(false);
+    await processEdge();
+    expect(authRequest).not.toHaveBeenCalled();
+  });
+
+  it("attaches the article the relation was read in", async () => {
+    const referenceNode: NodeRef = {
+      type: "article",
+      ref: ref<Link<NodeType> | undefined>({
+        type: "article",
+        id: "artykul",
+        name: "Onet",
+      }),
+    };
+    const { layout, processEdge } = useEdgeEdit({
+      fixedNode: on("person", "jan"),
+      referenceNode,
+      edgeType: "connection",
+      initialDirection: "outgoing",
+    });
+
+    layout.target.ref.value = { type: "person", id: "anna", name: "Anna" };
+    await processEdge();
+
+    expect(sentBody().references).toEqual(["artykul"]);
+  });
+
+  it("stores the three ownership options under the one type they share", async () => {
+    const { layout, processEdge } = useEdgeEdit({
+      fixedNode: on("place", "spolka"),
+      edgeType: "owns_region",
+      initialDirection: "incoming",
+    });
+
+    layout.source.ref.value = { type: "region", id: "teryt12", name: "Region" };
+    await processEdge();
+
+    expect(sentBody()).toMatchObject({
+      source: "teryt12",
+      target: "spolka",
+      type: "owns",
+    });
+  });
+
+  it("says what went wrong instead of reporting a write that did not happen", async () => {
+    const onUpdate = vi.fn();
+    authRequest.mockRejectedValueOnce({ data: { message: "Brak tokenu" } });
+
+    const { layout, processEdge, error, saving } = useEdgeEdit({
+      fixedNode: on("person", "jan"),
+      edgeType: "connection",
+      initialDirection: "outgoing",
+      onUpdate,
+    });
+
+    layout.target.ref.value = { type: "person", id: "anna", name: "Anna" };
+    await processEdge();
+
+    expect(error.value).toBe("Brak tokenu");
+    expect(saving.value).toBe(false);
+    expect(onUpdate).not.toHaveBeenCalled();
+  });
+
+  describe("availableEdgeTypes", () => {
+    const cases: Array<{
+      nodeType: NodeType;
+      direction: "incoming" | "outgoing";
+      expected: string[];
+    }> = [
       {
         nodeType: "person",
-        expectedOutgoing: ["connection", "employed", "election"],
-        expectedIncoming: ["connection", "mentioned_person"],
+        direction: "outgoing",
+        expected: ["connection", "employed", "election"],
       },
       {
+        nodeType: "person",
+        direction: "incoming",
+        expected: ["connection", "mentioned_person"],
+      },
+      { nodeType: "place", direction: "outgoing", expected: ["owns_child"] },
+      {
         nodeType: "place",
-        expectedOutgoing: ["owns_child"],
-        expectedIncoming: [
+        direction: "incoming",
+        expected: [
           "employed",
           "mentioned_company",
           "owns_parent",
@@ -139,305 +213,83 @@ describe.todo("useEdgeEdit", () => {
       },
     ];
 
-    for (const { nodeType, expectedOutgoing, expectedIncoming } of cases) {
-      it(`lists correct edges for node type: ${nodeType} (outgoing)`, async () => {
-        mockNodeType.value = nodeType;
-        const { availableEdgeTypes, newEdge } = useEdgeEdit({
-          fixedNode: computed(() => ({
-            id: mockNodeId.value,
-            type: mockNodeType.value,
-            name: "Test Node",
-          })),
-          authHeaders: mockAuthHeaders,
-          stateKey: ref(`test-${nodeType}-out`),
+    for (const { nodeType, direction, expected } of cases) {
+      it(`lists ${expected.join(", ")} for a ${nodeType} (${direction})`, () => {
+        const { availableEdgeTypes } = useEdgeEdit({
+          fixedNode: on(nodeType, "node-1"),
+          initialDirection: direction,
         });
 
-        newEdge.value.direction = "outgoing";
-        await nextTick();
-
-        const values = availableEdgeTypes.value.map((x) => x.value);
-        expect(values.sort()).toEqual(expectedOutgoing.sort());
-      });
-
-      it(`lists correct edges for node type: ${nodeType} (incoming)`, async () => {
-        mockNodeType.value = nodeType;
-        const { availableEdgeTypes, newEdge } = useEdgeEdit({
-          fixedNode: computed(() => ({
-            id: mockNodeId.value,
-            type: mockNodeType.value,
-            name: "Test Node",
-          })),
-          authHeaders: mockAuthHeaders,
-          stateKey: ref(`test-${nodeType}-in`),
-        });
-
-        newEdge.value.direction = "incoming";
-        await nextTick();
-
-        const values = availableEdgeTypes.value.map((x) => x.value);
-        expect(values.sort()).toEqual(expectedIncoming.sort());
+        expect(availableEdgeTypes.value.map((o) => o.value).sort()).toEqual(
+          [...expected].sort(),
+        );
       });
     }
   });
 
-  it("adds edge", async () => {
-    const { processEdge, newEdge, pickedNode, edgeType } = useEdgeEdit({
-      fixedNode: computed(() => ({
-        id: mockNodeId.value,
-        type: mockNodeType.value,
-        name: "Test Node",
-      })),
-      authHeaders: mockAuthHeaders,
-      onUpdate: mockOnUpdate,
-      stateKey: ref("test-add-edge"),
-    });
+  describe("openEditEdge", () => {
+    it("puts the other end of an existing edge into the form", () => {
+      const { openEditEdge, layout, newEdge } = useEdgeEdit({
+        fixedNode: on("person", "jan"),
+        edgeType: "connection",
+      });
 
-    newEdge.value.direction = "outgoing";
-    edgeType.value = "employed";
-    await nextTick();
-    pickedNode.value = { id: "company-1" };
-    mockedFetch.mockResolvedValueOnce({});
+      openEditEdge({
+        type: "connection",
+        source: "jan",
+        target: "anna",
+        richNode: { id: "anna", type: "person", name: "Anna Nowak" },
+      } as Edge);
 
-    await processEdge();
-
-    expect(mockedFetch).toHaveBeenCalledWith(
-      "/api/edges/create",
-      expect.objectContaining({
-        body: expect.objectContaining({
-          source: "node-123",
-          target: "company-1",
-          type: "employed",
-        }),
-      }),
-    );
-    expect(mockOnUpdate).toHaveBeenCalled();
-  });
-
-  it("populates layout with name when opening existing edge", async () => {
-    const { openEditEdge, layout, newEdge } = useEdgeEdit({
-      fixedNode: computed(() => ({
-        id: "node-1",
+      expect(newEdge.value.direction).toBe("outgoing");
+      expect(layout.target.ref.value).toEqual({
+        id: "anna",
         type: "person",
-        name: "Node 1",
-      })),
-      authHeaders: mockAuthHeaders,
+        name: "Anna Nowak",
+      });
     });
 
-    const mockEdge: any = {
-      type: "connection",
-      source: "node-1",
-      target: "node-2",
-      richNode: {
-        id: "node-2",
-        type: "person",
-        name: "Node 2 Name",
-      },
-    };
+    it("tells a region owner from a parent company", () => {
+      const region = useEdgeEdit({
+        fixedNode: on("place", "spolka"),
+        edgeType: "owns_parent",
+      });
+      region.openEditEdge({
+        type: "owns",
+        source: "teryt12",
+        target: "spolka",
+        richNode: { id: "teryt12", type: "region", name: "Region" },
+      } as Edge);
+      expect(region.edgeType.value).toBe("owns_region");
 
-    openEditEdge(mockEdge);
-
-    expect(newEdge.value.direction).toBe("outgoing");
-    expect(layout.target.ref.value).toEqual({
-      id: "node-2",
-      type: "person",
-      name: "Node 2 Name",
+      const parent = useEdgeEdit({
+        fixedNode: on("place", "spolka"),
+        edgeType: "owns_parent",
+      });
+      parent.openEditEdge({
+        type: "owns",
+        source: "matka",
+        target: "spolka",
+        richNode: { id: "matka", type: "place", name: "Matka" },
+      } as Edge);
+      expect(parent.edgeType.value).toBe("owns_parent");
     });
   });
-});
 
-describe.todo("useEdgeEdit - articles", () => {
-  const nodeId = ref("test-article-id");
-  const nodeType = ref("article" as const);
-  const authHeaders = ref({});
-  const onUpdate = vi.fn();
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("initializes with empty references", () => {
-    const { newEdge } = useEdgeEdit({
-      fixedNode: computed(() => ({
-        id: nodeId.value,
-        type: nodeType.value,
-        name: "Test Article",
-      })),
-      authHeaders,
-      onUpdate,
-    });
-    expect(newEdge.value.references).toEqual([]);
-  });
-
-  it("handles article mode in processEdge (adding reference edge)", async () => {
-    const { pickedNode, processEdge, edgeType } = useEdgeEdit({
-      fixedNode: computed(() => ({
-        id: nodeId.value,
-        type: nodeType.value,
-        name: "Test Article",
-      })),
-      authHeaders,
-      onUpdate,
+  it("does not duplicate an edge it was asked to edit", async () => {
+    // There is no endpoint that revises an edge, so submitting would write a
+    // second copy rather than change the one on screen.
+    const { layout, processEdge, error } = useEdgeEdit({
+      fixedNode: on("person", "jan"),
+      edgeType: "connection",
+      initialDirection: "outgoing",
+      editedEdge: "edge-1",
     });
 
-    const mockFetch = vi.fn().mockResolvedValue({ id: "new-edge-id" });
-    global.$fetch = mockFetch;
-
-    edgeType.value = "mentioned_person";
-    await nextTick();
-    pickedNode.value = {
-      id: "target-person",
-      type: "person",
-      name: "Target P",
-    } as any;
-
-    // newEdge.value.direction is default 'outgoing' -> Source=Fixed(Article), Target=Picked(Person)
-
+    layout.target.ref.value = { type: "person", id: "anna", name: "Anna" };
     await processEdge();
 
-    expect(mockFetch).toHaveBeenCalledWith(
-      "/api/edges/create",
-      expect.objectContaining({
-        body: expect.objectContaining({
-          // source should be nodeId (article)
-          source: "test-article-id",
-          target: "target-person",
-          type: "mentions",
-        }),
-      }),
-    );
-  });
-
-  it("filters available types (Article)", async () => {
-    // Only check basic availability as sophisticated "3rd party edge" logic is removed
-    const { availableEdgeTypes } = useEdgeEdit({
-      fixedNode: computed(() => ({
-        id: nodeId.value,
-        type: nodeType.value,
-        name: "Test Article",
-      })),
-      authHeaders,
-      onUpdate,
-      stateKey: ref("test-article-filtering"),
-    });
-
-    // Article Source -> ?
-    // default dir=outgoing
-    // Should show types where Source=Article
-    const types = availableEdgeTypes.value.map((o) => o.value);
-    expect(types).toContain("mentioned_person");
-    expect(types).toContain("mentioned_company");
-    expect(types).not.toContain("employed"); // employed is Person->Place
-  });
-});
-
-describe.todo("Region as Parent", () => {
-  const nodeId = ref("company-123");
-  const nodeType = ref("place" as const);
-  const authHeaders = ref({ Authorization: "Bearer token" });
-  const onUpdate = vi.fn();
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockedFetch.mockReset();
-  });
-
-  it("transforms owns_region to owns type when saving edge", async () => {
-    stateMap.clear();
-    const { processEdge, newEdge, pickedNode, edgeType } = useEdgeEdit({
-      fixedNode: computed(() => ({
-        id: nodeId.value,
-        type: nodeType.value,
-        name: "Test Place",
-      })),
-      authHeaders,
-      onUpdate,
-      stateKey: ref("test-region-save"),
-    });
-
-    // Set up as if we selected "owns_region" (incoming)
-    // Target defaults to nodeId (the company), Source is chosen in pickerTarget because it's incoming
-    newEdge.value.direction = "incoming";
-    await nextTick();
-
-    edgeType.value = "owns_region" as any;
-
-    // layout should be src=picked, target=fixed (incoming to Place i.e. region->place)
-    // Wait, owns: Source=Company, Target=Subsidiary
-    // owns_region:  Source=Region, Target=Company
-    // Incoming to Company = Region->Company
-
-    pickedNode.value = { id: "region-1", type: "region" } as any;
-    await nextTick();
-
-    mockedFetch.mockResolvedValueOnce({});
-
-    await processEdge();
-
-    expect(global.$fetch as any).toHaveBeenCalledWith(
-      "/api/edges/create",
-      expect.objectContaining({
-        body: expect.objectContaining({
-          source: "region-1",
-          target: "company-123",
-          type: "owns", // Should be transformed from owns_region -> owns
-        }),
-      }),
-    );
-  });
-
-  it("detects owns_region when opening existing edge edit", () => {
-    const { openEditEdge, edgeType } = useEdgeEdit({
-      fixedNode: computed(() => ({
-        id: nodeId.value,
-        type: nodeType.value,
-        name: "Test Place",
-      })),
-      authHeaders,
-      stateKey: ref("test-region-edit"),
-    });
-
-    const mockEdge: any = {
-      type: "owns",
-      source: "region-1",
-      target: "company-123",
-      id: "edge-999",
-      richNode: {
-        id: "region-1",
-        type: "region",
-        name: "Some Region",
-      },
-    };
-
-    openEditEdge(mockEdge);
-
-    expect(edgeType.value).toBe("owns_region");
-  });
-
-  it("defaults to normal 'owns' if owner is company", () => {
-    const { openEditEdge, edgeType } = useEdgeEdit({
-      fixedNode: computed(() => ({
-        id: nodeId.value,
-        type: nodeType.value,
-        name: "Test Place",
-      })),
-      authHeaders,
-      stateKey: ref("test-company-edit"),
-    });
-
-    const mockEdge: any = {
-      type: "owns",
-      source: "company-parent",
-      target: "company-123",
-      id: "edge-999",
-      richNode: {
-        id: "company-parent",
-        type: "place",
-        name: "Parent Company",
-      },
-    };
-
-    openEditEdge(mockEdge);
-
-    expect(edgeType.value).toBe("owns_parent");
+    expect(authRequest).not.toHaveBeenCalled();
+    expect(error.value).toContain("nie jest jeszcze możliwa");
   });
 });

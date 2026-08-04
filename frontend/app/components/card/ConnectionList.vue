@@ -1,7 +1,20 @@
 <template>
-  <div v-if="edges.length > 0" class="mb-4">
-    <h3 class="text-h6 mb-2">{{ title }}</h3>
-    <v-card>
+  <div v-if="edges.length > 0 || canAdd" class="mb-4">
+    <div class="d-flex align-center justify-space-between mb-2">
+      <h3 class="text-h6">{{ title }}</h3>
+      <v-btn
+        v-if="canAdd"
+        variant="text"
+        size="small"
+        color="primary"
+        :prepend-icon="mdiPlus"
+        :data-testid="`add-relation-${addTestid}`"
+        @click="emit('add')"
+      >
+        Dodaj
+      </v-btn>
+    </div>
+    <v-card v-if="edges.length > 0">
       <v-list density="compact">
         <v-list-item
           v-for="edge in edgesSorted"
@@ -23,13 +36,21 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { mdiPlus } from "@mdi/js";
 import { nodeTypeIcon } from "~~/shared/model";
 import type { EdgeNode } from "~~/app/composables/edges";
 
 const { edges, title } = defineProps<{
   title: string;
   edges: EdgeNode[];
+  /** Whether this section offers adding a relation of its own kind. */
+  canAdd?: boolean;
+  /** Suffix for the add button's test hook, since a page renders several of
+   * these and they would otherwise be indistinguishable. */
+  addTestid?: string;
 }>();
+
+const emit = defineEmits<{ add: [] }>();
 
 function getPeopleCount(edge: EdgeNode) {
   const stats = edge.richNode.stats as

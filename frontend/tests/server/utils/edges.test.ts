@@ -3,6 +3,9 @@ import {
   edgeDocumentId,
   edgeIdentity,
   edgeSemantics,
+  edgeRelation,
+  enrichedEdge,
+  findEdgeMatches,
   findEdges,
   findEdge,
   type EdgeLike,
@@ -147,5 +150,171 @@ describe("findEdges", () => {
     // has to map its two rows onto these two rather than create more.
     const found = await findEdges(dbWith([candidacy, candidacy]), candidacy);
     expect(found).toEqual(["stored-0", "stored-1"]);
+  });
+});
+
+/** The same candidacy as `candidacy`, with the committee the pipeline has
+ * started sending. Every one of the 10476 stored candidacies is the left-hand
+ * side of this pair. */
+const withCommittee: EdgeLike = {
+  ...candidacy,
+  committee: "Komitet Wyborczy Prawo i Sprawiedliwość",
+  party: "PiS",
+};
+
+describe("edgeRelation", () => {
+  it("recognises a stored candidacy the payload now knows the committee of", () => {
+    expect(edgeRelation(candidacy, withCommittee)).toBe("enriches");
+  });
+
+  it("calls it a conflict when the two disagree about what they both know", () => {
+    // A Sejm bid is not a Samorząd one, however much else lines up.
+    expect(
+      edgeRelation({ ...candidacy, position: "Sejm" }, withCommittee),
+    ).toBe("conflict");
+    expect(
+      edgeRelation(
+        { ...candidacy, committee: "Komitet Wyborczy Nowa Lewica" },
+        withCommittee,
+      ),
+    ).toBe("conflict");
+  });
+
+  it("calls it the same fact when there is nothing to add", () => {
+    expect(edgeRelation(withCommittee, withCommittee)).toBe("same");
+  });
+
+  it("calls a hand-corrected edge the same fact, not a new one", () => {
+    // The scrapers never send `term`. Reading their silence as "no term" would
+    // mean an un-matchable edge - and an un-matchable edge is not left alone,
+    // it gets a duplicate written beside it on every run.
+    expect(
+      edgeRelation({ ...withCommittee, term: "2024-2029" }, withCommittee),
+    ).toBe("same");
+  });
+
+  it("still enriches an edge a reviewer has added a field to", () => {
+    expect(
+      edgeRelation({ ...candidacy, term: "2024-2029" }, withCommittee),
+    ).toBe("enriches");
+  });
+
+  it("reads a committee spelled differently as the same committee", () => {
+    // PKW writes it in whatever case and spacing the spreadsheet had, and
+    // `committee_to_party` lists both wordings for that reason. Compared raw,
+    // one re-scrape would store a second candidacy.
+    expect(
+      edgeRelation(
+        {
+          ...withCommittee,
+          committee: "KOMITET  WYBORCZY PRAWO I SPRAWIEDLIWOŚĆ",
+        },
+        withCommittee,
+      ),
+    ).toBe("same");
+  });
+});
+
+describe("enrichedEdge", () => {
+  it("fills the blanks and touches nothing else", () => {
+    // `createElection` restates `name` on every candidacy, so a plain merge
+    // would reset a label a reviewer had rewritten.
+    const stored = { ...candidacy, name: "kandydatura na burmistrza" };
+    expect(enrichedEdge(stored, withCommittee)).toEqual({
+      ...stored,
+      committee: withCommittee.committee,
+      party: "PiS",
+    });
+  });
+});
+
+describe("findEdgeMatches", () => {
+  it("separates what already says this from what could be made to", async () => {
+    const { same, enrichable } = await findEdgeMatches(
+      dbWith([withCommittee, candidacy]),
+      withCommittee,
+    );
+    expect(same).toEqual(["stored-0"]);
+    expect(enrichable.map((c) => c.id)).toEqual(["stored-1"]);
+  });
+
+  it("hands back the stored document, not just its id", async () => {
+    // The caller fills its blanks to build the revision; re-reading it would be
+    // a second round trip against a collection this request has uncommitted
+    // writes for.
+    const stored = { ...candidacy, term: "2024-2029" };
+    const { enrichable } = await findEdgeMatches(
+      dbWith([stored]),
+      withCommittee,
+    );
+    expect(enrichable[0]?.stored).toEqual(stored);
+  });
+
+  it("finds nothing to enrich once the committee is stored", async () => {
+    // Re-running the pipeline must be a no-op, not a second revision per run.
+    const { same, enrichable } = await findEdgeMatches(
+      dbWith([withCommittee]),
+      withCommittee,
+    );
+    expect(same).toEqual(["stored-0"]);
+    expect(enrichable).toEqual([]);
+  });
+
+  it("orders candidates so two runs pick the same document", async () => {
+    // Which of three indistinguishable candidacies gets which committee is
+    // arbitrary; being arbitrary differently on a re-run is what would write a
+    // second revision every night.
+    const { enrichable } = await findEdgeMatches(
+      dbWith([candidacy, candidacy, candidacy]),
+      withCommittee,
+    );
+    expect(enrichable.map((c) => c.id)).toEqual([
+      "stored-0",
+      "stored-1",
+      "stored-2",
+    ]);
+  });
+
+  it("will not let a blank edge absorb an arbitrary candidacy", async () => {
+    // /api/edges/create writes "" and null for every box the form left empty,
+    // so a moderator noting "stood here, check which year" leaves an edge that
+    // contradicts nothing at all.
+    const blank = {
+      source: "p",
+      target: "teryt1465",
+      type: "election" as const,
+      content: "kandydował, do sprawdzenia",
+      position: "",
+      committee: "",
+      start_date: null,
+    };
+    const { same, enrichable } = await findEdgeMatches(
+      dbWith([blank as unknown as EdgeLike]),
+      withCommittee,
+    );
+    expect(same).toEqual([]);
+    expect(enrichable).toEqual([]);
+  });
+
+  it("leaves an employment alone whatever the payload adds", async () => {
+    // The enrichment gate is per type, and the concurrency argument in
+    // findEdgeOrCreate rests on it: employments are resolved through
+    // Promise.all, where the claim cannot be made before the read.
+    expect(edgeSemantics("employed").enrichable).toBe(false);
+    const undated = { source: "p", target: "c", type: "employed" as const };
+    const { same, enrichable } = await findEdgeMatches(dbWith([undated]), {
+      ...undated,
+      start_date: "2010-03-01",
+    });
+    expect(same).toEqual([]);
+    expect(enrichable).toEqual([]);
+  });
+
+  it("reports every sibling, so a new edge is not created on top of one", async () => {
+    const { ids } = await findEdgeMatches(
+      dbWith([candidacy, withCommittee]),
+      withCommittee,
+    );
+    expect(ids).toEqual(new Set(["stored-0", "stored-1"]));
   });
 });

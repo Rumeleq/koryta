@@ -26,7 +26,7 @@ def df_all(ctx):
 
 @pytest.fixture(scope="module")
 def ctx():
-    c, _ = setup_context(False)
+    c, _ = setup_context()
 
     original_list_files = c.io.list_files
 

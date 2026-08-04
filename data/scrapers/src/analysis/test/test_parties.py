@@ -2,7 +2,11 @@
 
 import pytest
 
-from analysis.payloads.person import parties_from_committees, unmapped_committees
+from analysis.payloads.person import (
+    parties_from_committees,
+    party_of_candidacy,
+    unmapped_committees,
+)
 from entities.composite import Election
 from scrapers.pkw.elections import parties_of_committee
 
@@ -78,6 +82,29 @@ def test_a_person_is_every_party_they_stood_for():
             candidacy("KOALICYJNY KOMITET WYBORCZY KOALICJA OBYWATELSKA"),
         ]
     ) == ["PO", "PiS"]
+
+
+def test_an_unambiguous_committee_names_the_candidacys_party():
+    assert party_of_candidacy("KOMITET WYBORCZY PRAWO I SPRAWIEDLIWOŚĆ") == "PiS"
+
+
+def test_a_joint_list_names_no_single_party_on_the_edge():
+    """The person is both parties; the candidacy is neither on its own.
+
+    `parties_from_committees` still gives them both on the node - it is only
+    the edge's one `party` field that has nowhere to put a coalition.
+    """
+    committee = (
+        "KOALICYJNY KOMITET WYBORCZY TRZECIA DROGA POLSKA 2050 SZYMONA HOŁOWNI"
+        " - POLSKIE STRONNICTWO LUDOWE"
+    )
+    assert party_of_candidacy(committee) is None
+    assert parties_from_committees([candidacy(committee)]) == ["PSL", "Polska 2050"]
+
+
+def test_an_unrecognised_committee_names_no_party():
+    assert party_of_candidacy("KOMITET WYBORCZY WYBORCÓW WSPÓLNY KALISZ") is None
+    assert party_of_candidacy(None) is None
 
 
 def test_the_unrecognised_committees_are_the_ones_worth_reporting():

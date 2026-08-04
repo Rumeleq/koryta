@@ -36,6 +36,29 @@ async function seed() {
   await seedRules();
 }
 
+/** Gives a fixture the `published` flag it predates.
+ *
+ * `pageIsPublic` used to fall back to `!!revision_id` when the field was
+ * absent, and the fixtures were written against that rule - which is why none
+ * of them carries it. Once the fallback was removed (every real document
+ * having been backfilled), the seeded site went blank for logged out readers:
+ * an absent flag now means "draft", so nothing in it was public and the graph
+ * rendered empty.
+ *
+ * The old rule is reproduced here rather than written into the JSON so the
+ * fixtures keep saying one thing about a page - `revision_id` for "somebody
+ * approved this" - and a fixture that wants to be a draft can still say
+ * `published: false` outright.
+ */
+function defaultPublished(
+  data: Record<string, unknown>,
+): Record<string, unknown> {
+  if (data.published === undefined) {
+    data.published = !!data.revision_id;
+  }
+  return data;
+}
+
 async function seedDatabase() {
   await waitOn({
     resources: ["tcp:127.0.0.1:8080"],
@@ -67,13 +90,15 @@ async function seedDatabase() {
     if (stats.isApproved === undefined) {
       stats.isApproved = true;
     }
+    defaultPublished(nodeData);
     const ref = db.collection("nodes").doc(id);
     batch.set(ref, nodeData);
   }
 
   for (const edge of edges) {
+    const edgeData = defaultPublished({ ...edge } as Record<string, unknown>);
     const ref = db.collection("edges").doc();
-    batch.set(ref, edge);
+    batch.set(ref, edgeData);
   }
 
   for (const [id, rev] of Object.entries(revisions)) {

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   Firestore,
   DocumentReference,
@@ -96,9 +97,22 @@ export async function baseNodeFields(
 ): Promise<Record<string, unknown>> {
   const snapshot = await nodeRef.get();
   if (!snapshot.exists) return {};
+  return withoutInternalFields(snapshot.data() ?? {});
+}
 
+/** The same layering base as `baseNodeFields`, for a document already read.
+ *
+ * Dropping `revision_id` in particular is what keeps a proposal honest: a
+ * revision is a statement of what the document should say, and carrying the
+ * pointer to the revision it currently says it by would freeze a stale answer
+ * into it. Whether the change publishes is decided at write time, not copied
+ * in from the past.
+ */
+export function withoutInternalFields(
+  data: Record<string, unknown>,
+): Record<string, unknown> {
   const base: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(snapshot.data() ?? {})) {
+  for (const [key, value] of Object.entries(data)) {
     if (!INTERNAL_FIELDS.has(key)) {
       base[key] = value;
     }
@@ -250,6 +264,92 @@ export async function applyRevision(
     `Approved revision=${revisionRef.id} target=${targetRef.path} published=${published} by=${user.uid}`,
   );
   return { targetRef, published };
+}
+
+/** The document id a standing proposal is stored under.
+ *
+ * Derived from the target and what is being proposed, so restating the same
+ * offer lands on the same document. Two genuinely different proposals about one
+ * document stay two documents, which is what a reviewer needs to see.
+ *
+ * `key` is what "the same offer" means, when the caller has a better answer
+ * than the literal content. An edge does: PKW writes one committee in whatever
+ * case the spreadsheet had, so hashing the raw text would file the same
+ * proposal again under every spelling, while `edgeIdentity` already folds that
+ * away. Without one the content is used, with its keys sorted - it is assembled
+ * by spreading objects together, and property order there follows insertion,
+ * which the id should not depend on.
+ */
+export function proposalId(
+  targetId: string,
+  data: Record<string, unknown> | Node | Edge,
+  key?: string,
+): string {
+  const subject =
+    key ??
+    JSON.stringify(
+      Object.entries(data as Record<string, unknown>)
+        .filter(([, value]) => value !== undefined)
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+    );
+  const digest = createHash("sha1")
+    .update(subject)
+    .digest("base64url")
+    .slice(0, 10);
+  return `proposal_${targetId}_${digest}`;
+}
+
+/** Record a change to a document that already exists, without making it.
+ *
+ * `createRevisionTransaction` cannot express this. It writes the revision's
+ * data to the target unconditionally, so a revision it was not told to approve
+ * still overwrites the live document - fine where it is used, which is only
+ * ever on documents this request is creating, but not a way to *propose*
+ * anything about one that is already there.
+ *
+ * So the target is not touched at all. The revision stands as a record of what
+ * the pipeline believes, `pending` until somebody acts on it; approving it goes
+ * through `applyRevision` like any other. Where the caller can vouch for the
+ * change it should call `createRevisionTransaction` with `approve` instead, and
+ * pass the target's current `published` through so applying a change neither
+ * publishes a document that was awaiting review nor hides one that was live.
+ */
+export function proposeRevisionTransaction(
+  db: Firestore,
+  batch: WriteBatch,
+  user: { uid: string },
+  targetRef: DocumentReference,
+  data: Record<string, unknown> | Node | Edge,
+  options: {
+    automatic?: boolean;
+    /** What makes two proposals the same one, when the content is a poorer
+     * answer than the caller's. See `proposalId`. */
+    key?: string;
+  } = {},
+): BatchResult {
+  // A proposal is addressed by what it proposes, not by when it was made. An
+  // applied revision is history and each one is its own record; a proposal is a
+  // standing offer, and the pipeline restates it on every run until somebody
+  // acts on it. With a fresh id each time, the unrecognised committees - the
+  // majority, since `committee_to_party` names about twenty-five - would add a
+  // revision per candidacy per night, forever.
+  const revisionRef = db
+    .collection("revisions")
+    .doc(proposalId(targetRef.id, data, options.key));
+
+  const revision: Revision = {
+    node_id: targetRef.id,
+    data: sanitizeFirestoreData(data),
+    update_time: Timestamp.now(),
+    update_user: user.uid,
+    collection: targetRef.parent.id === "edges" ? "edges" : "nodes",
+    status: "pending",
+  };
+  if (options.automatic) revision.update_automatic = true;
+
+  batch.set(revisionRef, revision);
+
+  return { revisionRef, targetRef };
 }
 
 export async function getRevisionsForNodes(

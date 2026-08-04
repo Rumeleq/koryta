@@ -12,7 +12,7 @@ from pipelines import PeoplePayloads
 
 @pytest.fixture
 def ctx():
-    return setup_context(False)[0]
+    return setup_context()[0]
 
 
 @pytest.fixture

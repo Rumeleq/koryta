@@ -160,9 +160,12 @@ def _extract_elections(row: pd.Series) -> list[Election]:
             if isinstance(e, dict):
                 teryt_val = candidacy_teryt(e)
 
+                committee = _committee(e.get("party"))
                 election_payload = Election(
                     election_type=get_election_type(str(e.get("election_type"))),
-                    committee=_committee(e.get("party")),
+                    committee=committee,
+                    party=party_of_candidacy(committee),
+                    party_from_committee=bool(parties_of_committee(committee)),
                 )
                 if e.get("election_year"):
                     election_payload.election_year = str(e.get("election_year"))
@@ -173,6 +176,20 @@ def _extract_elections(row: pd.Series) -> list[Election]:
 
                 elections.append(election_payload)
     return elections
+
+
+def party_of_candidacy(committee: str | None) -> str | None:
+    """The one party to put on the candidacy's own edge, or None.
+
+    A stored `election` edge holds a single `party`, which is what the person's
+    page shows next to the region they stood in. Only an unambiguous committee
+    fills it: a coalition stands for both its parties, and naming one of them on
+    the edge would read as a fact about which of the two the candidate belongs
+    to - which is exactly what a joint list does not say. Those keep their
+    `committee` and no party.
+    """
+    parties = parties_of_committee(committee)
+    return parties[0] if len(parties) == 1 else None
 
 
 def parties_from_committees(elections: list[Election]) -> list[str]:

@@ -8,7 +8,7 @@
           <v-card-text>
             Nasza baza cały czas rośnie. Dołącz do grona wolontariuszy,
             analizujących dane lub promujących projekt. Dzięki osobom jak Ty,
-            znaleźliśmy już {{ interesting }} osób.
+            znaleźliśmy już {{ reviewed }} osób.
           </v-card-text>
         </v-card>
       </v-col>
@@ -36,5 +36,5 @@
 import { mdiPencilPlus } from "@mdi/js";
 import { useStats } from "~/composables/stats/useStats";
 
-const { interesting } = useStats();
+const { reviewed } = useStats();
 </script>

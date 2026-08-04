@@ -1,6 +1,6 @@
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { getApp } from "firebase-admin/app";
-import { getUser } from "~~/server/utils/auth";
+import { getUser, requireDatascience } from "~~/server/utils/auth";
 import type { ExtractionFact } from "~~/shared/model";
 import { normalizeUrl } from "~~/shared/url";
 import { z } from "zod";
@@ -37,16 +37,7 @@ export default defineEventHandler(async (event) => {
     extractionRequestSchema.parse(body),
   );
 
-  // Checks that the user is logged in
-  const user = await getUser(event);
-
-  if (user.datascience !== true) {
-    throw createError({
-      statusCode: 403,
-      statusMessage: "Forbidden",
-      message: "You need to be a member of the datascience group",
-    });
-  }
+  const user = requireDatascience(await getUser(event));
 
   const db = getFirestore(getApp(), "koryta-pl");
 

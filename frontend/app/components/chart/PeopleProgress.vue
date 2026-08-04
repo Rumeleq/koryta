@@ -37,32 +37,36 @@ interface Segment {
   link: string;
 }
 
-const { approved, interesting, toCheck } = useStats();
+const { approved, reviewed, toCheck } = useStats();
 
-const segments: Segment[] = [
+const segments = computed<Segment[]>(() => [
   {
-    value: approved,
+    value: approved.value,
     color: "#4caf50",
     label: "Dodane",
     link: "/eksploruj/tabela",
   },
   {
-    value: interesting,
+    value: reviewed.value,
     color: "#2196f3",
     label: "Ciekawe",
     link: "/pomoc",
   },
   {
-    value: toCheck,
+    value: toCheck.value,
     color: "#f44336",
     label: "Do sprawdzenia",
     link: "/eksploruj/tabela?visibility=private",
   },
-];
+]);
 
-// Calculate the total value of all segments
+// Calculate the total value of all segments. Floored at 1 so the widths below
+// stay numbers for the frame before the counts arrive.
 const total = computed(() =>
-  segments.reduce((sum, segment) => sum + segment.value, 0),
+  Math.max(
+    segments.value.reduce((sum, segment) => sum + segment.value, 0),
+    1,
+  ),
 );
 </script>
 

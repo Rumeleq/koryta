@@ -123,10 +123,10 @@ describe("shared/stats.ts", () => {
   describe("computeEdgeStats", () => {
     it("should partition all vs approved edges and extract target arrays", () => {
       const edges: Edge[] = [
-        { target: "node1", type: "connection" } as Edge, // unapproved
-        { target: "node2", type: "employed", revision_id: "rev1" } as Edge, // approved
-        { target: "node3", type: "election" } as Edge, // unapproved election
-        { target: "node4", type: "election", revision_id: "rev2" } as Edge, // approved election
+        { target: "node1", type: "connection" } as Edge, // hidden
+        { target: "node2", type: "employed", published: true } as Edge, // public
+        { target: "node3", type: "election" } as Edge, // hidden election
+        { target: "node4", type: "election", published: true } as Edge, // public election
       ];
 
       const stats = computeEdgeStats(edges, new Set(["node2"]));
@@ -145,8 +145,8 @@ describe("shared/stats.ts", () => {
 
     it("should include transitive targets for companies", () => {
       const edges: Edge[] = [
-        { target: "company1", type: "employed", revision_id: "rev1" } as Edge,
-        { target: "company2", type: "employed" } as Edge, // unapproved
+        { target: "company1", type: "employed", published: true } as Edge,
+        { target: "company2", type: "employed" } as Edge, // hidden
       ];
 
       const transitiveTargets = {

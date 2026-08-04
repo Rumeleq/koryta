@@ -1,6 +1,19 @@
 <template>
   <v-list class="px-2" variant="flat">
-    <h3 class="text-h6 mb-2">Historia powiązań</h3>
+    <div class="d-flex align-center justify-space-between mb-2">
+      <h3 class="text-h6">Historia powiązań</h3>
+      <v-btn
+        v-if="canAdd"
+        variant="text"
+        size="small"
+        color="primary"
+        :prepend-icon="mdiPlus"
+        data-testid="add-relation-employment"
+        @click="emit('add')"
+      >
+        Dodaj
+      </v-btn>
+    </div>
 
     <div class="pa-1">
       <v-list-item
@@ -23,10 +36,17 @@
           <span class="text-caption text-medium-emphasis text-wrap">
             {{ edgeLabel(edge) }}
           </span>
+          <PartyChip v-if="partyOf(edge)" :party="partyOf(edge)!" />
+          <span
+            v-if="committeeOf(edge)"
+            class="text-caption text-medium-emphasis text-wrap"
+          >
+            {{ committeeOf(edge) }}
+          </span>
           <ChipPublicCompany :company="asCompany(edge)" />
         </div>
 
-        <div class="d-md-none mt-2 pb-2">
+        <div v-if="isDated(edge)" class="d-md-none mt-2 pb-2">
           <ChipRelativeDuration
             :start="edge.start_date"
             :end="edge.end_date"
@@ -36,7 +56,7 @@
         </div>
 
         <template #append>
-          <div class="d-none d-md-flex">
+          <div v-if="isDated(edge)" class="d-none d-md-flex">
             <ChipRelativeDuration
               :start="edge.start_date"
               :end="edge.end_date"
@@ -56,6 +76,7 @@ import {
   mdiOfficeBuildingOutline,
   mdiFileDocumentOutline,
   mdiCommentArrowRightOutline,
+  mdiPlus,
 } from "@mdi/js";
 import type { Company } from "~~/shared/model";
 
@@ -74,7 +95,11 @@ function getIcon(type: string) {
 
 const props = defineProps<{
   edges: EdgeNode[];
+  /** Whether this section offers adding a relation. */
+  canAdd?: boolean;
 }>();
+
+const emit = defineEmits<{ add: [] }>();
 
 const edgesSorted = computed(() => {
   return props.edges.toSorted((a, b) => {
@@ -98,6 +123,43 @@ const maxEnd = computed(() => {
 
 function edgeLabel(edge: EdgeNode) {
   return edge.label;
+}
+
+/** The party a candidacy was run for, on the edges that assert one.
+ *
+ * Only `election` edges carry it in the schema, but the check is explicit: a
+ * hand-made edge of another type that picked up a stray `party` should not
+ * start rendering a party chip on somebody's profile.
+ */
+function partyOf(edge: EdgeNode): string | undefined {
+  return edge.type === "election" ? edge.party || undefined : undefined;
+}
+
+/** The electoral committee a candidacy was run under.
+ *
+ * Shown next to the party rather than instead of it: `party` is the national
+ * brand a committee was mapped onto, `committee` its full registered name, and
+ * for a local committee ("KWW Wspólny Kalisz") there is no party at all. Both
+ * are dropped when they say the same thing, which is the case for the committees
+ * whose name *is* the party.
+ */
+function committeeOf(edge: EdgeNode): string | undefined {
+  if (edge.type !== "election" || !edge.committee) return undefined;
+  const party = partyOf(edge);
+  if (party && party.toLowerCase() === edge.committee.toLowerCase()) {
+    return undefined;
+  }
+  return edge.committee;
+}
+
+/** Whether the edge asserts a period at all.
+ *
+ * The card lists every relation a person has, not only the employment it is
+ * named after, and some kinds carry no dates by construction - a `connection`
+ * has no date fields in the schema. Drawing a full-width bar for those claims a
+ * span nobody recorded, so they get the label and nothing else. */
+function isDated(edge: EdgeNode): boolean {
+  return !!(edge.start_date || edge.end_date);
 }
 
 /** The company behind an edge, when the edge leads to one at all. */

@@ -64,6 +64,26 @@ describe("EditEdgePicker.vue", () => {
     expect(text).toContain("Wspomniane miejsce");
   });
 
+  it("offers only the listed types when narrowed", () => {
+    const wrapper = mount(EditEdgePicker, {
+      props: {
+        nodeId: "test-node",
+        nodeType: "person",
+        nodeName: "Jan Kowalski",
+        types: ["connection", "employed"],
+      },
+      global: {
+        plugins: [vuetify],
+      },
+    });
+
+    const text = wrapper.text();
+    expect(text).toContain("zna");
+    expect(text).toContain("pracuje");
+    expect(text).not.toContain("wspominający");
+    expect(text).not.toContain("wybory");
+  });
+
   it("emits pick event when button is clicked", async () => {
     const wrapper = mount(EditEdgePicker, {
       props: {

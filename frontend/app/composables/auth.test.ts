@@ -62,12 +62,28 @@ vi.mock("vuefire", () => ({
 }));
 vi.mock("nuxt-vuefire", () => ({}));
 
+// `useAuthState` reaches these through Nuxt's auto-imports, which re-export
+// them from vuefire (see .nuxt/imports.d.ts). Mocking the `vuefire` module
+// alone only covers an explicit import, and whether the auto-import chain had
+// already been evaluated against the real module varied with which test file
+// booted the Nuxt environment first - so `useCurrentUser` threw "called before
+// the VueFireAuth module was added" in a full run and passed on its own. Every
+// vuefire composable the code under test calls is mocked here as well, so the
+// file no longer depends on that order.
 mockNuxtImport("useFirebaseAuth", () => {
   return () => mockAuth;
 });
 
 mockNuxtImport("useDocument", () => {
   return mockUseDocumentSpy;
+});
+
+mockNuxtImport("useCurrentUser", () => {
+  return () => ref(mockAuth.currentUser);
+});
+
+mockNuxtImport("useFirestore", () => {
+  return () => undefined;
 });
 
 describe("useAuthState", () => {

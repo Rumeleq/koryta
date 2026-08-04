@@ -31,11 +31,16 @@ const props = defineProps<{
 }>();
 
 const description = computed(() => {
+  // Both ends are optional - an edge entered through the editor may carry no
+  // date at all - so neither may be interpolated unguarded. "obecnie" is only
+  // right for the end: a missing start is unknown, not today.
+  if (!props.start && !props.end) {
+    return "";
+  }
   if (props.start && props.end && props.start == props.end) {
     return props.start;
-  } else {
-    return `${props.start} - ${props.end || "obecnie"}`;
   }
+  return `${props.start ?? "?"} - ${props.end || "obecnie"}`;
 });
 
 const parseDate = (d: string | undefined, fallback: number) => {

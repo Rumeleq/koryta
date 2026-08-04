@@ -19,7 +19,7 @@ def output_df(ctx):
 
 @pytest.fixture(scope="module")
 def ctx():
-    c, _ = setup_context(False)
+    c, _ = setup_context()
     return c
 
 

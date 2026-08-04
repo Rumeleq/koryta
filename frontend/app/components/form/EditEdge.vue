@@ -8,7 +8,7 @@
       variant="text"
       size="small"
       title="Anuluj"
-      @click="emit('update')"
+      @click="emit('update', false)"
     />
   </div>
 
@@ -62,7 +62,8 @@
       <v-col cols="12" md="6">
         <v-text-field
           v-model="newEdge.name"
-          label="Nazwa relacji"
+          :label="nameLabel"
+          :placeholder="namePlaceholder"
           density="compact"
           hide-details
           data-testid="edge-name-field"
@@ -172,12 +173,23 @@
         </v-col>
       </template>
 
+      <v-col v-if="isSelfEdge" cols="12">
+        <v-alert type="warning" variant="tonal" density="compact">
+          Nie można połączyć wpisu z nim samym.
+        </v-alert>
+      </v-col>
+      <v-col v-if="error" cols="12">
+        <v-alert type="error" variant="tonal" density="compact">
+          {{ error }}
+        </v-alert>
+      </v-col>
+
       <v-col cols="12" class="mt-2 d-flex gap-2">
         <v-btn
           v-if="editedEdge"
           variant="text"
           class="mr-2"
-          @click="emit('update')"
+          @click="emit('update', false)"
         >
           Anuluj
         </v-btn>
@@ -186,17 +198,18 @@
           type="submit"
           :block="!editedEdge"
           :class="{ 'flex-grow-1': editedEdge }"
-          :disabled="!readyToSubmit"
+          :disabled="!readyToSubmit || saving"
+          :loading="saving"
           data-testid="submit-edge-button"
         >
           {{ editedEdge ? "Zapisz zmiany" : "Dodaj powiązanie" }}
         </v-btn>
         <DialogProposeRemoval
           v-if="editedEdge"
-          :id="newEdge.id"
+          :id="newEdge.id ?? ''"
           collection="edges"
           class="ml-2"
-          @success="emit('update')"
+          @success="emit('update', true)"
         />
       </v-col>
     </v-row>
@@ -214,10 +227,6 @@ import {
 } from "~/composables/useEdgeTypes";
 import { parties, electionPositions, electionTerms } from "~~/shared/misc";
 
-definePageMeta({
-  middleware: "auth",
-});
-
 const props = defineProps<{
   nodeId: string;
   nodeType: NodeType;
@@ -227,9 +236,10 @@ const props = defineProps<{
   initialDirection?: "incoming" | "outgoing";
 }>();
 
-// Used to notify that the component has finished.
+// Used to notify that the component has finished. `saved` tells a write apart
+// from a cancel, which both close the form.
 const emit = defineEmits<{
-  (e: "update"): void;
+  (e: "update", saved?: boolean): void;
 }>();
 
 const arrowIcon = computed(() => mdiArrowRight);
@@ -247,6 +257,9 @@ const {
   edgeLabel,
   layout,
   readyToSubmit,
+  isSelfEdge,
+  saving,
+  error,
 } = useEdgeEdit({
   fixedNode: {
     id: props.nodeId,
@@ -257,7 +270,7 @@ const {
   referenceNode,
   initialDirection: props.initialDirection,
   editedEdge: props.editedEdge,
-  onUpdate: async () => emit("update"),
+  onUpdate: async () => emit("update", true),
 });
 
 const currentOption = computed(() => {
@@ -266,6 +279,21 @@ const currentOption = computed(() => {
 
 const sourceLabel = computed(() => currentOption.value?.sourceLabel);
 const targetLabel = computed(() => currentOption.value?.targetLabel);
+
+/** The name field carries whatever the relation is called, and what that is
+ * depends entirely on the relation: a job has a title, a tie between two people
+ * has a word for it. */
+const nameLabel = computed(() => {
+  if (edgeType.value === "employed") return "Stanowisko / rola";
+  if (edgeType.value === "connection") return "Rodzaj powiązania";
+  return "Nazwa relacji";
+});
+
+const namePlaceholder = computed(() => {
+  if (edgeType.value === "employed") return "np. prezes zarządu";
+  if (edgeType.value === "connection") return "np. żona, brat, wspólnik";
+  return undefined;
+});
 
 defineExpose({
   openEditEdge,

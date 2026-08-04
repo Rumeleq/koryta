@@ -18,6 +18,11 @@ import { computeNodeStats } from "~~/shared/stats";
 import { pageIsPublic } from "~~/shared/model";
 import { getEdges, getNodesNoStats, getNodeGroups } from "~~/shared/graph/util";
 import { partyColors } from "~~/shared/misc";
+import {
+  regionStat,
+  writeRegionStats,
+  type RegionStat,
+} from "~~/server/utils/regionStats";
 
 function calculateTransitiveTargets(
   nodeEdges: Edge[],
@@ -253,6 +258,10 @@ export default defineEventHandler(async () => {
   const chunks = [];
   let currentBatch = db.batch();
   let operationCount = 0;
+  // The rows /api/stats/regions serves, taken from the same stats being
+  // written to the region nodes rather than recomputed, so the two cannot
+  // disagree. See server/utils/regionStats.ts.
+  const regionRows: RegionStat[] = [];
 
   for (const node of nodes) {
     const nodeEdges = edgesByNode[node.id] || [];
@@ -272,6 +281,15 @@ export default defineEventHandler(async () => {
       publicPlaceIds,
     );
 
+    if (node.data.type === "region") {
+      regionRows.push(
+        regionStat(node.id, {
+          ...(node.data as Region),
+          stats: updateData.stats,
+        }),
+      );
+    }
+
     const nodeRef = db.collection("nodes").doc(node.id);
     currentBatch.update(nodeRef, updateData);
     operationCount++;
@@ -288,8 +306,13 @@ export default defineEventHandler(async () => {
   }
 
   await Promise.all(chunks);
+  await writeRegionStats(db, regionRows, new Date());
 
-  return { status: "success", computedNodes: nodes.length };
+  return {
+    status: "success",
+    computedNodes: nodes.length,
+    computedRegions: regionRows.length,
+  };
 });
 
 /**

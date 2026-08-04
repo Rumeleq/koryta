@@ -20,9 +20,31 @@ function docRef(collection: string, id: string) {
   };
 }
 
+/** Every document of one collection, for the equality queries the cascade
+ * runs. `stored` is keyed by path, which is what the rest of the fake reads. */
+function queryCollection(
+  collection: string,
+  field: string,
+  value: unknown,
+): { id: string; data: () => Record<string, unknown> }[] {
+  return Object.entries(stored)
+    .filter(([path]) => path.startsWith(`${collection}/`))
+    .filter(([, data]) => data?.[field] === value)
+    .map(([path, data]) => ({
+      id: path.slice(collection.length + 1),
+      data: () => data as Record<string, unknown>,
+    }));
+}
+
 const mockDb = {
   collection: vi.fn((collection: string) => ({
     doc: vi.fn((id?: string) => docRef(collection, id ?? "generated-id")),
+    where: vi.fn((field: string, _op: string, value: unknown) => ({
+      get: vi.fn(async () => {
+        const docs = queryCollection(collection, field, value);
+        return { docs, size: docs.length, empty: docs.length === 0 };
+      }),
+    })),
   })),
   batch: vi.fn(() => ({
     update: (ref: { path: string }, data: unknown) =>
@@ -78,7 +100,7 @@ describe("api/nodes/publish", () => {
       published: true,
     });
     expect(mockCommit).toHaveBeenCalled();
-    expect(result).toEqual({ id: "node-1", published: true });
+    expect(result).toEqual({ id: "node-1", published: true, hiddenEdges: [] });
   });
 
   it("files who published it, in the same commit as the change", async () => {
@@ -149,6 +171,125 @@ describe("api/nodes/publish", () => {
       statusCode: 400,
     });
     expect(mockCommit).not.toHaveBeenCalled();
+  });
+
+  it("takes the page's published relations down with it", async () => {
+    // No edge may be live unless both its pages are, so hiding one of them has
+    // to hide the relations that lean on it - otherwise republishing the page
+    // months later brings back claims nobody looked at again.
+    stored["nodes/node-1"] = {
+      name: "X",
+      revision_id: { path: "revisions/r" },
+    };
+    stored["edges/e-out"] = {
+      source: "node-1",
+      target: "node-2",
+      published: true,
+    };
+    stored["edges/e-in"] = {
+      source: "node-3",
+      target: "node-1",
+      published: true,
+    };
+    requestPublished(false);
+
+    const result = await handler({} as never);
+
+    expect(mockBatchUpdate).toHaveBeenCalledWith("edges/e-out", {
+      published: false,
+    });
+    expect(mockBatchUpdate).toHaveBeenCalledWith("edges/e-in", {
+      published: false,
+    });
+    expect(result).toMatchObject({
+      published: false,
+      hiddenEdges: expect.arrayContaining(["e-out", "e-in"]),
+    });
+  });
+
+  it("hides the relations before the page, so the rule holds throughout", async () => {
+    // Either order ends in the same place, but only this one has no moment
+    // where a published edge hangs off a hidden page.
+    stored["nodes/node-1"] = {
+      name: "X",
+      revision_id: { path: "revisions/r" },
+    };
+    stored["edges/e-1"] = {
+      source: "node-1",
+      target: "node-2",
+      published: true,
+    };
+    requestPublished(false);
+
+    await handler({} as never);
+
+    const paths = mockBatchUpdate.mock.calls.map((call) => call[0]);
+    expect(paths.indexOf("edges/e-1")).toBeLessThan(
+      paths.indexOf("nodes/node-1"),
+    );
+  });
+
+  it("leaves relations that were already hidden alone", async () => {
+    // Rewriting them would cost a write and fire onEdgeWritten for nothing.
+    stored["nodes/node-1"] = {
+      name: "X",
+      revision_id: { path: "revisions/r" },
+    };
+    stored["edges/e-hidden"] = { source: "node-1", target: "node-2" };
+    stored["edges/e-false"] = {
+      source: "node-1",
+      target: "node-2",
+      published: false,
+    };
+    requestPublished(false);
+
+    const result = await handler({} as never);
+
+    expect(mockBatchUpdate).not.toHaveBeenCalledWith(
+      "edges/e-hidden",
+      expect.anything(),
+    );
+    expect(result).toMatchObject({ hiddenEdges: [] });
+  });
+
+  it("does not touch relations when a page goes live", async () => {
+    // Publishing a node says nothing about the relations hanging off it; those
+    // are chosen one by one in the dialog.
+    stored["nodes/node-1"] = {
+      name: "X",
+      revision_id: { path: "revisions/r" },
+    };
+    stored["edges/e-1"] = { source: "node-1", target: "node-2" };
+
+    const result = await handler({} as never);
+
+    expect(mockBatchUpdate).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ hiddenEdges: [] });
+  });
+
+  it("files each hidden relation in the audit log", async () => {
+    stored["nodes/node-1"] = {
+      name: "X",
+      revision_id: { path: "revisions/r" },
+    };
+    stored["edges/e-1"] = {
+      source: "node-1",
+      target: "node-2",
+      published: true,
+    };
+    requestPublished(false);
+
+    await handler({} as never);
+
+    expect(mockBatchSet).toHaveBeenCalledWith(
+      "audit/generated-id",
+      expect.objectContaining({
+        action: "unpublish",
+        collection: "edges",
+        target_id: "e-1",
+        user: "admin-uid",
+      }),
+    );
   });
 
   it("is refused to everyone but an admin", async () => {

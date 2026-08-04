@@ -1,9 +1,9 @@
 import { test, expect } from "@playwright/test";
 
 // The Cypress suite these come from also cross-checked the "Łącznie N" figure
-// against /api/nodes. Both ends of that check are gone: the home page no longer
-// carries a totals card, and app/composables/stats/useStats.ts returns
-// constants rather than anything the api could disagree with.
+// against /api/nodes. The home page no longer carries a totals card, so that
+// check has nothing to hang off; the figures it did show now come from
+// /api/stats/progress via app/composables/stats/useStats.ts.
 test.describe("Home", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/", { waitUntil: "domcontentloaded" });

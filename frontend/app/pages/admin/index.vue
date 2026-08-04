@@ -166,9 +166,8 @@
 
           <v-card-text>
             <div class="text-caption text-medium-emphasis mb-2">
-              Ręczne (nieautomatyczne) rewizje oczekujące na akceptację<span
-                v-if="summary"
-              >
+              Ręczne (nieautomatyczne) rewizje stron i powiązań oczekujące na
+              akceptację<span v-if="summary">
                 — {{ summary.revisions.unapproved }} niezaakceptowanych
                 łącznie</span
               >.
@@ -190,13 +189,32 @@
             </template>
             <template v-else-if="summary">
               <v-list density="compact" class="py-0">
+                <!-- An edge revision has no page of its own, so it links to the
+                     queue that lists it rather than to a detail view. -->
                 <v-list-item
                   v-for="item in summary.revisions.sample"
-                  :key="item.id"
-                  :to="`/admin/rewizje/${item.id}`"
+                  :key="`${item.kind}-${item.id}`"
+                  :to="
+                    item.kind === 'edge'
+                      ? '/admin/rewizje-krawedzi'
+                      : `/admin/rewizje/${item.id}`
+                  "
                   :title="item.name ?? item.id"
                   :subtitle="item.type"
-                />
+                >
+                  <template #prepend>
+                    <v-icon
+                      :icon="
+                        item.kind === 'edge' ? mdiVectorPolyline : mdiHistory
+                      "
+                      size="small"
+                      class="mr-2"
+                      :aria-label="
+                        item.kind === 'edge' ? 'Powiązanie' : 'Strona'
+                      "
+                    />
+                  </template>
+                </v-list-item>
               </v-list>
             </template>
           </v-card-text>
@@ -209,6 +227,14 @@
               :append-icon="mdiChevronRight"
             >
               Przejdź do rewizji
+            </v-btn>
+            <v-btn
+              variant="text"
+              color="primary"
+              to="/admin/rewizje-krawedzi"
+              :append-icon="mdiChevronRight"
+            >
+              Rewizje krawędzi
             </v-btn>
           </v-card-actions>
         </v-card>
@@ -243,7 +269,9 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import {
+  mdiGraphOutline,
   mdiHistory,
+  mdiVectorPolyline,
   mdiNoteEditOutline,
   mdiTextBoxSearchOutline,
   mdiChartLine,
@@ -271,6 +299,18 @@ const subpages = [
     to: "/admin/rewizje",
     icon: mdiHistory,
     desc: "Przeglądaj i akceptuj rewizje węzłów.",
+  },
+  {
+    title: "Powiązania",
+    to: "/admin/krawedzie",
+    icon: mdiGraphOutline,
+    desc: "Powiązania gotowe do publikacji - obie strony już opublikowane.",
+  },
+  {
+    title: "Rewizje krawędzi",
+    to: "/admin/rewizje-krawedzi",
+    icon: mdiVectorPolyline,
+    desc: "Zmiany krawędzi zaproponowane przez pipeline, jeszcze nierozpatrzone.",
   },
   {
     title: "Notatki",

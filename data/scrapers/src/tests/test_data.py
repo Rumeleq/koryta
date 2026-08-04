@@ -9,7 +9,7 @@ COMMON_ROW = 7
 
 @pytest.fixture
 def ctx():
-    return setup_context(False)[0]
+    return setup_context()[0]
 
 
 def test_public_companies_list(ctx):

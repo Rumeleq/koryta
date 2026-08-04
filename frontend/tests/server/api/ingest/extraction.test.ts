@@ -40,7 +40,9 @@ vi.mock("firebase-admin/firestore", () => ({
   Timestamp: { now: () => "TS" },
 }));
 vi.mock("firebase-admin/app", () => ({ getApp: () => ({}) }));
-vi.mock("../../../../server/utils/auth", () => ({
+// `requireDatascience` is left real; only the token lookup is faked.
+vi.mock("../../../../server/utils/auth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../../server/utils/auth")>()),
   getUser: vi
     .fn()
     .mockResolvedValue({ uid: "test-user-id", datascience: true }),

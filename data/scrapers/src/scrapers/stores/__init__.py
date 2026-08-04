@@ -145,8 +145,55 @@ class IO(metaclass=ABCMeta):
         raise NotImplementedError()
 
 
-class RejestrIO(metaclass=ABCMeta):
+class ContextResource(metaclass=ABCMeta):
+    """A client the Context only carries when some pipeline asked for it.
+
+    A pipeline declares what it needs the same way it declares its sources --
+    by annotating it on the class:
+
+        class ArticleDomainSelectors(Pipeline):
+            done_urls: ArticleDoneUrls   # a source
+            llm: LLM                     # a client on the Context
+
+    The runner reads those declarations (see `required_resources`, which walks
+    the sources too) and builds only the clients the selected pipelines can
+    actually reach. That is what keeps a wiki-only pass from needing an LLM
+    backend, or a parse-only pass from paying for rejestr.io.
+
+    Reach for the client through `LLM.from_context(ctx)` rather than `ctx.llm`:
+    it is typed non-optional, and it names the missing declaration when a
+    pipeline reaches for a client it never asked for.
+    """
+
+    # The Context field this resource is passed as.
+    context_attr: typing.ClassVar[str]
+
+    @classmethod
+    def from_context(cls, ctx: "Context") -> typing.Self:
+        """This client off `ctx`, or a MissingResourceError naming it."""
+        value = getattr(ctx, cls.context_attr, None)
+        if value is None:
+            raise MissingResourceError(cls)
+        return typing.cast(typing.Self, value)
+
+
+class MissingResourceError(RuntimeError):
+    """A pipeline reached for a client the Context was not built with."""
+
+    def __init__(self, resource: type[ContextResource]) -> None:
+        super().__init__(
+            f"{resource.__name__} is not set up on this Context. Annotate the "
+            f"pipeline that needs it with "
+            f"`{resource.context_attr}: {resource.__name__}`, so the runner "
+            f"builds the client before the run starts."
+        )
+        self.resource = resource
+
+
+class RejestrIO(ContextResource, metaclass=ABCMeta):
     """Abstract interface for interacting with the rejestr.io API."""
+
+    context_attr = "rejestr_io"
 
     @abstractmethod
     def get_rejestr_io(self, url: str) -> str | None:
@@ -187,8 +234,10 @@ class Web(metaclass=ABCMeta):
         raise NotImplementedError()
 
 
-class NLP(metaclass=ABCMeta):
+class NLP(ContextResource, metaclass=ABCMeta):
     """Abstract interface for NLP toolkit"""
+
+    context_attr = "nlp"
 
     @abstractmethod
     def extract_ner_entities(self, text: str) -> NEREntities:
@@ -255,8 +304,10 @@ class LLMResponsePool(metaclass=ABCMeta):
         raise NotImplementedError()
 
 
-class LLM(metaclass=ABCMeta):
+class LLM(ContextResource, metaclass=ABCMeta):
     """Abstract interface for OpenAI-compatible chat completion clients."""
+
+    context_attr = "llm"
 
     @abstractmethod
     def response_pool(self) -> LLMResponsePool:
@@ -300,8 +351,10 @@ class BlockedDomain:
     reason: str
 
 
-class CrawlQueue(metaclass=ABCMeta):
+class CrawlQueue(ContextResource, metaclass=ABCMeta):
     """Abstract interface for crawler URL queue."""
+
+    context_attr = "crawl_queue"
 
     @abstractmethod
     def put(self, urls: list[NewUrl]) -> None:
@@ -517,17 +570,58 @@ class Context:
     """Execution context for a scraper pipeline, providing access to I/O interfaces."""
 
     io: IO
-    rejestr_io: RejestrIO
+    # The ContextResource fields are None unless a pipeline declared them --
+    # reach for them through `from_context`, not directly.
+    rejestr_io: RejestrIO | None
     con: "DuckDBPyConnection"
     utils: Utils
     web: Web
-    nlp: NLP
+    nlp: NLP | None
     crawl_queue: CrawlQueue | None = None
     refresh_policy: ProcessPolicy = field(default_factory=ProcessPolicy.with_default)
     llm: LLM | None = None
 
 
 Output = typing.TypeVar("Output")
+
+
+def _annotated_classes(pipeline_type: type) -> typing.Iterable[tuple[str, type]]:
+    """(name, class) for every annotation on the pipeline that names a class.
+
+    Base classes included: `pipeline_type.__annotations__` would only see the
+    most derived class that has any, silently dropping the sources and clients
+    a base pipeline declared.
+    """
+    merged: dict[str, Any] = {}
+    for klass in reversed(pipeline_type.__mro__):
+        merged.update(klass.__dict__.get("__annotations__", {}))
+    for annotation, annotated in merged.items():
+        if isinstance(annotated, type):
+            yield annotation, annotated
+
+
+def required_resources(pipeline_type: type) -> set[type[ContextResource]]:
+    """The clients a run of this pipeline needs, its sources' included.
+
+    Transitive, because read_or_process runs a stale source before reading it:
+    ArticleAnalyzed never touches the LLM itself, but it cannot run without one
+    unless every pipeline under it is already up to date.
+    """
+    resources: set[type[ContextResource]] = set()
+    seen: set[type] = set()
+
+    def walk(p_type: type) -> None:
+        if p_type in seen:
+            return
+        seen.add(p_type)
+        for _, annotated in _annotated_classes(p_type):
+            if issubclass(annotated, ContextResource):
+                resources.add(annotated)
+            elif issubclass(annotated, Pipeline):
+                walk(annotated)
+
+    walk(pipeline_type)
+    return resources
 
 
 class Pipeline(typing.Generic[Output]):
@@ -779,6 +873,7 @@ Should I run it? (y/n) [n]",
         ctx: Context,
         policy: ProcessPolicy,
     ) -> pd.DataFrame:
+        self.bind_requirements(ctx)
         self.preprocess_sources(ctx, policy)
 
         dumper = ctx.io.dumper  # type:ignore # TODO fix it
@@ -815,11 +910,30 @@ Should I run it? (y/n) [n]",
         return df
 
     def list_sources(self):
-        for annotation, pipeline_type_dep in self.__annotations__.items():
-            if isinstance(pipeline_type_dep, type) and issubclass(
-                pipeline_type_dep, Pipeline
-            ):
-                yield annotation, pipeline_type_dep
+        for annotation, annotated in _annotated_classes(type(self)):
+            if issubclass(annotated, Pipeline):
+                yield annotation, annotated
+
+    def list_requirements(self) -> typing.Iterable[tuple[str, type[ContextResource]]]:
+        """The clients this pipeline declares, without its sources'.
+
+        `required_resources` is the one the runner wants -- this is only what
+        this class itself will reach for through `from_context`.
+        """
+        for annotation, annotated in _annotated_classes(type(self)):
+            if issubclass(annotated, ContextResource):
+                yield annotation, annotated
+
+    def bind_requirements(self, ctx: Context) -> None:
+        """Put the declared clients on the instance, as __init__ does sources.
+
+        Raises before any work is done when one is missing, which is worth
+        doing up front: these pipelines spend minutes loading their inputs
+        before the first request, and a run that dies then has thrown that
+        away.
+        """
+        for annotation, resource in self.list_requirements():
+            self.__dict__[annotation] = resource.from_context(ctx)
 
     def output_path(
         self, filename: str | None = None, format: Formats | None = None

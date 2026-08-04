@@ -7,7 +7,7 @@ from scrapers.krs.scrape import ScrapeRejestrIO
 
 @pytest.fixture(scope="module")
 def ctx():
-    return setup_context(False)[0]
+    return setup_context()[0]
 
 
 @pytest.fixture(scope="module")
