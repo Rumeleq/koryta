@@ -1,8 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
-import EmploymentHistory from "../../../app/components/card/EmploymentHistory.vue";
-import type { EdgeNode } from "../../../app/composables/edges";
-import { describe, it, expect } from "vitest";
 import { mount } from "@vue/test-utils";
 import { createVuetify } from "vuetify";
 import * as components from "vuetify/components";
@@ -11,6 +8,7 @@ import EmploymentHistory from "../../../app/components/card/EmploymentHistory.vu
 import PartyChip from "../../../app/components/PartyChip.vue";
 import ChipPublicCompany from "../../../app/components/chip/PublicCompany.vue";
 import ChipRelativeDuration from "../../../app/components/chip/RelativeDuration.vue";
+import type { EdgeNode } from "../../../app/composables/edges";
 
 const vuetify = createVuetify({ components, directives });
 
@@ -61,7 +59,7 @@ describe("CardEmploymentHistory", () => {
 });
 
 /** The shape `useEdges` hands the card, narrowed to what this card reads. */
-function edge(overrides: Record<string, unknown> = {}) {
+function candidacy(overrides: Record<string, unknown> = {}) {
   return {
     id: "e1",
     type: "election",
@@ -88,7 +86,7 @@ function mountHistory(edges: unknown[]) {
 describe("EmploymentHistory", () => {
   it("names the party and the committee of a candidacy", () => {
     const wrapper = mountHistory([
-      edge({
+      candidacy({
         party: "PiS",
         committee: "Komitet Wyborczy Prawo i Sprawiedliwość",
       }),
@@ -101,7 +99,7 @@ describe("EmploymentHistory", () => {
 
   it("names a local committee that maps onto no party", () => {
     const wrapper = mountHistory([
-      edge({ committee: "Komitet Wyborczy Wyborców Wspólny Kalisz" }),
+      candidacy({ committee: "Komitet Wyborczy Wyborców Wspólny Kalisz" }),
     ]);
 
     expect(wrapper.text()).toContain(
@@ -111,14 +109,16 @@ describe("EmploymentHistory", () => {
   });
 
   it("does not repeat a committee that is spelled like its party", () => {
-    const wrapper = mountHistory([edge({ party: "PSL", committee: "psl" })]);
+    const wrapper = mountHistory([
+      candidacy({ party: "PSL", committee: "psl" }),
+    ]);
 
     expect(wrapper.findComponent(PartyChip).exists()).toBe(true);
     expect(wrapper.text()).not.toContain("psl");
   });
 
   it("leaves a candidacy with neither field as it was", () => {
-    const wrapper = mountHistory([edge()]);
+    const wrapper = mountHistory([candidacy()]);
 
     expect(wrapper.text()).toContain("Kandydował/a w");
     expect(wrapper.findComponent(PartyChip).exists()).toBe(false);
@@ -126,7 +126,7 @@ describe("EmploymentHistory", () => {
 
   it("shows no party chip for an employment that carries one", () => {
     const wrapper = mountHistory([
-      edge({ type: "employed", label: "Prezes", party: "PiS" }),
+      candidacy({ type: "employed", label: "Prezes", party: "PiS" }),
     ]);
 
     expect(wrapper.findComponent(PartyChip).exists()).toBe(false);
