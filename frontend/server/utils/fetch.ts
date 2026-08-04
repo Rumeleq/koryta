@@ -9,7 +9,6 @@ import {
 } from "~~/shared/model";
 import { getDatabase } from "firebase-admin/database";
 import { getFirestore, Filter } from "firebase-admin/firestore";
-import { logger } from "firebase-functions/logger";
 import { z } from "zod";
 
 export const fetchOptionsValidator = z.object({
@@ -45,49 +44,6 @@ export interface FetchNodesOptions {
   nodeId?: string;
   personParties?: string | string[];
   bypassCache?: boolean;
-}
-
-function getEventSafe() {
-  try {
-    const event = useEvent();
-    const result = {
-      path: event?.path,
-      route: event?.context?.matchedRoute?.path,
-    };
-    if (result.path && result.route) {
-      const queryStr = event.path.split("?", 2)[1];
-      if (queryStr) {
-        let safeQueryStr = queryStr;
-        const paramsToSanitize = ["place", "center", "nodeId", "teryt", "id"];
-        for (const param of paramsToSanitize) {
-          const regex = new RegExp(`(^|&)(${param}=)[^&]*`, "g");
-          safeQueryStr = safeQueryStr.replace(regex, "$1$2id");
-        }
-        result.route = result.route + "?" + safeQueryStr;
-      }
-    }
-    return result;
-  } catch {
-    return undefined;
-  }
-}
-
-export function logEventPath(
-  func: string,
-  args: string,
-  opts: { type?: string; collection: string; size?: number },
-) {
-  const event = getEventSafe();
-  logger.info(
-    `[Firestore Read][${func}(${args})] triggered by: ${event?.path ?? "unknown path"}]`,
-    {
-      func,
-      args,
-      ...opts,
-      ...event,
-      eventPath: event?.route,
-    },
-  );
 }
 
 export function applyPartiesFilter(
@@ -158,29 +114,18 @@ const _cachedFetchNodes = defineCachedFunction(
       const docSnap = await docRef.get();
       if (!docSnap.exists) return {};
       if (docSnap.data()?.type !== path) return {};
-      logEventPath("fetchNodes", path, { type: path, collection: "nodes" });
 
       const data = docSnap.data() || {};
       if (data.revision_id && typeof data.revision_id.path === "string") {
         data.revision_id = data.revision_id.path;
       }
 
-      logEventPath("fetchNodes", path, {
-        type: path,
-        collection: "nodes",
-        size: 1,
-      });
       return { [nodeId]: { id: docSnap.id, ...data } };
     }
 
     const nodes = await query.get();
     const nodesData = nodes.docs.map(parseNodeDoc);
 
-    logEventPath("fetchNodes", path, {
-      type: path,
-      collection: "nodes",
-      size: nodesData.length,
-    });
     return Object.fromEntries(nodesData.map((node) => [node.id, node]));
   },
   {
@@ -297,25 +242,13 @@ export async function fetchEdgesClose(
     }
   }
 
-  const edges = Array.from(edgesMap.values());
-
-  logEventPath("fetchEdges", "close_batch", {
-    collection: "edges",
-    size: edges.length,
-  });
-
-  return edges;
+  return Array.from(edgesMap.values());
 }
 
 export async function fetchEdges(): Promise<Edge[]> {
   const db = getFirestore("koryta-pl");
   const edges = (await db.collection("edges").get()).docs.map(edgeFromDB);
-  const result = edges as unknown as Edge[];
-  logEventPath("fetchEdges", "all", {
-    collection: "edges",
-    size: result.length,
-  });
-  return result;
+  return edges as unknown as Edge[];
 }
 
 export async function fetchFirestore<T>(path: string): Promise<T> {
