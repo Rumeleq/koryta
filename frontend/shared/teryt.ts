@@ -19,6 +19,36 @@ export function isInWojewodztwo(teryt: string, wojewodztwo: string): boolean {
   return wojewodztwoOf(teryt) === wojewodztwo;
 }
 
+/** The sixteen województwa by their two digit code.
+ *
+ * A region node carries its own name, but a code that only appears on an edge -
+ * the constituency an election was run in, say - has no node to look it up on,
+ * so the names are spelled out here. */
+const wojewodztwoNames: Record<string, string> = {
+  "02": "dolnośląskie",
+  "04": "kujawsko-pomorskie",
+  "06": "lubelskie",
+  "08": "lubuskie",
+  "10": "łódzkie",
+  "12": "małopolskie",
+  "14": "mazowieckie",
+  "16": "opolskie",
+  "18": "podkarpackie",
+  "20": "podlaskie",
+  "22": "pomorskie",
+  "24": "śląskie",
+  "26": "świętokrzyskie",
+  "28": "warmińsko-mazurskie",
+  "30": "wielkopolskie",
+  "32": "zachodniopomorskie",
+};
+
+/** The name of the województwo a code lies in, if it is a TERYT code at all. */
+export function wojewodztwoName(teryt?: string): string | undefined {
+  const code = teryt ? wojewodztwoOf(teryt) : null;
+  return code ? wojewodztwoNames[code] : undefined;
+}
+
 /** Region names in the database are inconsistent for województwa - some carry
  * the "Województwo" prefix, some are the bare adjective. Normalizes them so the
  * filter list reads the same for all sixteen. */

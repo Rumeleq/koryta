@@ -1,6 +1,6 @@
 <template>
   <div class="pa-4">
-    <h1 class="text-h4 mb-4">Administracja - Rewizje</h1>
+    <h1 class="text-h5 text-sm-h4 mb-4">Administracja - Rewizje</h1>
 
     <v-card>
       <v-data-table-server

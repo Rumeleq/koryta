@@ -1,6 +1,11 @@
 <template>
   <v-alert type="info" variant="tonal" class="mb-4" :icon="mdiAccountLock">
-    <div class="d-flex align-center justify-space-between w-100">
+    <!-- Side by side where there is room; below the copy on a phone, where a
+         button held on the same line squeezed the sentence into a column four
+         words wide. -->
+    <div
+      class="d-flex flex-column flex-sm-row align-sm-center justify-space-between ga-3 w-100"
+    >
       <div>
         Zaloguj się, aby uzyskać dostęp do jeszcze nieopublikowanych /
         niezweryfikowanych osób.
@@ -21,7 +26,7 @@
         color="primary"
         variant="flat"
         to="/login"
-        class="ml-4 flex-shrink-0"
+        class="flex-shrink-0 align-self-start"
       >
         Zaloguj się
       </v-btn>

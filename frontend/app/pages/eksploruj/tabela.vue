@@ -8,7 +8,7 @@
       :company="company"
     />
     <div class="pa-4">
-      <h1 class="text-h4 mb-4">
+      <h1 class="text-h5 text-sm-h4 mb-4">
         Eksploruj powiązania dla
         {{ entityName }}
       </h1>

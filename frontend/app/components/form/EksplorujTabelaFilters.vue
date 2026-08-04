@@ -1,98 +1,115 @@
 <template>
   <div class="mb-4">
-    <v-row>
-      <v-col cols="12" md="3">
-        <v-autocomplete
-          v-model="party"
-          :items="availableParties"
-          label="Partia"
-          variant="outlined"
-          density="comfortable"
-          hide-details
-          clearable
-          multiple
-          chips
-          closable-chips
-        />
-      </v-col>
-      <v-col cols="12" md="3">
-        <v-autocomplete
-          v-model="teryt"
-          :items="availableRegions"
-          label="Region osoby"
-          variant="outlined"
-          density="comfortable"
-          hide-details
-          clearable
-        />
-      </v-col>
-      <v-col cols="12" md="3">
-        <v-autocomplete
-          v-model="companyTeryt"
-          :items="availableRegions"
-          label="Siedziba spółki"
-          variant="outlined"
-          density="comfortable"
-          hide-details
-          clearable
-        />
-      </v-col>
-      <v-col cols="12" md="3">
-        <v-autocomplete
-          v-model="place"
-          :items="availableCompanies"
-          label="Instytucje"
-          variant="outlined"
-          density="comfortable"
-          hide-details
-          clearable
-          multiple
-          chips
-          closable-chips
-          class="collapsible-autocomplete"
-          :class="{ 'is-expanded': showAllPlaces }"
-        >
-          <template v-if="(place?.length || 0) > 1" #append-inner>
-            <v-btn
-              variant="tonal"
-              size="small"
-              color="primary"
-              density="compact"
-              class="mt-1"
-              @click.stop="showAllPlaces = !showAllPlaces"
-            >
-              {{ showAllPlaces ? "Zwiń" : `+${(place?.length || 0) - 1}` }}
-            </v-btn>
-          </template>
-        </v-autocomplete>
-      </v-col>
-      <v-col cols="12" md="3" class="d-flex align-center">
-        <v-select
-          v-model="currentlyEmployed"
-          :items="[
-            { title: 'Wszystkie osoby', value: 'all' },
-            { title: 'Teraz w publicznej spółce', value: 'any' },
-            { title: 'Teraz w wyszukanych podmiotach', value: 'selected' },
-          ]"
-          label="Zatrudnienie"
-          variant="outlined"
-          density="comfortable"
-          hide-details
-          bg-color="white"
-        />
-      </v-col>
-      <v-col cols="12" md="3">
-        <v-select
-          v-model="category"
-          :items="availableCategories"
-          label="Typ podmiotu"
-          variant="outlined"
-          density="comfortable"
-          hide-details
-          clearable
-        />
-      </v-col>
-    </v-row>
+    <!-- Six full-width selects fill a phone screen before a single name is on
+         it, so there they start folded behind a line saying which are set. On
+         anything wider they are the row they always were. -->
+    <v-btn
+      v-if="mobile"
+      block
+      variant="tonal"
+      class="text-none justify-start mb-2"
+      :prepend-icon="mdiFilterVariant"
+      :append-icon="showFilters ? mdiChevronUp : mdiChevronDown"
+      @click="showFilters = !showFilters"
+    >
+      <span class="flex-grow-1 text-left">{{ filterSummary }}</span>
+    </v-btn>
+
+    <v-expand-transition>
+      <v-row v-show="!mobile || showFilters">
+        <v-col cols="12" md="3">
+          <v-autocomplete
+            v-model="party"
+            :items="availableParties"
+            label="Partia"
+            variant="outlined"
+            density="comfortable"
+            hide-details
+            clearable
+            multiple
+            chips
+            closable-chips
+          />
+        </v-col>
+        <v-col cols="12" md="3">
+          <v-autocomplete
+            v-model="teryt"
+            :items="availableRegions"
+            label="Region osoby"
+            variant="outlined"
+            density="comfortable"
+            hide-details
+            clearable
+          />
+        </v-col>
+        <v-col cols="12" md="3">
+          <v-autocomplete
+            v-model="companyTeryt"
+            :items="availableRegions"
+            label="Siedziba spółki"
+            variant="outlined"
+            density="comfortable"
+            hide-details
+            clearable
+          />
+        </v-col>
+        <v-col cols="12" md="3">
+          <v-autocomplete
+            v-model="place"
+            :items="availableCompanies"
+            label="Instytucje"
+            variant="outlined"
+            density="comfortable"
+            hide-details
+            clearable
+            multiple
+            chips
+            closable-chips
+            class="collapsible-autocomplete"
+            :class="{ 'is-expanded': showAllPlaces }"
+          >
+            <template v-if="(place?.length || 0) > 1" #append-inner>
+              <v-btn
+                variant="tonal"
+                size="small"
+                color="primary"
+                density="compact"
+                class="mt-1"
+                @click.stop="showAllPlaces = !showAllPlaces"
+              >
+                {{ showAllPlaces ? "Zwiń" : `+${(place?.length || 0) - 1}` }}
+              </v-btn>
+            </template>
+          </v-autocomplete>
+        </v-col>
+        <v-col cols="12" md="3" class="d-flex align-center">
+          <v-select
+            v-model="currentlyEmployed"
+            :items="[
+              { title: 'Wszystkie osoby', value: 'all' },
+              { title: 'Teraz w publicznej spółce', value: 'any' },
+              { title: 'Teraz w wyszukanych podmiotach', value: 'selected' },
+            ]"
+            label="Zatrudnienie"
+            variant="outlined"
+            density="comfortable"
+            hide-details
+            bg-color="white"
+          />
+        </v-col>
+        <v-col cols="12" md="3">
+          <v-select
+            v-model="category"
+            :items="availableCategories"
+            label="Typ podmiotu"
+            variant="outlined"
+            density="comfortable"
+            hide-details
+            clearable
+          />
+        </v-col>
+      </v-row>
+    </v-expand-transition>
 
     <v-expand-transition>
       <v-sheet
@@ -210,12 +227,26 @@
 </template>
 
 <script setup lang="ts">
-import { mdiClose, mdiFilterCogOutline, mdiInformationOutline } from "@mdi/js";
+import {
+  mdiChevronDown,
+  mdiChevronUp,
+  mdiClose,
+  mdiFilterCogOutline,
+  mdiFilterVariant,
+  mdiInformationOutline,
+} from "@mdi/js";
 import { ref, computed } from "vue";
+import { useDisplay } from "vuetify";
 import { companyCategories } from "~~/shared/companyCategories";
 
-const showStatusBanner = ref(true);
+const { mobile } = useDisplay({ mobileBreakpoint: "md" });
+
+// The admin filters explain themselves at length, which is worth a paragraph on
+// a desktop and most of a phone screen before any names appear. They start
+// folded there, behind the summary line the close button already leaves behind.
+const showStatusBanner = ref(!mobile.value);
 const showAllPlaces = ref(false);
+const showFilters = ref(false);
 
 const availableCategories = companyCategories.map((c) => ({
   title: c.title,
@@ -235,6 +266,23 @@ const currentlyEmployed = defineModel<"all" | "any" | "selected">(
 );
 const minEmploymentDate = defineModel<string | null>("minEmploymentDate");
 const minVotes = defineModel<number | null>("minVotes");
+
+/** What the folded filter row says about itself: how many of the six are set,
+ * so a reader on a phone can tell whether the list below is narrowed without
+ * unfolding it. */
+const filterSummary = computed(() => {
+  const active = [
+    party.value?.length,
+    teryt.value,
+    companyTeryt.value,
+    place.value?.length,
+    currentlyEmployed.value !== "all" ? currentlyEmployed.value : null,
+    category.value,
+  ].filter(Boolean).length;
+
+  if (active === 0) return "Filtry";
+  return `Filtry (${active})`;
+});
 
 const statusSummary = computed(() => {
   const filters = [];

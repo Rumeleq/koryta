@@ -56,6 +56,30 @@ describe("CardEmploymentHistory", () => {
     const wrapper = await render([edge({ label: "zastępca prezesa" })]);
     expect(wrapper.text()).not.toContain("undefined");
   });
+
+  it("summarises the list by kind, declined", async () => {
+    // Each kind counts its own way in Polish, which is why the forms are
+    // spelled out per type rather than derived from one rule.
+    const wrapper = await render([
+      edge({ id: "e1" }),
+      edge({ id: "e2" }),
+      edge({ id: "e3", type: "connection" }),
+      edge({ id: "e4", type: "election" }),
+      edge({ id: "e5", type: "election" }),
+      edge({ id: "e6", type: "election" }),
+      edge({ id: "e7", type: "election" }),
+      edge({ id: "e8", type: "election" }),
+    ]);
+    const text = wrapper.text();
+    expect(text).toContain("2 miejsca pracy");
+    expect(text).toContain("1 powiązanie");
+    expect(text).toContain("5 kandydatur");
+  });
+
+  it("says so when there is nothing to list", async () => {
+    const wrapper = await render([]);
+    expect(wrapper.text()).toContain("Nie znamy jeszcze żadnych powiązań");
+  });
 });
 
 /** The shape `useEdges` hands the card, narrowed to what this card reads. */

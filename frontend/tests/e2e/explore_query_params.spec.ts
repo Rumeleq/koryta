@@ -38,8 +38,10 @@ test.describe("Explore query parameters", () => {
 
     expect(new URL(page.url()).searchParams.get("teryt")).toBe(TERYT);
 
+    // "Wyczyść {0}" rather than "Clear {0}": the app runs Vuetify's Polish
+    // locale, so its own labels are Polish too.
     await page
-      .getByRole("button", { name: "Clear Region osoby" })
+      .getByRole("button", { name: "Wyczyść Region osoby" })
       .click({ timeout: 15000 });
 
     await expect

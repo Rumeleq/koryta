@@ -4,8 +4,27 @@ import {
   wojewodztwoOf,
   isInWojewodztwo,
   wojewodztwoLabel,
+  wojewodztwoName,
   regionFilterOptions,
 } from "../../shared/teryt";
+
+describe("wojewodztwoName", () => {
+  it("names the województwo a code lies in", () => {
+    expect(wojewodztwoName("12")).toBe("małopolskie");
+    // A constituency code: a powiat, whose first two digits are its
+    // województwo's. This is the shape an election edge carries.
+    expect(wojewodztwoName("1261")).toBe("małopolskie");
+    expect(wojewodztwoName("1465011")).toBe("mazowieckie");
+  });
+
+  it("has nothing to say about a code that is not one", () => {
+    expect(wojewodztwoName(undefined)).toBeUndefined();
+    expect(wojewodztwoName("")).toBeUndefined();
+    expect(wojewodztwoName("mazowieckie")).toBeUndefined();
+    // Even digits: the odd codes are not województwa.
+    expect(wojewodztwoName("13")).toBeUndefined();
+  });
+});
 
 describe("isWojewodztwoTeryt", () => {
   it("accepts two digit codes only", () => {

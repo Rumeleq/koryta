@@ -136,6 +136,24 @@ const pictureURL = computed(() => userConfig?.data?.value?.photoURL);
 </script>
 
 <style scoped>
+/* `fill-height` makes the container a flex row, so a page is a flex item and
+   is sized from its own content rather than from the container.
+
+   Its automatic minimum is that content's minimum, which is how one wide table
+   made the whole document 1242px on a 390px phone - taking the app bar and the
+   filters with it, and `html { overflow-x: hidden }` then clipped what had been
+   pushed out instead of letting anyone scroll to it. `min-width: 0` lets the
+   page shrink and leaves the overflow to whatever scrolls inside it.
+
+   Its automatic maximum is that content's max-content width, which leaves a
+   page narrower than the container it was given whenever the viewport is wider
+   than the widest thing on it - the explore table stopping short of the right
+   edge of a laptop screen. Growing takes the width that was offered. */
+.v-container > :deep(*) {
+  min-width: 0;
+  flex-grow: 1;
+}
+
 /* Vuetify clips the toolbar content, so on narrow screens the trailing
    buttons are unreachable. Let it scroll sideways instead. The spacers
    collapse to zero once the buttons overflow, so wide screens still centre. */

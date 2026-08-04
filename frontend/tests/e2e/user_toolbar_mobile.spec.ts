@@ -1,5 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
-import { waitForLoginFormHydrated } from "./helpers/login";
+import { test, expect } from "@playwright/test";
+import { logIn, USERS } from "./helpers/auth";
 
 /** The logged in toolbar (Rewizje, Nowy bug w GitHubie, ...) does not fit on a
  * phone. Vuetify clips `.v-toolbar__content`, which used to leave the trailing
@@ -7,34 +7,19 @@ import { waitForLoginFormHydrated } from "./helpers/login";
  * that strip scroll sideways, so the test asserts both halves of the fix: the
  * content really does overflow, and it can be scrolled to the last button. */
 
-// Narrow enough that the toolbar overflows even for a non admin, who only sees
-// the two always-on buttons.
 const PHONE = { width: 320, height: 700 };
-
-async function registerAndLogIn(page: Page) {
-  await page.goto("/login");
-  await waitForLoginFormHydrated(page);
-
-  await page.locator("text=Nie masz konta? Zarejestruj się").click();
-  await expect(page.locator('button:has-text("Stwórz konto")')).toBeVisible();
-
-  await page.locator("input#email").fill(`toolbar${Date.now()}@example.com`);
-  await page.locator("input#password").fill("password123");
-
-  // "Wysłano email weryfikacyjny" confirmation.
-  page.on("dialog", (dialog) => dialog.accept());
-  await page.locator('button:has-text("Stwórz konto")').click();
-
-  await page.waitForURL((url) => !url.pathname.includes("/login"), {
-    timeout: 15_000,
-  });
-}
 
 test.describe("Logged in toolbar on a phone", () => {
   test.use({ viewport: PHONE });
 
   test("overflowing buttons can be scrolled into view", async ({ page }) => {
-    await registerAndLogIn(page);
+    // As an admin, whose toolbar carries five buttons rather than two. It used
+    // to register a fresh non-admin, on the grounds that even two overflowed
+    // 320px - which stopped being true when the root font size came down to
+    // 14px. The admin strip is the one that overflows, and the one this is
+    // about; leaning on a width the type scale can drift past again is what
+    // made the assertion below quietly stop meaning anything.
+    await logIn(page, USERS.admin);
 
     const content = page.locator(".user-toolbar .v-toolbar__content");
     await expect(content).toBeVisible();

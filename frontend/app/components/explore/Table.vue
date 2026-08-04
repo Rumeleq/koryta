@@ -8,11 +8,10 @@
     :items="items"
     :items-length="totalItems"
     :loading="pending"
-    :items-per-page-text="itemsPerPageText"
-    :items-per-page-options="itemsPerPageOptions"
     :no-data-text="noDataText"
-    :loading-text="loadingText"
     :hide-default-footer="hideDefaultFooter"
+    :mobile="mobile"
+    class="explore-table"
     @update:page="$emit('update:page', $event)"
     @update:items-per-page="$emit('update:itemsPerPage', $event)"
     @update:sort-by="$emit('update:sortBy', $event)"
@@ -74,6 +73,27 @@
       />
     </template>
 
+    <!-- One card per person below the breakpoint. The eleven columns cannot be
+         made to fit a phone, and stacking them as eleven labelled lines each
+         buries the two that matter - who this is and where they worked - under
+         nine zeroes. -->
+    <template v-if="mobile" #item="{ item }">
+      <tr class="explore-table__mobile-row">
+        <td>
+          <ExploreTableMobileCard
+            :item="item"
+            :region="region"
+            :company="company"
+            :disable-focus="disableFocus"
+            :show-visibility="showsVisibility"
+            @focus="$emit('focus', $event)"
+            @action:voted="$emit('action:voted', $event)"
+            @action:explored="$emit('action:explored', $event)"
+          />
+        </td>
+      </tr>
+    </template>
+
     <template #[`item.name`]="{ item }">
       <div style="max-width: 150px">
         <template v-if="disableFocus">
@@ -104,47 +124,14 @@
     </template>
 
     <template #[`item.companies`]="{ item }">
-      <div class="d-flex flex-wrap gap-1 py-1" style="max-width: 300px">
-        <span v-for="companyName in item.companies" :key="companyName">
-          <v-tooltip :text="shortCompanyName(companyName)" location="top">
-            <template #activator="{ props: shortCompanyProps }">
-              <v-chip
-                v-bind="shortCompanyProps"
-                size="small"
-                class="mr-1 mb-1 text-truncate d-flex"
-                variant="outlined"
-                style="max-width: 300px"
-              >
-                {{ shortCompanyName(companyName) }}
-              </v-chip>
-            </template>
-          </v-tooltip>
-        </span>
-      </div>
+      <ExploreTableCompanyChips
+        :companies="item.companies"
+        style="max-width: 300px"
+      />
     </template>
 
     <template #[`item.elections`]="{ item }">
-      <template v-for="(election, i) in item.elections" :key="i">
-        <v-chip size="small" class="mr-1 mb-1" variant="outlined">
-          <v-tooltip activator="parent" location="top" open-delay="200">
-            {{
-              getWojewodztwo(election.teryt)
-                ? `woj. ${getWojewodztwo(election.teryt)}`
-                : "Brak informacji o województwie"
-            }}
-          </v-tooltip>
-          <template v-if="election.year">
-            <span class="font-weight-bold mr-1">{{ election.year }}</span>
-          </template>
-          <template v-if="election.location">
-            {{ election.location }}
-          </template>
-          <template v-if="election.committee">
-            <span class="text-caption ml-1">({{ election.committee }})</span>
-          </template>
-        </v-chip>
-        <br v-if="i < item.elections.length - 1" />
-      </template>
+      <ExploreTableElectionChips :elections="item.elections" />
     </template>
 
     <template #[`item.visibility`]="{ item }">
@@ -180,9 +167,9 @@
           open-delay="2000"
           location="top"
         >
-          <template #activator="{ props }">
+          <template #activator="{ props: exploreProps }">
             <v-btn
-              v-bind="props"
+              v-bind="exploreProps"
               :icon="mdiOpenInNew"
               variant="text"
               color="secondary"
@@ -208,6 +195,8 @@
 
 <script setup lang="ts">
 import { mdiMagnify, mdiOpenInNew } from "@mdi/js";
+import { computed } from "vue";
+import { useDisplay } from "vuetify";
 import { executeSearchAll } from "~/composables/usePersonSearch";
 import { voteScaleSummary } from "~/composables/votes";
 import type { PersonRich } from "~~/shared/model";
@@ -219,7 +208,7 @@ const userVoteTooltip = [
   .filter(Boolean)
   .join(" ");
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     items: PersonRich[];
     totalItems: number;
@@ -228,10 +217,9 @@ withDefaults(
     itemsPerPage?: number;
     sortBy?: { key: string; order: "asc" | "desc" }[];
     headers: Record<string, unknown>[];
+    /** Left to Vuetify's Polish locale unless a caller has something more
+     * specific to say about why this particular table is empty. */
     noDataText?: string;
-    itemsPerPageText?: string;
-    itemsPerPageOptions?: { value: number; title: string }[];
-    loadingText?: string;
     hideDefaultFooter?: boolean;
     region?: [string, string];
     company?: [string, string];
@@ -241,18 +229,7 @@ withDefaults(
     page: 1,
     itemsPerPage: 10,
     sortBy: () => [],
-    noDataText: "Brak danych",
-    itemsPerPageText: "Wierszy na stronę:",
-    // Vuetify's defaults, except that the last one is labelled by its English
-    // locale string ("All") - the app never sets a Polish locale.
-    itemsPerPageOptions: () => [
-      { value: 10, title: "10" },
-      { value: 25, title: "25" },
-      { value: 50, title: "50" },
-      { value: 100, title: "100" },
-      { value: -1, title: "Wszystkie" },
-    ],
-    loadingText: "Ładowanie...",
+    noDataText: undefined,
     hideDefaultFooter: false,
     disableFocus: false,
     region: undefined,
@@ -274,39 +251,21 @@ defineEmits<{
   (e: "action:explored" | "action:voted" | "focus", item: PersonRich): void;
 }>();
 
-const shortCompanyName = (companyName: string | undefined) => {
-  if (!companyName) return "";
-  const spolkaIndex = companyName.indexOf(
-    "SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ",
-  );
-  if (spolkaIndex !== -1) {
-    companyName =
-      companyName.slice(0, spolkaIndex) + companyName.slice(spolkaIndex + 39);
-  }
-  return companyName;
-};
+// Vuetify's own mobile switch is `mobile-breakpoint`, but the card needs to
+// know too, and reading the same breakpoint here keeps the two in step.
+const { mobile } = useDisplay({ mobileBreakpoint: "md" });
 
-const terytToWojewodztwo: Record<string, string> = {
-  "02": "dolnośląskie",
-  "04": "kujawsko-pomorskie",
-  "06": "lubelskie",
-  "08": "lubuskie",
-  "10": "łódzkie",
-  "12": "małopolskie",
-  "14": "mazowieckie",
-  "16": "opolskie",
-  "18": "podkarpackie",
-  "20": "podlaskie",
-  "22": "pomorskie",
-  "24": "śląskie",
-  "26": "świętokrzyskie",
-  "28": "warmińsko-mazurskie",
-  "30": "wielkopolskie",
-  "32": "zachodniopomorskie",
-};
-
-const getWojewodztwo = (teryt?: string) => {
-  if (!teryt || teryt.length < 2) return undefined;
-  return terytToWojewodztwo[teryt.substring(0, 2)];
-};
+/** Whether the caller asked for the draft/published column, which only the
+ * signed in get. The card shows the same chip on the same condition. */
+const showsVisibility = computed(() =>
+  props.headers.some((header) => header.key === "visibility"),
+);
 </script>
+
+<style scoped>
+/* The card is the whole row and brings its own vertical rhythm, so the cell
+   only supplies the gutters. */
+.explore-table__mobile-row > td {
+  padding: 0 12px;
+}
+</style>

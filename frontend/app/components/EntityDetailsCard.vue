@@ -1,21 +1,23 @@
 <template>
   <v-card v-if="type == 'person'" width="100%" variant="flat">
-    <v-card-title class="px-0 d-flex">
-      <h2 class="text-h5 font-weight-bold mr-2">
-        {{ entity?.name }}
-      </h2>
-      <PartyChip
-        v-for="party in personEntity?.parties"
-        :key="party"
-        :party="party"
-      />
-      <v-spacer />
-      <div class="d-none d-md-inline">
-        <v-spacer />
-        <DialogProposeEditNode
-          v-if="entity && type === 'person'"
-          :entity="entity"
+    <!-- Name, affiliation and the two things a reader can do about them. The
+         actions used to be `d-none d-md-inline`, which left a phone with no way
+         to vote on a person or propose a correction - the two contributions
+         this page exists to collect. They wrap under the name instead. -->
+    <div class="d-flex flex-wrap align-center gc-4 gr-2 mb-1">
+      <div class="d-flex flex-wrap align-center ga-2 flex-grow-1">
+        <h2 class="text-h5 font-weight-bold">
+          {{ entity?.name }}
+        </h2>
+        <PartyChip
+          v-for="party in personEntity?.parties"
+          :key="party"
+          :party="party"
         />
+      </div>
+
+      <div class="d-flex align-center ga-2 flex-shrink-0">
+        <DialogProposeEditNode v-if="entity" :entity="entity" />
         <ButtonVoteNumber
           v-if="entity"
           :id="entity.id ?? ''"
@@ -24,8 +26,8 @@
           show-label
         />
       </div>
-    </v-card-title>
-    <template #append> </template>
+    </div>
+
     <v-card-text class="px-0 pt-2">
       <CardPersonInfo :person="personEntity" class="mb-2" />
       {{ entity?.content }}

@@ -154,6 +154,13 @@ export default defineNuxtConfig({
       icons: {
         defaultSet: "mdi-svg",
       },
+      // Everything the app writes itself is in Polish; the strings Vuetify
+      // supplies - "Sort by", "Items per page", "No data available", the
+      // "1-7 of 7" page counter - were the only English left, and they are
+      // the ones a data table shows most. Several call sites used to pass a
+      // Polish `items-per-page-text` by hand to paper over it.
+      localeMessages: "pl",
+      locale: { locale: "pl", fallback: "en" },
       theme: {
         defaultTheme: "light",
         themes: {
@@ -164,6 +171,21 @@ export default defineNuxtConfig({
             },
           },
         },
+      },
+      defaults: {
+        // A reference table is read, not filled in, so the comfortable
+        // heights buy nothing but scrolling. See the root font size in
+        // app.vue for the other half of this.
+        //
+        // `mobileBreakpoint` is what stops a table being a phone's problem:
+        // below it Vuetify stacks each row into labelled lines instead of
+        // columns. Every table here has four to eleven of them, so without it
+        // the page is as wide as the widest table and the reader scrolls
+        // sideways through a document whose header has gone off screen. It is
+        // a default rather than a prop on each table so a new one is narrow
+        // without anyone remembering.
+        VDataTable: { density: "comfortable", mobileBreakpoint: "md" },
+        VDataTableServer: { density: "comfortable", mobileBreakpoint: "md" },
       },
     },
   },

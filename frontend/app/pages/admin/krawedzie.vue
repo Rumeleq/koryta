@@ -3,7 +3,7 @@
     <div class="d-flex align-center mb-4">
       <v-btn :icon="mdiArrowLeft" variant="text" class="mr-2" to="/admin" />
       <div>
-        <h1 class="text-h4">Powiązania do opublikowania</h1>
+        <h1 class="text-h5 text-sm-h4">Powiązania do opublikowania</h1>
         <div class="text-caption text-grey-darken-1">
           Nieopublikowane powiązania, których obie strony są już opublikowane -
           czyli te, które można pokazać publicznie od razu.
@@ -61,7 +61,6 @@
       :items="rows"
       :loading="pending"
       no-data-text="Nie ma powiązań gotowych do publikacji."
-      loading-text="Ładowanie..."
       items-per-page="-1"
       data-testid="edges-queue-table"
     >

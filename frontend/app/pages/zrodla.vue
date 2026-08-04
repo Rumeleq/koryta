@@ -21,14 +21,18 @@
     <v-col cols="12">
       <v-card class="mb-6 pa-4">
         <h4 class="text-subtitle-1 mb-2">Dodaj nowy artykuł</h4>
-        <v-form class="d-flex align-center" @submit.prevent="addArticle">
+        <!-- A url is long and a phone is narrow, so the field gets the whole
+             line there and the button sits under it. -->
+        <v-form
+          class="d-flex flex-column flex-sm-row align-stretch align-sm-center ga-3"
+          @submit.prevent="addArticle"
+        >
           <v-text-field
             v-model="newArticleUrl"
             label="Adres URL artykułu"
             variant="outlined"
             density="compact"
             hide-details
-            class="mr-4"
             :loading="isAdding"
             autocomplete="off"
           />
@@ -63,7 +67,6 @@
         :items="sortedArticles"
         :items-per-page="50"
         :sort-by="[{ key: 'publishedDate', order: 'desc' }]"
-        mobile-breakpoint="md"
         hover
       >
         <template #[`header.publishedDate`]="{ column }">

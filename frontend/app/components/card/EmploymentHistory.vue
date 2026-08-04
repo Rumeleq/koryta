@@ -1,7 +1,15 @@
 <template>
   <v-list class="px-2" variant="flat">
-    <div class="d-flex align-center justify-space-between mb-2">
-      <h3 class="text-h6">Historia powiązań</h3>
+    <div class="d-flex align-center justify-space-between ga-2 mb-2">
+      <div>
+        <h3 class="text-h6">Historia powiązań</h3>
+        <!-- What the list below adds up to, so the shape of a record is
+             readable without counting the rows - and so a page with none says
+             so rather than showing an empty box. -->
+        <div class="text-caption text-medium-emphasis">
+          {{ summary }}
+        </div>
+      </div>
       <v-btn
         v-if="canAdd"
         variant="text"
@@ -9,6 +17,7 @@
         color="primary"
         :prepend-icon="mdiPlus"
         data-testid="add-relation-employment"
+        class="flex-shrink-0"
         @click="emit('add')"
       >
         Dodaj
@@ -78,6 +87,7 @@ import {
   mdiCommentArrowRightOutline,
   mdiPlus,
 } from "@mdi/js";
+import { polishCounting } from "~/composables/polish";
 import type { Company } from "~~/shared/model";
 
 function getIcon(type: string) {
@@ -100,6 +110,33 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{ add: [] }>();
+
+/** How the relations below break down, as "3 miejsca pracy · 1 kandydatura".
+ *
+ * The counts are Polish, so each kind carries its own three forms rather than
+ * being pluralised by a rule - "miejsce/miejsca/miejsc" and
+ * "kandydatura/kandydatury/kandydatur" decline differently. */
+const summary = computed(() => {
+  const forms: Record<string, [string, string, string]> = {
+    employed: ["miejsce pracy", "miejsca pracy", "miejsc pracy"],
+    election: ["kandydatura", "kandydatury", "kandydatur"],
+    owns: ["podmiot zależny", "podmioty zależne", "podmiotów zależnych"],
+    connection: ["powiązanie", "powiązania", "powiązań"],
+    mentions: ["wzmianka", "wzmianki", "wzmianek"],
+    comment: ["komentarz", "komentarze", "komentarzy"],
+  };
+
+  const counts = new Map<string, number>();
+  for (const edge of props.edges) {
+    counts.set(edge.type, (counts.get(edge.type) ?? 0) + 1);
+  }
+  if (counts.size === 0) return "Nie znamy jeszcze żadnych powiązań";
+
+  return [...counts]
+    .filter(([type]) => type in forms)
+    .map(([type, count]) => polishCounting(count, ...forms[type]!))
+    .join(" · ");
+});
 
 const edgesSorted = computed(() => {
   return props.edges.toSorted((a, b) => {

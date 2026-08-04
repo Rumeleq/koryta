@@ -90,8 +90,6 @@
         :loading="pending"
         item-value="key"
         no-data-text="Brak notatek"
-        loading-text="Ładowanie..."
-        items-per-page-text="Wierszy na stronę:"
       >
         <template #[`item.createdAt`]="{ item }">
           <span class="text-no-wrap text-caption">

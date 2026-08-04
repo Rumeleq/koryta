@@ -1,76 +1,47 @@
 <template>
-  <v-row
-    v-if="
-      person?.birthDate ||
-      person?.wikipedia ||
-      person?.rejestrIo ||
-      person?.ktomaco
-    "
+  <div
+    v-if="person?.birthDate || profiles.length"
+    class="d-flex flex-wrap align-center ga-2"
   >
-    <v-col v-if="person?.birthDate" cols="12" sm="4">
-      <v-list-subheader
-        class="px-0 text-uppercase font-weight-bold"
-        style="min-height: 24px"
-        >Data urodzenia</v-list-subheader
-      >
-      <div class="text-body-1">{{ person.birthDate }}</div>
-    </v-col>
+    <span v-if="person?.birthDate" class="text-body-2 text-medium-emphasis">
+      ur. {{ person.birthDate }}
+    </span>
 
-    <v-col v-if="person?.wikipedia" cols="12" sm="4">
-      <v-list-subheader
-        class="px-0 text-uppercase font-weight-bold"
-        style="min-height: 24px"
-        >Wikipedia</v-list-subheader
-      >
-      <a
-        :href="person.wikipedia"
-        target="_blank"
-        class="text-primary text-decoration-none d-inline-flex align-center"
-      >
-        Artykuł z Wikipedii
-        <v-icon :icon="mdiOpenInNew" size="small" class="ml-1" />
-      </a>
-    </v-col>
-
-    <v-col v-if="person?.rejestrIo" cols="12" sm="4">
-      <v-list-subheader
-        class="px-0 text-uppercase font-weight-bold"
-        style="min-height: 24px"
-        >Rejestr.io</v-list-subheader
-      >
-      <a
-        :href="person.rejestrIo"
-        target="_blank"
-        class="text-primary text-decoration-none d-inline-flex align-center"
-      >
-        Profil w rejestrze
-        <v-icon :icon="mdiOpenInNew" size="small" class="ml-1" />
-      </a>
-    </v-col>
-
-    <v-col v-if="person?.ktomaco" cols="12" sm="4">
-      <v-list-subheader
-        class="px-0 text-uppercase font-weight-bold"
-        style="min-height: 24px"
-        >Kto ma co</v-list-subheader
-      >
-      <a
-        :href="person.ktomaco"
-        target="_blank"
-        class="text-primary text-decoration-none d-inline-flex align-center"
-      >
-        Profil w Kto ma co
-        <v-icon :icon="mdiOpenInNew" size="small" class="ml-1" />
-      </a>
-    </v-col>
-  </v-row>
+    <v-chip
+      v-for="profile in profiles"
+      :key="profile.label"
+      :href="profile.href"
+      target="_blank"
+      rel="noopener"
+      size="small"
+      variant="outlined"
+      :append-icon="mdiOpenInNew"
+    >
+      {{ profile.label }}
+    </v-chip>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { mdiOpenInNew } from "@mdi/js";
+import { computed } from "vue";
 import type { Person, PersonRich } from "~~/shared/model";
 
-defineProps<{
+const props = defineProps<{
   person: Person | PersonRich | undefined;
 }>();
+
+/** The registries this person can be looked up in. They used to be a labelled
+ * column each - an uppercase heading over a link, three of them across - which
+ * on a phone stacked into a screen of headings. As chips they say the same
+ * thing in a line. */
+const profiles = computed(() =>
+  [
+    { label: "Wikipedia", href: props.person?.wikipedia },
+    { label: "Rejestr.io", href: props.person?.rejestrIo },
+    { label: "Kto ma co", href: props.person?.ktomaco },
+  ].filter((profile): profile is { label: string; href: string } =>
+    Boolean(profile.href),
+  ),
+);
 </script>

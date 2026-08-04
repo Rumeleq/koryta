@@ -1,7 +1,7 @@
 <template>
   <ClientOnly>
     <div class="align-self-center">
-      <h1 class="text-h4 mb-4">Eksploruj nowe osoby</h1>
+      <h1 class="text-h5 text-sm-h4 mb-4">Eksploruj nowe osoby</h1>
 
       <div class="d-flex align-start ga-4 mb-4 flex-wrap">
         <ExploreProgressBar hide-cta :query="apiQuery" class="flex-grow-1" />
@@ -18,7 +18,10 @@
       </div>
 
       <!-- CLOSED STATE -->
-      <div v-if="!showInstructions" class="d-flex align-center ga-3 mb-4">
+      <div
+        v-if="!showInstructions"
+        class="d-flex flex-column flex-sm-row align-stretch align-sm-center ga-3 mb-4"
+      >
         <v-alert
           class="flex-grow-1 cursor-pointer mb-0"
           :color="allActionsDone ? 'success' : undefined"
@@ -43,7 +46,13 @@
       </div>
 
       <!-- OPEN STATE -->
-      <div v-else class="d-flex align-start ga-4 mb-4">
+      <!-- The instruction list is five sentences; beside the button column on
+           a phone it came out four words wide and twenty lines tall. Below sm
+           the buttons go under it instead. -->
+      <div
+        v-else
+        class="d-flex flex-column flex-sm-row align-stretch align-sm-start ga-4 mb-4"
+      >
         <v-alert
           v-model="showInstructions"
           closable
@@ -143,8 +152,11 @@
           </ul>
         </v-alert>
 
+        <!-- A column beside the instructions where there is room for one; a row
+             under them on a phone, where stacking three icons wastes the width
+             the alert just gave back. -->
         <ExploreNewButtons
-          vertical
+          :vertical="!mobile"
           :pending="pending"
           :all-actions-done="allActionsDone"
           @next="page += Math.round(Math.random() * 5)"
@@ -198,8 +210,10 @@
           </v-col>
         </v-row>
 
+        <!-- The card titles itself, and says what it lists rather than what it
+             is named after - "Historia Zatrudnienia" over a list that includes
+             candidacies and connections was two headings and one of them wrong. -->
         <v-card class="mb-4 pa-4">
-          <h2 class="text-h6 mb-4">Historia Zatrudnienia</h2>
           <CardEmploymentHistory :edges="focusedEdges" />
         </v-card>
       </template>
@@ -221,6 +235,7 @@ import { companyCategories } from "~~/shared/companyCategories";
 import type { PersonRich } from "~~/shared/model";
 import type { Query } from "~~/server/api/nodes/index.get";
 import { useCurrentUser } from "vuefire";
+import { useDisplay } from "vuetify";
 
 import { useEdges } from "~/composables/edges";
 
@@ -243,6 +258,8 @@ const availableCategories = companyCategories.map((c) => ({
   title: c.title,
   value: c.value,
 }));
+const { mobile } = useDisplay({ mobileBreakpoint: "sm" });
+
 const { stringFilter } = useQueryFilters();
 const filterCategory = stringFilter("category");
 

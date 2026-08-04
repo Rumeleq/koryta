@@ -41,14 +41,19 @@ type NodeEdgeStats = {
 export interface NodeStats {
   isApproved: boolean;
   notesCount: number;
-  votes: {
+  /** Written the first time somebody votes on the node, so a node nobody has
+   * looked at carries no `votes` at all - as do the fixtures. Reading it as if
+   * it were always there is a TypeError on most of the database. */
+  votes?: {
     interesting?: number;
     quality?: number;
     humanVoted?: boolean;
     lastVotedAt?: string;
     [key: string]: unknown;
   };
-  edges: {
+  /** Recomputed when an edge around the node changes, and so absent until one
+   * has. */
+  edges?: {
     all: NodeEdgeStats;
     approved: NodeEdgeStats;
   };

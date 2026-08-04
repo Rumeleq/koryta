@@ -136,6 +136,7 @@
         <div
           v-if="!smAndDown || showGraph"
           class="mt-4"
+          data-testid="entity-graph"
           style="
             height: 500px;
             width: 100%;
