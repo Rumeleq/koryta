@@ -71,6 +71,19 @@ EDGE_ENDPOINT_TYPES: dict[str, set[tuple[str, str]]] = {
 # nodes. Kept in step with EDGE_SEMANTICS in `frontend/server/utils/edges.ts`.
 STATE_EDGE_TYPES = {"owns", "mentions", "comment", "source"}
 
+# Edge types that record a period rather than a standing tie, and so have to say
+# when it began. Every other type asserts something with no beginning - an
+# article names a person, a region seats a company - and the edit form agrees:
+# it offers the two date fields only on its `employed` branch. `connection` is
+# the one that looks like an exception, because `EDGE_SEMANTICS` lists
+# `start_date` among the fields that tell two of them apart, but nothing can
+# write one and not one of the 89 stored carries a date.
+#
+# So on the other six types a `start_date` is always a blank rather than a date:
+# 6 `owns`, 8 `mentions`, 8 `connection` and 3 `mentioned_person` hold an empty
+# string, which is what a form leaves behind, and none holds a value.
+DATED_EDGE_TYPES = ("employed", "election")
+
 VOTE_CATEGORIES = {"interesting", "quality", "correct", "insufficient"}
 
 EXTRACTION_FACT_TYPES = {"employment", "party_membership", "personal_relation"}
@@ -84,6 +97,20 @@ def sample(items, limit: int = 10) -> list:
     if isinstance(items, (set, dict)):
         return sorted(items)[:limit]
     return list(items)[:limit]
+
+
+def has_date(document: dict, field: str) -> bool:
+    """Whether a stored date field says anything.
+
+    `None` and `""` are one absence seen from two writers: /api/edges/create
+    stores `null` for a date the form left blank while the editor stores an
+    empty string, and every reader in the frontend tests the field for
+    truthiness, so neither is a date.
+    """
+    value = document.get(field)
+    if isinstance(value, str):
+        return bool(value.strip())
+    return value is not None
 
 
 def stats_of(document: dict) -> dict:
@@ -276,8 +303,7 @@ def test_extraction_fact_types_are_known(extractions):
     )
 
     assert not unknown, (
-        f"Extractions carry fact types the frontend does not render: "
-        f"{dict(unknown)}"
+        f"Extractions carry fact types the frontend does not render: {dict(unknown)}"
     )
 
 
@@ -902,6 +928,72 @@ def test_employment_says_what_the_person_did(edges):
     assert len(roleless) <= KNOWN_ROLELESS, (
         f"{len(roleless)} employment edges say nothing about what the person "
         f"did, up from the {KNOWN_ROLELESS} known ones: {sample(roleless)}"
+    )
+
+
+@pytest.mark.parametrize("edge_type", DATED_EDGE_TYPES)
+def test_a_dated_edge_says_when_it_began(edges, edge_type):
+    """An edge that records a period has to say when the period started.
+
+    Nothing raises when it does not. `calculateExperience` skips an interval it
+    cannot place, so the person shows less experience than they have rather than
+    an error; `EDGE_SEMANTICS` keys an employment on the role *and* the start, so
+    an undated spell is indistinguishable from every other spell at that company
+    - which is also why `findEdges` narrows in memory, since a Firestore filter
+    on `start_date` matches no document that is missing it. Until the duration
+    chip learned to print "?", the history card rendered "undefined - obecnie".
+
+    The two types fail differently, which is why the budgets differ. A candidacy
+    without a date is a candidacy with no election: the ingest derives the field
+    from the election year (`${election.election_year}-01-01`), so it cannot
+    write one without it, and no export has ever held one. An employment can be
+    entered by hand, where the date field is optional.
+    """
+    # 195 employment edges on the 2026-08-03 export. Nearly all of them are old:
+    # 183 in December 2025, when 183 was *every* employment stored, and still 184
+    # in June 2026 after the KRS import had taken the collection past 11,000 -
+    # that importer always sets a start date. The 11 added since are hand edits,
+    # and 185 of the 195 carry a revision_id, so the editor is where they come
+    # from. The other 10 came from an ingest and are all unpublished.
+    #
+    # It is a budget rather than a ceiling: the article-extraction path has no
+    # date field at all - none of the 244 employment extractions carries one -
+    # so every fact promoted from a review lands here until it gains one.
+    UNDATED = {"employed": 195, "election": 0}
+
+    undated = [
+        edge["id"]
+        for edge in edges
+        if edge.get("type") == edge_type and not has_date(edge, "start_date")
+    ]
+    budget = UNDATED[edge_type]
+
+    assert len(undated) <= budget, (
+        f"{len(undated)} {edge_type} edges do not say when they began, so they "
+        f"count for no experience and cannot be told from another spell - up "
+        f"from the {budget} known ones. Sample IDs: {sample(undated)}"
+    )
+
+
+def test_an_edge_that_ends_has_a_beginning(edges):
+    """An `end_date` with no `start_date` is an interval nothing can place.
+
+    `calculateExperience` reads a missing end as "still going" and a missing
+    start as no interval at all, so an edge with only an end contributes nothing
+    while reading, on the page, as a job that finished. There are none, on any
+    export read so far and across all eight stored edge types, so this is stated
+    strictly rather than budgeted: the writers that fill in an end always know
+    the start, and one that does not would be a new defect.
+    """
+    dangling = [
+        (edge["id"], edge.get("type"), edge["end_date"])
+        for edge in edges
+        if has_date(edge, "end_date") and not has_date(edge, "start_date")
+    ]
+
+    assert not dangling, (
+        f"{len(dangling)} edges record an end but no beginning, as "
+        f"(edge, type, end_date): {sample(dangling)}"
     )
 
 
