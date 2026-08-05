@@ -80,6 +80,18 @@ class PersonVote:
     interesting: int | None
 
 
+def is_pipeline_uid(user_uid: str | None) -> bool:
+    """Whether a vote was cast by a scoring model rather than by a person.
+
+    One model per uid - `pipeline`, `pipeline-pagerank` and so on - and the
+    substring is what tells them apart from a Firebase uid, which is 28
+    alphanumeric characters. Kept identical to `isPipelineUid` in
+    `frontend/shared/stats.ts`: the two sides have to agree on what counts as a
+    human vote or the pipeline ends up seeded on its own output.
+    """
+    return bool(user_uid) and "pipeline" in str(user_uid)
+
+
 @dataclass
 class RejestrIOKey:
     """Represents a person from the RejestrIO dataset."""

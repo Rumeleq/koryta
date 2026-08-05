@@ -88,7 +88,8 @@ VOTE_CATEGORIES = {"interesting", "quality", "correct", "insufficient"}
 
 EXTRACTION_FACT_TYPES = {"employment", "party_membership", "personal_relation"}
 
-# `computeVoteStats` never counts the pipeline's own votes as human review.
+# `computeVoteStats` never counts the pipeline's own votes as human review, and
+# each scoring model votes under its own uid containing this word.
 PIPELINE_USER = "pipeline"
 
 
@@ -131,14 +132,28 @@ def compute_vote_stats(votes: list[dict]) -> dict:
     A port of `computeVoteStats` in `frontend/shared/stats.ts`, which the
     `onVoteWritten` trigger runs to maintain `stats.votes`. Only the counters and
     the `humanVoted` flag are reproduced; `lastVotedAt` is a formatted timestamp
-    and nothing queries it.
+    and nothing queries it, and `models` is a breakdown rather than a tally.
+
+    Human votes sum and the scoring models contribute only their best, which is
+    what keeps a new model from rescaling a number the site sorts and buckets
+    on. See `computeVoteStats` for why.
     """
     aggregate: dict = {"interesting": 0, "quality": 0, "humanVoted": False}
+    pipeline_best: dict = {}
     for vote in votes:
-        if vote.get("userUid") != PIPELINE_USER:
+        from_pipeline = PIPELINE_USER in str(vote.get("userUid") or "")
+        if not from_pipeline:
             aggregate["humanVoted"] = True
         for category, value in (vote.get("categoryVotes") or {}).items():
-            aggregate[category] = (aggregate.get(category) or 0) + value
+            if from_pipeline:
+                current = pipeline_best.get(category)
+                pipeline_best[category] = (
+                    value if current is None else max(current, value)
+                )
+            else:
+                aggregate[category] = (aggregate.get(category) or 0) + value
+    for category, best in pipeline_best.items():
+        aggregate[category] = (aggregate.get(category) or 0) + best
     return aggregate
 
 
@@ -152,9 +167,10 @@ def stale_aggregates(documents: dict[str, dict], votes_by_target: dict[str, list
         stored = stats_votes(document)
         expected = compute_vote_stats(votes)
         differences = {}
-        # `lastVotedAt` is a formatted timestamp rather than a tally, and the
-        # recomputation deliberately does not reproduce it.
-        for key in set(expected) | (set(stored) - {"lastVotedAt"}):
+        # `lastVotedAt` is a formatted timestamp and `models` a per-model
+        # breakdown, rather than tallies; the recomputation deliberately
+        # reproduces neither.
+        for key in set(expected) | (set(stored) - {"lastVotedAt", "models"}):
             got = stored.get(key)
             want = expected.get(key, 0)
             # A counter that was never written is a zero, not a difference; the

@@ -19,7 +19,7 @@ from tqdm import tqdm
 
 from entities.company import KorytaCompany
 from entities.person import Koryta as Person
-from entities.person import PersonVote
+from entities.person import PersonVote, is_pipeline_uid
 from scrapers.stores import (
     CloudStorage,
     Context,
@@ -247,8 +247,8 @@ class KorytaVotes(Pipeline[PersonVote]):
 
         outputs = []
         for data in tqdm(df.to_dict(orient="records")):
-            if data["userUid"] == "pipeline":
-                # Skip pipeline's own votes
+            if is_pipeline_uid(data["userUid"]):
+                # Skip the pipeline's own votes, whichever model cast them.
                 continue
             category_votes = data.get("categoryVotes", {})
             if isinstance(category_votes, float):

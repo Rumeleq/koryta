@@ -4,7 +4,14 @@ from analysis.graph import CommitteeParties, PeopleParties
 from analysis.interesting import Companies
 from analysis.payloads import CompaniesPayloads, PeoplePayloads, RegionPayloads
 from analysis.people import PeopleEnriched, PeopleMerged
-from analysis.scores import CompanyScores, PeopleScores
+from analysis.scores import (
+    CompanyScores,
+    PeopleScores,
+    PeopleScoresCapture,
+    PeopleScoresCoappointment,
+    PeopleScoresPageRank,
+    PeopleScoresTurnover,
+)
 from analysis.stats import Statistics
 from scrapers.article.pipelines import (
     ArticleAnalyzed,
@@ -47,6 +54,10 @@ PIPELINES = [
     CompaniesPayloads,
     CompanyScores,
     PeopleScores,
+    PeopleScoresCapture,
+    PeopleScoresCoappointment,
+    PeopleScoresPageRank,
+    PeopleScoresTurnover,
     Extract,
     KRSAlreadyScraped,
     KRSCensoredPeople,

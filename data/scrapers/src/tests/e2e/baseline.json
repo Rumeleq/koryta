@@ -56,6 +56,26 @@
       "non_null": {},
       "rows": null
     },
+    "people_scores_capture": {
+      "format": "jsonl",
+      "non_null": {},
+      "rows": null
+    },
+    "people_scores_coappointment": {
+      "format": "jsonl",
+      "non_null": {},
+      "rows": null
+    },
+    "people_scores_pagerank": {
+      "format": "jsonl",
+      "non_null": {},
+      "rows": null
+    },
+    "people_scores_turnover": {
+      "format": "jsonl",
+      "non_null": {},
+      "rows": null
+    },
     "person_krs": {
       "format": "jsonl",
       "non_null": {},

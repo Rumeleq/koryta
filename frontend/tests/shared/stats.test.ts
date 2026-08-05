@@ -118,6 +118,69 @@ describe("shared/stats.ts", () => {
       const stats = computeVoteStats([]);
       expect(stats).toEqual({ interesting: 0, quality: 0, humanVoted: false });
     });
+
+    const pipelineVote = (uid: string, interesting: number) =>
+      ({
+        userUid: uid,
+        nodeId: "n1",
+        categoryVotes: { interesting },
+      }) as unknown as VoteDocument;
+
+    it("takes the best model rather than summing them", () => {
+      // Five models agreeing that somebody is a 4 is one dataset seen five
+      // ways, not five voters — summing would put them at 20 on a 1-5 scale.
+      const stats = computeVoteStats([
+        pipelineVote("pipeline", 2),
+        pipelineVote("pipeline-pagerank", 4),
+        pipelineVote("pipeline-turnover", 1),
+      ]);
+
+      expect(stats.interesting).toBe(4);
+      expect(stats.humanVoted).toBe(false);
+    });
+
+    it("adds the best model's score on top of the human votes", () => {
+      const stats = computeVoteStats([
+        { userUid: "aB3xYz", categoryVotes: { interesting: 3 } },
+        { userUid: "cD4wVu", categoryVotes: { interesting: 2 } },
+        pipelineVote("pipeline-together", 5),
+        pipelineVote("pipeline-capture", 1),
+      ] as unknown as VoteDocument[]);
+
+      expect(stats.interesting).toBe(3 + 2 + 5);
+      expect(stats.humanVoted).toBe(true);
+    });
+
+    it("records what each model said so a reader can tell them apart", () => {
+      const stats = computeVoteStats([
+        pipelineVote("pipeline-pagerank", 5),
+        pipelineVote("pipeline-capture", 2),
+      ]);
+
+      expect(stats.models).toEqual({
+        "pipeline-pagerank": 5,
+        "pipeline-capture": 2,
+      });
+    });
+
+    it("leaves a re-scoring run out of lastVotedAt", () => {
+      // The field reads as "when did somebody last look at this", and a
+      // nightly re-run is not somebody looking.
+      const stats = computeVoteStats([
+        {
+          userUid: "aB3xYz",
+          categoryVotes: { interesting: 1 },
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          userUid: "pipeline-pagerank",
+          categoryVotes: { interesting: 5 },
+          updatedAt: "2026-08-01T00:00:00.000Z",
+        },
+      ] as unknown as VoteDocument[]);
+
+      expect(stats.lastVotedAt).toBe("2026-01-01T00:00:00.000Z");
+    });
   });
 
   describe("computeEdgeStats", () => {
