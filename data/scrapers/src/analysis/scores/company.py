@@ -63,6 +63,7 @@ class CompanyScores(Pipeline):
         # TODO use koryta_ids here instead of people names
         # names could lead to collisions
         scores = {}
+        unknown_targets = 0
 
         for _, row in self.people_scored.read_or_process(ctx).iterrows():
             is_public = row.get("is_public", False)
@@ -74,18 +75,27 @@ class CompanyScores(Pipeline):
 
         for _, row in self.people_votes.read_or_process(ctx).iterrows():
             person_koryta_id = row.get("person_koryta_id")
-            if not person_koryta_id or person_koryta_id == "":
+            if pd.isna(person_koryta_id) or not str(person_koryta_id).strip():
                 continue
             person_koryta_id = str(person_koryta_id)
             interesting = row.get("interesting", 0)
 
+            # A vote can name a node this pipeline has no person for - a place,
+            # or somebody deleted since the export - and that is the vote being
+            # uninteresting here, not an error worth stopping a run over.
+            name = koryta_id_to_name.get(person_koryta_id)
+            if name is None:
+                unknown_targets += 1
+                continue
+
             # TODO we're overriding votes of multiple people right now
-            name = koryta_id_to_name[person_koryta_id]
             current = scores.get(name, None)
             if current is not None:
                 scores[name] = max(interesting, current)
             scores[name] = interesting
 
+        if unknown_targets:
+            print(f"Ignored {unknown_targets} votes on nodes that are not people")
         return scores
 
     def process(self, ctx: Context):

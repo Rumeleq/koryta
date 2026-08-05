@@ -254,12 +254,17 @@ class KorytaVotes(Pipeline[PersonVote]):
             if isinstance(category_votes, float):
                 # The vote is not matching the format
                 continue
-            person_koryta_id = data["nodeId"]
-            if not person_koryta_id or person_koryta_id == "":
+            # A vote on an extracted fact carries `extractionId` and no
+            # `nodeId`, which pandas turns into a NaN rather than a blank. NaN
+            # is truthy and equals nothing, so testing it the obvious two ways
+            # lets it through, and `str(nan)` then reaches the consumers as a
+            # person id of "nan" that no person has.
+            person_koryta_id = data.get("nodeId")
+            if pd.isna(person_koryta_id) or not str(person_koryta_id).strip():
                 continue
             outputs.append(
                 PersonVote(
-                    person_koryta_id=data["nodeId"],
+                    person_koryta_id=str(person_koryta_id),
                     interesting=category_votes.get("interesting", None),
                 )
             )

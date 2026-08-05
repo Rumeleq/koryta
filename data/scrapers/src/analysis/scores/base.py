@@ -304,9 +304,15 @@ class PeopleScoreModel(Pipeline):
             return {}
         totals: dict[str, float] = {}
         for _, row in votes.iterrows():
-            node_id = str(row.get("person_koryta_id") or "")
+            target = row.get("person_koryta_id")
             interesting = row.get("interesting")
-            if not node_id or interesting is None or pd.isna(interesting):
+            # NaN rather than a blank is what a vote with no node on it looks
+            # like once pandas has been through it, and NaN is truthy - see
+            # `KorytaVotes.process`, which is where those get dropped now.
+            if pd.isna(target) or interesting is None or pd.isna(interesting):
+                continue
+            node_id = str(target).strip()
+            if not node_id:
                 continue
             totals[node_id] = totals.get(node_id, 0.0) + float(interesting)
         return totals
