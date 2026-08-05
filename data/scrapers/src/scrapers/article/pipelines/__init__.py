@@ -6,6 +6,9 @@ from scrapers.article.pipelines.koryciarski_scores_pipeline import (
     ArticleKoryciarskiScores,
 )
 from scrapers.article.pipelines.parsed_pipeline import ArticleParsed
+from scrapers.article.pipelines.person_mentions_pipeline import (
+    ArticlePersonMentions,
+)
 from scrapers.article.pipelines.verified_facts_pipeline import ArticleFactsVerified
 
 __all__ = [
@@ -16,4 +19,5 @@ __all__ = [
     "ArticleFactsVerified",
     "ArticleKoryciarskiScores",
     "ArticleParsed",
+    "ArticlePersonMentions",
 ]

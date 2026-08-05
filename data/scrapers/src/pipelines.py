@@ -13,6 +13,7 @@ from scrapers.article.pipelines import (
     ArticleFactsVerified,
     ArticleKoryciarskiScores,
     ArticleParsed,
+    ArticlePersonMentions,
 )
 from scrapers.kmgp.companies import CompaniesKMGP
 from scrapers.kmgp.people import PeopleKMGP
@@ -37,6 +38,7 @@ PIPELINES = [
     ArticleExtractedFacts,
     ArticleFactsVerified,
     ArticleAnalyzed,
+    ArticlePersonMentions,
     CompaniesKRS,
     Companies,
     CompaniesKMGP,
