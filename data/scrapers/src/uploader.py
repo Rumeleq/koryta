@@ -10,6 +10,8 @@ import requests
 from analysis.interesting import Companies
 from conductor import setup_context
 from entities.company import display_name
+from entities.composite import PersonScore
+from entities.person import is_pipeline_uid
 from scrapers.stores import iterate_pipeline_dict
 from stores.auth import authenticate_user
 from util.firestore import Firestore
@@ -29,6 +31,7 @@ class Args:
     database: str
     limit: int | None
     offset: int | None
+    model: str | None
 
 
 def parse_args() -> Args:
@@ -55,6 +58,13 @@ def parse_args() -> Args:
     )
     parser.add_argument(
         "--prod", action="store_true", help="Production mode (requires token auth)"
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        help="For --type score: store the votes under this pipeline uid instead "
+        "of the one the rows carry. The name must contain 'pipeline', which is "
+        "what marks a vote as not cast by a person.",
     )
     args = parser.parse_known_args()[0]
     return args  # type: ignore
@@ -94,6 +104,8 @@ class Uploader:
             return CompanyUploader(args)
         if args.type == "extraction":
             return ExtractionUploader(args)
+        if args.type == "score":
+            return ScoreUploader(args)
         return Uploader(args)
 
     def submit_entity(self, payload) -> requests.Response:
@@ -150,11 +162,7 @@ class Uploader:
                 )
                 continue
 
-            if self.args.type == "score":
-                self.firestore.submit_score(payload)
-                self.success_count += 1
-            else:
-                self.check_success(self.submit_entity(payload))
+            self.check_success(self.submit_entity(payload))
 
         failures = self.total - self.success_count
         print(
@@ -247,6 +255,69 @@ class PersonUploader(CompanyUploader):
             return self.submit_payload(current_target_url, payload, fail=False)
         else:
             return resp
+
+
+class ScoreUploader(Uploader):
+    """Uploads one scoring model's shortlist of people worth a look.
+
+    Scores go straight to Firestore rather than through the API: they are the
+    pipeline's own opinion rather than a fact about a person, and they are
+    stored as votes so that the site's existing aggregate does the combining.
+    Each model votes under its own uid, so uploading one model never touches
+    another's scores.
+
+    Unlike the per-entity uploaders this writes the whole run at once, because
+    what to write can only be decided against what the model wrote last time -
+    see `Firestore.replace_scores`.
+    """
+
+    @typing.override
+    def submit_results(self, entities):
+        rows = [PersonScore(**e) for e in entities if e is not None]
+        if not rows:
+            print("No scores to upload.", file=sys.stderr)
+            return
+
+        model = self.model_of(rows)
+        # Only part of the run reached us, so a person missing from it may
+        # simply have been cut off rather than dropped by the model.
+        partial = bool(self.args.limit or self.args.offset)
+        written, retracted = self.firestore.replace_scores(
+            model, rows, retract=not partial
+        )
+
+        self.total = len(rows)
+        self.success_count = len(rows)
+        print(
+            f"\nUpload complete. Model: {model}, written: {written}, "
+            f"retracted: {retracted}, unchanged: {len(rows) - written}",
+            file=sys.stderr,
+        )
+
+    def model_of(self, rows: list[PersonScore]) -> str:
+        """The uid to store this run under, and a check that it is a robot's.
+
+        A vote whose uid does not read as the pipeline's would be counted as
+        human review by the frontend, which would mark thousands of people as
+        looked at by somebody when nobody has looked at them.
+        """
+        if self.args.model:
+            model = self.args.model
+        else:
+            models = {row.model for row in rows}
+            if len(models) != 1:
+                raise ValueError(
+                    f"Expected one model per upload, got {sorted(models)}. "
+                    "Upload each model's scores separately, or pass --model."
+                )
+            model = models.pop()
+
+        if not is_pipeline_uid(model):
+            raise ValueError(
+                f"Model uid {model!r} does not contain 'pipeline', so the site "
+                "would count its votes as human review."
+            )
+        return model
 
 
 class ExtractionUploader(Uploader):

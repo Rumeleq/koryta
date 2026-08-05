@@ -90,6 +90,38 @@ export function calculateLatestEmploymentStart(edges: Edge[]): string | null {
   return latest;
 }
 
+/** Whether a vote was cast by a scoring model rather than by a person.
+ *
+ * The pipeline runs several models and each votes under its own uid -
+ * `pipeline`, `pipeline-pagerank`, `pipeline-turnover` and so on. Matching on
+ * the substring rather than on the exact name is safe because a Firebase uid is
+ * 28 random alphanumerics and cannot contain a word. Mirrored in Python by
+ * `is_pipeline_uid` in `data/scrapers/src/entities/person.py`, which is what
+ * keeps the models from being seeded on their own output.
+ */
+export function isPipelineUid(uid: string | undefined | null): boolean {
+  return !!uid && uid.includes("pipeline");
+}
+
+/**
+ * The vote aggregate stored on a node: what people said, plus the pipeline's
+ * best guess.
+ *
+ * Human votes sum, because each is somebody's independent opinion and two
+ * people saying +3 is a stronger claim than one. Pipeline votes do not: the
+ * models look at the same data from different angles and largely agree, so
+ * summing them would say "five voters" where there is one dataset, and adding
+ * a sixth model would silently rescale a number the explore table sorts on and
+ * `bucketPublicationCandidates` cuts into 1-5 bands. Instead every model's
+ * verdict collapses to the highest of them - a model that spots somebody the
+ * others miss still surfaces them, and one that has nothing to say costs
+ * nothing.
+ *
+ * `models` keeps each model's own score so a reader can see which one
+ * nominated a person. `lastVotedAt` deliberately ignores the pipeline: it
+ * reads as "when did somebody last look at this", and a nightly re-scoring is
+ * not somebody looking.
+ */
 export function computeVoteStats(
   nodeVotes: VoteDocument[],
 ): Record<string, unknown> {
@@ -100,22 +132,47 @@ export function computeVoteStats(
   };
 
   let latestDate: Date | null = null;
+  const pipelineBest: Record<string, number> = {};
+  const models: Record<string, number> = {};
 
   for (const v of nodeVotes) {
-    if (v.userUid !== "pipeline") {
+    const fromPipeline = isPipelineUid(v.userUid);
+    if (!fromPipeline) {
       aggregatedVotes.humanVoted = true;
-    }
-    if (v.updatedAt) {
-      const d = new Date(v.updatedAt);
-      if (!latestDate || d > latestDate) {
-        latestDate = d;
+      if (v.updatedAt) {
+        const d = new Date(v.updatedAt);
+        if (!latestDate || d > latestDate) {
+          latestDate = d;
+        }
       }
     }
 
     for (const [category, value] of Object.entries(v.categoryVotes)) {
-      aggregatedVotes[category] =
-        ((aggregatedVotes[category] as number) || 0) + (value as number);
+      if (fromPipeline) {
+        const best = pipelineBest[category];
+        pipelineBest[category] =
+          best === undefined
+            ? (value as number)
+            : Math.max(best, value as number);
+      } else {
+        aggregatedVotes[category] =
+          ((aggregatedVotes[category] as number) || 0) + (value as number);
+      }
     }
+
+    const interesting = v.categoryVotes.interesting;
+    if (fromPipeline && typeof interesting === "number") {
+      models[v.userUid] = interesting;
+    }
+  }
+
+  for (const [category, best] of Object.entries(pipelineBest)) {
+    aggregatedVotes[category] =
+      ((aggregatedVotes[category] as number) || 0) + best;
+  }
+
+  if (Object.keys(models).length > 0) {
+    aggregatedVotes.models = models;
   }
 
   if (latestDate) {

@@ -46,6 +46,10 @@ export interface NodeStats {
     quality?: number;
     humanVoted?: boolean;
     lastVotedAt?: string;
+    /** What each scoring model made of this person, keyed by its `userUid`.
+     * Only the best of them is in `interesting`; this is what says which model
+     * put them there. Absent when no model has an opinion. */
+    models?: Record<string, number>;
     [key: string]: unknown;
   };
   edges: {
