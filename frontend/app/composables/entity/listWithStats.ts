@@ -1,4 +1,9 @@
-import type { ElectionRich, PersonRich, Person } from "~~/shared/model";
+import type {
+  CompanyRef,
+  ElectionRich,
+  PersonRich,
+  Person,
+} from "~~/shared/model";
 import type { Edge, Node } from "~~/shared/graph/model";
 import type { Query } from "~~/server/api/nodes/index.get";
 
@@ -108,7 +113,7 @@ export async function useListWithStats(
   const tableItems = computed<PersonRich[]>(() => {
     return fetchedItems.value.map((person) => {
       // Reconstruct companies and elections from subgraph
-      const companies = new Set<string>();
+      const companies = new Map<string, CompanyRef>();
       const elections: ElectionRich[] = [];
 
       const personEdges = subgraphEdges.value.filter(
@@ -121,7 +126,10 @@ export async function useListWithStats(
         const otherNode = subgraphNodes.value[otherNodeId];
 
         if (edge.type === "employed" && otherNode?.entityType === "place") {
-          companies.add(otherNode.name);
+          companies.set(otherNodeId, {
+            id: otherNodeId,
+            name: otherNode.name,
+          });
         } else if (edge.type === "election") {
           const listYear =
             edge.start_date && typeof edge.start_date === "string"
@@ -157,7 +165,7 @@ export async function useListWithStats(
       return {
         ...person,
         id: person.id as string,
-        companies: Array.from(companies),
+        companies: Array.from(companies.values()),
         elections,
         experience: Math.floor(exp * 10) / 10,
         latestEmploymentStart: latestEmpStr,

@@ -105,17 +105,19 @@
 
     <template #[`item.companies`]="{ item }">
       <div class="d-flex flex-wrap gap-1 py-1" style="max-width: 300px">
-        <span v-for="companyName in item.companies" :key="companyName">
-          <v-tooltip :text="shortCompanyName(companyName)" location="top">
+        <span v-for="companyRef in item.companies" :key="companyRef.id">
+          <v-tooltip :text="shortCompanyName(companyRef.name)" location="top">
             <template #activator="{ props: shortCompanyProps }">
               <v-chip
                 v-bind="shortCompanyProps"
                 size="small"
                 class="mr-1 mb-1 text-truncate d-flex"
                 variant="outlined"
+                :link="!disableFocus"
                 style="max-width: 300px"
+                @click="disableFocus || $emit('focus:company', companyRef)"
               >
-                {{ shortCompanyName(companyName) }}
+                {{ shortCompanyName(companyRef.name) }}
               </v-chip>
             </template>
           </v-tooltip>
@@ -210,7 +212,7 @@
 import { mdiMagnify, mdiOpenInNew } from "@mdi/js";
 import { executeSearchAll } from "~/composables/usePersonSearch";
 import { voteScaleSummary } from "~/composables/votes";
-import type { PersonRich } from "~~/shared/model";
+import type { CompanyRef, PersonRich } from "~~/shared/model";
 
 const userVoteTooltip = [
   "Twój osobisty głos dla tej osoby (widoczny tylko dla Ciebie).",
@@ -272,6 +274,9 @@ defineEmits<{
     },
   ): void;
   (e: "action:explored" | "action:voted" | "focus", item: PersonRich): void;
+  /** A company chip was clicked - the host opens that place, the same way
+   * `focus` opens a person. */
+  (e: "focus:company", company: CompanyRef): void;
 }>();
 
 const shortCompanyName = (companyName: string | undefined) => {

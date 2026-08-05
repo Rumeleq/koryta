@@ -189,9 +189,14 @@ export interface ElectionRich {
   committee?: string;
 }
 
+/** A place a person is employed at, as much of it as a list view carries.
+ * The id is what lets a view open the place itself rather than match on its
+ * name. */
+export type CompanyRef = { id: string; name: string };
+
 export type PersonRich = Person & {
   id: string;
-  companies: (string | undefined)[];
+  companies: CompanyRef[];
   elections: ElectionRich[];
   experience: number;
   latestEmploymentStart?: string | null;

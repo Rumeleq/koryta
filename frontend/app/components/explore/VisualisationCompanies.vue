@@ -69,8 +69,6 @@ import { computed } from "vue";
 import type { PersonRich } from "~~/shared/model";
 import { partyColors } from "~~/shared/misc";
 
-const { entities: places } = useEntities("place");
-
 const props = defineProps<{
   people: PersonRich[];
   allowedCompanies?: string[] | null;
@@ -81,7 +79,7 @@ interface CompanyData {
   totalPeople: number;
   affiliatedPeople: number;
   partyCounts: Record<string, number>;
-  /** Place node the bar links to, when one carries this name. */
+  /** Place node the bar links to. */
   placeId?: string;
 }
 
@@ -99,7 +97,8 @@ const companies = computed(() => {
               Record<string, unknown> | undefined) || {},
           ).length > 0) || person.elections.length > 0;
 
-    for (const companyName of person.companies) {
+    for (const companyRef of person.companies) {
+      const companyName = companyRef.name;
       if (!companyName) continue;
       if (
         props.allowedCompanies &&
@@ -109,22 +108,12 @@ const companies = computed(() => {
         continue;
       }
       if (!stats.has(companyName)) {
-        let placeId: string | undefined = undefined;
-        if (places.value) {
-          for (const [id, place] of Object.entries(places.value)) {
-            if (place.name === companyName) {
-              placeId = id;
-              break;
-            }
-          }
-        }
-
         stats.set(companyName, {
           name: companyName,
           totalPeople: 0,
           affiliatedPeople: 0,
           partyCounts: {},
-          placeId,
+          placeId: companyRef.id,
         });
       }
 

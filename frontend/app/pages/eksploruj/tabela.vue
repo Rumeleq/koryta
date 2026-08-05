@@ -2,7 +2,7 @@
   <ClientOnly>
     <ExploreNodeDrawer
       v-model="openDrawer"
-      :node="focusedPerson"
+      :node="focusedNode"
       :edges="focusedEdges"
       :region="region"
       :company="company"
@@ -90,6 +90,7 @@
           :region="region"
           :company="company"
           @focus="focusPerson"
+          @focus:company="focusCompany"
         />
       </v-card>
     </div>
@@ -104,7 +105,7 @@ import { useListWithStats } from "~/composables/entity/listWithStats";
 import { useQueryFilters } from "~/composables/queryFilters";
 import { parties } from "~~/shared/misc";
 import { regionFilterOptions } from "~~/shared/teryt";
-import type { PersonRich } from "~~/shared/model";
+import type { CompanyRef, NodeMaybeRich, PersonRich } from "~~/shared/model";
 import type { Query } from "~~/server/api/nodes/index.get";
 import { useCurrentUser } from "vuefire";
 
@@ -363,17 +364,28 @@ const { tableItems, totalItems, pending } = await useListWithStats(
 );
 
 const openDrawer = shallowRef(false);
-const focusedPerson = shallowRef<PersonRich | undefined>(undefined);
-const focusedPersonId = computed(() => focusedPerson.value?.id);
+const focusedNode = shallowRef<NodeMaybeRich | undefined>(undefined);
+const focusedNodeId = computed(() => focusedNode.value?.id);
 const { sources: focusedSources, targets: focusedTargets } =
-  await useEdges(focusedPersonId);
+  await useEdges(focusedNodeId);
 const focusedEdges = computed(() => [
   ...focusedSources.value,
   ...focusedTargets.value,
 ]);
 
 const focusPerson = (item: PersonRich) => {
-  focusedPerson.value = item;
+  focusedNode.value = item;
+  openDrawer.value = true;
+};
+
+/** A company chip opens the place in the same drawer: its name, its notes and
+ * everyone the graph has employed there. */
+const focusCompany = (companyRef: CompanyRef) => {
+  focusedNode.value = {
+    id: companyRef.id,
+    name: places.value?.[companyRef.id]?.name ?? companyRef.name,
+    type: "place",
+  };
   openDrawer.value = true;
 };
 </script>

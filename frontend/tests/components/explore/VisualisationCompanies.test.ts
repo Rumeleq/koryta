@@ -30,7 +30,10 @@ describe("VisualisationCompanies", () => {
           {
             id: "1",
             name: "Jan Kowalski",
-            companies: ["Firma A", "Firma B"],
+            companies: [
+              { id: "firma-a", name: "Firma A" },
+              { id: "firma-b", name: "Firma B" },
+            ],
             parties: ["PO"],
             elections: [],
             visibility: true,
@@ -38,7 +41,7 @@ describe("VisualisationCompanies", () => {
           {
             id: "2",
             name: "Anna Nowak",
-            companies: ["Firma A"],
+            companies: [{ id: "firma-a", name: "Firma A" }],
             parties: ["PiS"],
             elections: [],
             visibility: true,
@@ -46,7 +49,7 @@ describe("VisualisationCompanies", () => {
           {
             id: "3",
             name: "Piotr Wiśniewski",
-            companies: ["Firma B"],
+            companies: [{ id: "firma-b", name: "Firma B" }],
             parties: [],
             elections: [],
             visibility: true,
@@ -84,7 +87,7 @@ describe("VisualisationCompanies", () => {
           {
             id: "1",
             name: "Marek",
-            companies: ["Test Corp"],
+            companies: [{ id: "test-corp", name: "Test Corp" }],
             parties: ["PO", "Nowa Lewica"],
             elections: [],
             visibility: true,
@@ -116,7 +119,7 @@ describe("VisualisationCompanies", () => {
           {
             id: "1",
             name: "Osoba Bezpartyjna",
-            companies: ["Firma C"],
+            companies: [{ id: "firma-c", name: "Firma C" }],
             parties: [],
             elections: [],
             visibility: true,
