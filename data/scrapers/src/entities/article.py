@@ -154,21 +154,21 @@ class ArticleAnalyzedRecord:
 
 
 @dataclass
-class PersonArticleMention:
-    """A known person mentioned in one parsed article.
+class ArticlePeopleMentioned:
+    """A parsed article and the known people mentioned in it.
 
-    Carries the article URL together with the title, date and tags recovered
-    from the article's ld+json metadata, so a later pass can group and
-    summarize the articles per person.
+    One record per article: carries the URL together with the title, date and
+    tags recovered from the article's ld+json metadata, and the people matched
+    in its text, so a later pass can summarize the articles per person.
     """
 
     __output_path__: ClassVar[Path] = Path(
         "article_person_mentions/article_person_mentions.jsonl.tmp"
     )
 
-    name: str
     url: str
     domain: str
     title: str | None
     date: str | None
     tags: list[str]
+    people_mentioned: list[str]

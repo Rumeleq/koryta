@@ -3,9 +3,9 @@
 Cross-references the merged people dataset (``people_merged``) with the parsed
 article corpus (``article_parsed``). Each article's text is scanned for
 capitalized name sequences that match a known person and one record is emitted
-per (person, article) pair, carrying the URL plus the title, date and tags
-recovered from the article's ld+json metadata so a later pass can summarize the
-articles per person.
+per article, carrying the URL, the title, date and tags recovered from the
+article's ld+json metadata, and the list of people matched in its text, so a
+later pass can summarize the articles per person.
 
 Matching is nominative-only and diacritics-insensitive (e.g. "Jana
 Kowalskiego" is not caught), so the output is a lower bound on true mentions.
@@ -20,7 +20,7 @@ from typing import Any
 import pandas as pd
 from tqdm import tqdm
 
-from entities.article import PersonArticleMention
+from entities.article import ArticlePeopleMentioned
 from scrapers.article.parse import date_iso_from_ld_json, title_from_ld_json
 from scrapers.article.pipelines.incremental import IncrementalJsonlPipeline
 from scrapers.article.pipelines.parsed_pipeline import ArticleParsed
@@ -88,20 +88,29 @@ class PersonNameIndex:
     """Lookup from normalized name tuples to the people they refer to."""
 
     def __init__(self) -> None:
-        self._by_tuple: dict[tuple[str, ...], set[str]] = {}
+        self._by_tuple: dict[tuple[str, ...], dict[str, str]] = {}
         self.max_len = 0
         self.people = 0
         self.forms = 0
+        self._seen_people: set[str] = set()
 
     def add(self, display: str, name_forms: list[tuple[str, ...]]) -> None:
-        """Register every spelling variant of one person's name."""
+        """Register every spelling variant of one person's name.
+
+        Display names that normalize to the same string (e.g. "Zieliński" and
+        "Zielinski") are treated as one person; people_merged is ordered by
+        confidence, so the first spelling seen wins.
+        """
+        norm_display = _norm_token(display)
+        if norm_display not in self._seen_people:
+            self._seen_people.add(norm_display)
+            self.people += 1
         for form in name_forms:
             if len(form) < 2:
                 continue
-            self._by_tuple.setdefault(form, set()).add(display)
+            self._by_tuple.setdefault(form, {}).setdefault(norm_display, display)
             self.max_len = max(self.max_len, len(form))
             self.forms += 1
-        self.people += 1
 
     def find_in_text(self, text: str) -> set[str]:
         """Return the display names of people mentioned in ``text``."""
@@ -115,7 +124,7 @@ class PersonNameIndex:
                     key = tuple(_norm_token(w) for w in words[i : i + n])
                     names = self._by_tuple.get(key)
                     if names:
-                        found.update(names)
+                        found.update(names.values())
         return found
 
 
@@ -173,7 +182,7 @@ def _mention_meta(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-class ArticlePersonMentions(IncrementalJsonlPipeline[PersonArticleMention]):
+class ArticlePersonMentions(IncrementalJsonlPipeline[ArticlePeopleMentioned]):
     """Cross-reference people_merged with article_parsed to find mentions."""
 
     filename = "article_person_mentions"
@@ -183,7 +192,7 @@ class ArticlePersonMentions(IncrementalJsonlPipeline[PersonArticleMention]):
 
     @property
     def output_class(self):
-        return PersonArticleMention
+        return ArticlePeopleMentioned
 
     def process(self, ctx: Context) -> pd.DataFrame:
         self.prepare_temp_output()
@@ -219,11 +228,11 @@ class ArticlePersonMentions(IncrementalJsonlPipeline[PersonArticleMention]):
                 if not names:
                     continue
                 meta = _mention_meta(row)
-                for name in names:
-                    ctx.io.dumper.insert_into(  # type: ignore[attr-defined]
-                        PersonArticleMention(name=name, **meta), []
-                    )
-                    emitted += 1
+                meta["people_mentioned"] = sorted(names)
+                ctx.io.dumper.insert_into(  # type: ignore[attr-defined]
+                    ArticlePeopleMentioned(**meta), []
+                )
+                emitted += 1
 
         print(f"Emitted {emitted:,} mentions")
         return pd.DataFrame()
