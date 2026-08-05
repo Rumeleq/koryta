@@ -28,7 +28,10 @@ const { data, status } = await authFetch<{ node: Node }>(`/api/nodes/${id}`);
 
 if (status.value === "success" && data.value?.node?.name) {
   const expectedUrl = generateNodeUrl(data.value.node);
-  if (route.path !== expectedUrl) {
+  // A node type with no canonical url of its own stays where it is. Without the
+  // guard the undefined fell through to navigateTo and 301'd the visitor to the
+  // site root, which is where every article link in the sitemap used to land.
+  if (expectedUrl && route.path !== expectedUrl) {
     if (import.meta.server) {
       await navigateTo(expectedUrl, { redirectCode: 301 });
     } else {
@@ -37,8 +40,6 @@ if (status.value === "success" && data.value?.node?.name) {
   }
 }
 
-// Update head with the node name for basic SEO before Nuxt kicks in (optional as EntityDetailView does it too)
-useHead({
-  title: computed(() => data.value?.node?.name || "Strona"),
-});
+// The head is EntityDetailView's - it is the one that knows whether the node
+// loaded, and it sets the description and the social card alongside the title.
 </script>
