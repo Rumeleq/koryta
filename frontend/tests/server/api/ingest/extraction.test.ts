@@ -129,6 +129,43 @@ describe("api/ingest/extraction", () => {
     );
   });
 
+  it("writes the affair_involvement fields", async () => {
+    mockReadBody.mockResolvedValue({
+      articles: [
+        {
+          url: "https://example.com/a",
+          domain: "example.com",
+          title: null,
+          publication_date: null,
+          tag: "v1",
+          extracted_facts: [
+            {
+              url: "https://example.com/a",
+              justification: "kierował zorganizowaną grupą",
+              fact_type: "affair_involvement",
+              person: "Zbigniew Ziobro",
+              role: "kierujący zorganizowaną grupą przestępczą",
+              affair: "Fundusz Sprawiedliwości",
+            },
+          ],
+        },
+      ],
+    });
+
+    const result = await handler({} as any);
+
+    expect(result).toEqual({ status: "ok", count: 1 });
+    expect(mockBatchSet).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        fact_type: "affair_involvement",
+        person: "Zbigniew Ziobro",
+        role: "kierujący zorganizowaną grupą przestępczą",
+        affair: "Fundusz Sprawiedliwości",
+      }),
+    );
+  });
+
   it("credits the capture's uploader rather than the calling service", async () => {
     // The capture extractor holds its own datascience account and submits on
     // behalf of whoever captured the page; without this every fact found that
