@@ -28,5 +28,5 @@ done
 for MODEL in $MODELS; do
 	echo "koryta $MODEL | koryta_uploader --type score --submit $SUFFIX"
 	uv run koryta "$MODEL"  --no-backup --all --output stderr 2>&1 1>/dev/null |
-		koryta_uploader --type score --submit $SUFFIX
+		uv run koryta_uploader --type score --submit $SUFFIX
 done

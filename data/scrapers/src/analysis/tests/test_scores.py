@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from analysis.scores import (
+    CompanyScores,
     PeopleScoresCapture,
     PeopleScoresCoappointment,
     PeopleScoresPageRank,
@@ -151,6 +152,23 @@ class TestPopulation:
         assert result.shortlist == ["Anna"]
         assert result.seed_weights == {}
 
+    def test_a_vote_with_no_node_on_it_is_not_a_person(self):
+        # A vote on an extracted fact carries `extractionId` and no `nodeId`,
+        # which arrives here as NaN. NaN is truthy and equals nothing, so the
+        # guards that read "skip the blank ones" used to pass it straight
+        # through and `str(nan)` became a person id of "nan".
+        result = self.build(
+            [{"id": "n1", "full_name": "Anna", "is_public": False, "parties": []}],
+            [
+                {"person_koryta_id": float("nan"), "interesting": 5},
+                {"person_koryta_id": None, "interesting": 4},
+                {"person_koryta_id": "", "interesting": 3},
+            ],
+        )
+
+        assert result.shortlist == ["Anna"]
+        assert result.seed_weights == {}
+
     def test_somebody_with_no_payload_is_not_scorable(self):
         # The payload run is region-scoped, so the site knows people this model
         # cannot see. Voting on them would be voting on nothing.
@@ -160,6 +178,54 @@ class TestPopulation:
         )
 
         assert result.shortlist == []
+
+
+class TestCompanyScores:
+    """The votes half of the model the site started with."""
+
+    def person_scores(self, koryta_rows, vote_rows):
+        scorer = Pipeline.create(CompanyScores)
+        scorer.people_scored.read_or_process = lambda ctx: pd.DataFrame.from_records(
+            koryta_rows
+        )
+        scorer.people_votes.read_or_process = lambda ctx: pd.DataFrame.from_records(
+            list(vote_rows)
+        )
+        return scorer.person_scores(
+            None,
+            dict(
+                zip(
+                    [r["id"] for r in koryta_rows],
+                    [r["full_name"] for r in koryta_rows],
+                )
+            ),
+        )
+
+    def test_a_vote_with_no_node_on_it_does_not_stop_the_run(self):
+        # The crash this replaces: NaN survived the blank check, `str(nan)`
+        # became "nan", and the name lookup raised KeyError mid-pipeline.
+        scores = self.person_scores(
+            [{"id": "n1", "full_name": "Anna", "is_public": False}],
+            [
+                {"person_koryta_id": float("nan"), "interesting": 5},
+                {"person_koryta_id": "n1", "interesting": 2},
+            ],
+        )
+
+        assert scores == {"Anna": 2}
+
+    def test_a_vote_on_something_that_is_not_a_person_is_ignored(self):
+        # Places get voted on too, and a node deleted since the export is gone
+        # from the people table while its votes remain.
+        scores = self.person_scores(
+            [{"id": "n1", "full_name": "Anna", "is_public": False}],
+            [
+                {"person_koryta_id": "some-place", "interesting": 5},
+                {"person_koryta_id": "n1", "interesting": 1},
+            ],
+        )
+
+        assert scores == {"Anna": 1}
 
 
 class TestPageRank:
