@@ -1,3 +1,4 @@
+from analysis.article_person_mentions import ArticlePersonMentions
 from analysis.extract import Extract
 from analysis.graph import CommitteeParties, PeopleParties
 from analysis.interesting import Companies
@@ -13,7 +14,6 @@ from scrapers.article.pipelines import (
     ArticleFactsVerified,
     ArticleKoryciarskiScores,
     ArticleParsed,
-    ArticlePersonMentions,
 )
 from scrapers.kmgp.companies import CompaniesKMGP
 from scrapers.kmgp.people import PeopleKMGP
