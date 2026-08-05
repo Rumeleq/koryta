@@ -19,8 +19,14 @@ fi
 
 MODELS=${2:-"PeopleScores PeopleScoresPageRank PeopleScoresCoappointment PeopleScoresTurnover PeopleScoresCapture"}
 
+echo "Prerunning the models"
+for MODEL in $MODELS; do
+	echo "koryta $MODEL --no-backup --all"
+	uv run koryta "$MODEL"  --no-backup --all
+done
+
 for MODEL in $MODELS; do
 	echo "koryta $MODEL | koryta_uploader --type score --submit $SUFFIX"
-	koryta "$MODEL" --output stderr 2>&1 1>/dev/null |
+	uv run koryta "$MODEL"  --no-backup --all --output stderr 2>&1 1>/dev/null |
 		koryta_uploader --type score --submit $SUFFIX
 done
