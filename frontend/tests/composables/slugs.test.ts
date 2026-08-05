@@ -28,4 +28,26 @@ describe("generateNodeUrl", () => {
   it("has no url for a node that was never saved", () => {
     expect(generateNodeUrl(place({ krsNumber: "0000033198" }))).toBeUndefined();
   });
+
+  it("gives an article the readable url the sitemap advertises", () => {
+    // Articles used to fall past every branch and come back undefined, which
+    // [seoType]/[slug].vue then 301'd to the site root - so every article link
+    // in the sitemap, and every one ever shared, landed on the homepage.
+    expect(
+      generateNodeUrl({
+        type: "article",
+        id: "DRf5LYAdf5TwXKDZYMcP",
+        name: "1,7 mln dla młodego lekarza",
+      } as unknown as Node),
+    ).toBe("/artykul/1-7-mln-dla-mlodego-lekarza-DRf5LYAdf5TwXKDZYMcP");
+  });
+
+  it("keeps the id's case, which the document id depends on", () => {
+    const url = generateNodeUrl({
+      type: "person",
+      id: "SVb31mmNOMmlOy1BsPhH",
+      name: "Adam Niedziałek",
+    } as unknown as Node);
+    expect(url).toBe("/osoba/adam-niedzialek-SVb31mmNOMmlOy1BsPhH");
+  });
 });

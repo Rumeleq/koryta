@@ -98,6 +98,16 @@ export default defineNuxtConfig({
     sources: ["/api/_sitemap-urls"],
   },
 
+  seo: {
+    // nuxt-seo-utils lowercases the canonical by default, which is fine for a
+    // hand-written path and wrong for ours: an entity url ends in the Firestore
+    // document id, and those are case sensitive. Every person page was
+    // advertising a canonical and an og:url that render "Strona nieznaleziona",
+    // so a shared link previewed as the not-found page and the real url was
+    // never the one indexed.
+    canonicalLowercase: false,
+  },
+
   // Without a `robots` key the module defaults to an empty `Disallow:`, i.e.
   // every route is crawlable - including the admin and auth surface, and the
   // query-string facets below, which render a fresh multi-megabyte response per
@@ -270,6 +280,11 @@ export default defineNuxtConfig({
       headers: { "cache-control": "public, max-age=604800" },
     },
     "/logo_small.png": {
+      headers: { "cache-control": "public, max-age=604800" },
+    },
+    // Fetched fresh by every platform a link is posted to, and by each of them
+    // more than once.
+    "/social-card.png": {
       headers: { "cache-control": "public, max-age=604800" },
     },
     "/favicon.ico": { headers: { "cache-control": "public, max-age=604800" } },
