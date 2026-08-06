@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -172,3 +172,27 @@ class ArticlePeopleMentioned:
     date: str | None
     tags: list[str]
     people_mentioned: list[str]
+
+
+@dataclass
+class PeopleKoryciarskieUrl:
+    """A mentioned article that clears the koryciarski score gate.
+
+    Joins the article_person_mentions output with the koryciarski scores: one
+    record per URL that mentions a known person and whose article scored at
+    least the configured minimum. Carries the score, the people matched in the
+    text and the article metadata recovered from ld+json, so downstream passes
+    can pick the interesting slice of the mention corpus.
+    """
+
+    __output_path__: ClassVar[Path] = Path(
+        "people_koryciarskie_urls/people_koryciarskie_urls.jsonl.tmp"
+    )
+
+    url: str
+    koryciarski_llm_score: int
+    people_mentioned: list[str]
+    domain: str | None = None
+    title: str | None = None
+    date: str | None = None
+    tags: list[str] = field(default_factory=list)

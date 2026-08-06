@@ -15,6 +15,9 @@ from scrapers.article.pipelines import (
     ArticleKoryciarskiScores,
     ArticleParsed,
 )
+from scrapers.article.pipelines.people_koryciarskie_urls_pipeline import (
+    PeopleKoryciarskieUrls,
+)
 from scrapers.kmgp.companies import CompaniesKMGP
 from scrapers.kmgp.people import PeopleKMGP
 from scrapers.koryta.differ import KorytaDiffer
@@ -39,6 +42,7 @@ PIPELINES = [
     ArticleFactsVerified,
     ArticleAnalyzed,
     ArticlePersonMentions,
+    PeopleKoryciarskieUrls,
     CompaniesKRS,
     Companies,
     CompaniesKMGP,
