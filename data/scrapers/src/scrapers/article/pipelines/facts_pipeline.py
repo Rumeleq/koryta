@@ -32,11 +32,14 @@ from scrapers.article.pipelines.pipeline_utils import (
 )
 from scrapers.stores import LLM, VERSIONED_DIR, Context, LLMRequest
 
-PROMPT_VERSION = 21
+PROMPT_VERSION = 22
 TEXT_LIMIT = 100000
 MAX_TOKENS = 20000
 TEMPERATURE = 0.1
 JUSTIFICATION_FUZZY_THRESHOLD = 0.85
+# Cap the number of hinted people so candidate-list articles (100+ names) do
+# not blow up the prompt; a handful of anchors is what the LLM needs.
+MAX_PEOPLE_HINT = 30
 
 _PARSED_FILE = Path(VERSIONED_DIR) / "article_parsed" / "article_parsed.jsonl"
 _SCORES_FILE = (
@@ -242,6 +245,15 @@ _PROMPT = (
     "| person=Zbigniew Ziobro | role=kierujący zorganizowaną grupą przestępczą "
     "| affair=Fundusz Sprawiedliwości\n\n"
     "Teraz przeanalizuj poniższy artykuł w ten sam sposób.\n"
+    "Poniżej znajduje się lista znanych osób, które zostały wykryte w tym "
+    "artykule. Potraktuj ją jako podpowiedź: jeśli któraś z tych osób "
+    "występuje w tekście i ma w nim fakt, który pasuje do jednego z czterech "
+    "typów, zwróć go. Zwracaj fakty TYLKO dla osób, które naprawdę występują "
+    "w tekście — lista może zawierać fałszywe trafienia (np. listy "
+    "kandydatów, nazwiska w nagłówkach). W polu person/subject/object używaj "
+    "imienia i nazwiska dokładnie tak, jak występują w tekście, a nie "
+    "koniecznie tak, jak na liście.\n"
+    "Wykryte osoby:\n{people}\n"
     "Artykuł:\n{text}"
 )
 
@@ -276,7 +288,7 @@ class ArticleExtractedFacts(IncrementalJsonlPipeline[ArticleFacts]):
         mentions_path = self.mentions.final_output_path
         if not mentions_path.exists():
             raise FileNotFoundError(mentions_path)
-        mentioned = _mentioned_urls(mentions_path)
+        mentioned = _mentioned_people_by_url(mentions_path)
         records = _extractable_records(
             _PARSED_FILE,
             _SCORES_FILE,
@@ -321,9 +333,10 @@ def _existing_facts_cache_from_files(*paths: Path) -> dict[str, dict[str, Any]]:
     return cache
 
 
-def _mentioned_urls(path: Path) -> set[str]:
-    """URLs of articles that mention at least one known person."""
-    urls: set[str] = set()
+def _mentioned_people_by_url(path: Path) -> dict[str, list[str]]:
+    """URLs of articles that mention at least one known person, plus the
+    people matched in each article's text."""
+    by_url: dict[str, list[str]] = {}
     with path.open("r", encoding="utf-8") as handle:
         for line in tqdm(handle, desc="Reading person mentions", unit="row"):
             raw = line.strip()
@@ -334,15 +347,17 @@ def _mentioned_urls(path: Path) -> set[str]:
             except Exception:
                 continue
             url = row.get("url")
-            if isinstance(url, str) and url:
-                urls.add(url)
-    return urls
+            if not isinstance(url, str) or not url:
+                continue
+            people = row.get("people_mentioned") or []
+            by_url[url] = [str(p) for p in people if str(p).strip()]
+    return by_url
 
 
 def _extractable_records(
     parsed_path: Path,
     scores_path: Path,
-    mentioned: set[str],
+    mentioned: dict[str, list[str]],
 ) -> list[dict[str, Any]]:
     article_scores = _article_scores_by_url(scores_path)
     latest: dict[str, dict[str, Any]] = {}
@@ -377,6 +392,7 @@ def _extractable_records(
                     "article_content_hash": content_hash,
                     "article_content": content,
                     "koryciarski_llm_score": article_scores[url],
+                    "people_mentioned": mentioned[url],
                 }
     return list(latest.values())
 
@@ -473,9 +489,7 @@ def _filter_uncached_fact_records(
     if min_score is None:
         return records
     filtered = [
-        record
-        for record in records
-        if _record_meets_min_score(record, min_score)
+        record for record in records if _record_meets_min_score(record, min_score)
     ]
     skipped = len(records) - len(filtered)
     if skipped:
@@ -533,16 +547,32 @@ def _emit_fact_response(
         )
 
 
+def _people_hint(people: list[str]) -> str:
+    """Format the detected-people hint for the prompt.
+
+    Deduplicates while keeping order, caps to ``MAX_PEOPLE_HINT`` names and
+    collapses to a single line so the LLM treats it as one block.
+    """
+    seen: set[str] = set()
+    unique: list[str] = []
+    for name in people:
+        key = _normalize_justification_text(name)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(name)
+        if len(unique) >= MAX_PEOPLE_HINT:
+            break
+    return ", ".join(unique)
+
+
 def _fact_request(record: dict[str, Any], model: str, ctx=None) -> LLMRequest:
-    text_limit = (
-        article_facts_text_limit() or TEXT_LIMIT
-    )
-    max_tokens = (
-        article_facts_max_tokens() or MAX_TOKENS
-    )
+    text_limit = article_facts_text_limit() or TEXT_LIMIT
+    max_tokens = article_facts_max_tokens() or MAX_TOKENS
     return LLMRequest(
         prompt=_PROMPT.format(
-            text=str(record.get("article_content") or "")[:text_limit]
+            people=_people_hint(record.get("people_mentioned") or []),
+            text=str(record.get("article_content") or "")[:text_limit],
         ),
         max_tokens=max_tokens,
         temperature=TEMPERATURE,
@@ -808,7 +838,6 @@ def _coerce_fact(
             url=url,
             justification=justification,
             justification_in_text=justification_in_text,
-
             person=person,
             organization=organization,
             role=role_text or None,
@@ -825,7 +854,6 @@ def _coerce_fact(
             url=url,
             justification=justification,
             justification_in_text=justification_in_text,
-
             person=person,
             party=party,
         )
@@ -854,7 +882,6 @@ def _coerce_fact(
             url=url,
             justification=justification,
             justification_in_text=justification_in_text,
-
             subject=subject,
             object=object_,
             relation=relation_text or None,
@@ -869,7 +896,6 @@ def _coerce_fact(
             url=url,
             justification=justification,
             justification_in_text=justification_in_text,
-
             person=person,
             role=role,
             affair=affair,
