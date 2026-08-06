@@ -1,23 +1,25 @@
-"""Join mentioned articles with their koryciarski scores.
+"""Join mentioned articles with their koryciarski scores, per person.
 
 Cross-references the ``ArticlePersonMentions`` output (URLs of articles that
 mention a known person, plus the people matched) with the koryciarski scores,
 keeping only the URLs whose article scored at least the configured minimum
-(default 3). The result is the interesting slice of the mention corpus — one
-record per URL carrying the score, the people mentioned and the article
-metadata — that downstream passes (e.g. fact extraction) can consume.
+(default 3). The output is flipped per person: each row carries one person and
+the list of their qualifying articles (URL, title, date, score), so downstream
+passes can pick the interesting slice of the mention corpus per person. A URL
+appears under every person mentioned in it.
 """
 
 import json
 import re
 import unicodedata
+from collections import defaultdict
 from typing import Any
 
 import pandas as pd
 from tqdm import tqdm
 
 from analysis.article_person_mentions import ArticlePersonMentions
-from entities.article import PeopleKoryciarskieUrl
+from entities.article import PersonKoryciarskieUrls
 from scrapers.article.pipelines.incremental import IncrementalJsonlPipeline
 from scrapers.article.pipelines.koryciarski_scores_pipeline import (
     ArticleKoryciarskiScores,
@@ -58,10 +60,8 @@ def _mention_meta_by_url(path: Any) -> dict[str, dict[str, Any]]:
                 continue
             by_url[_norm_url(url)] = {
                 "url": url,
-                "domain": row.get("domain"),
                 "title": row.get("title"),
                 "date": row.get("date"),
-                "tags": [str(t) for t in (row.get("tags") or [])],
                 "people_mentioned": [
                     str(p)
                     for p in (row.get("people_mentioned") or [])
@@ -80,8 +80,8 @@ def _score_from_row(row: dict[str, Any]) -> int | None:
     return None
 
 
-class PeopleKoryciarskieUrls(IncrementalJsonlPipeline[PeopleKoryciarskieUrl]):
-    """Mentioned articles whose koryciarski score clears the gate."""
+class PeopleKoryciarskieUrls(IncrementalJsonlPipeline[PersonKoryciarskieUrls]):
+    """Qualifying mentioned articles, grouped by the people they mention."""
 
     filename = "people_koryciarskie_urls"
     backup_to_shared_cache = False  # small derived summary, local-only
@@ -91,7 +91,7 @@ class PeopleKoryciarskieUrls(IncrementalJsonlPipeline[PeopleKoryciarskieUrl]):
 
     @property
     def output_class(self):
-        return PeopleKoryciarskieUrl
+        return PersonKoryciarskieUrls
 
     def process(self, ctx: Context) -> pd.DataFrame:
         mentions_path = self.mentions.final_output_path
@@ -110,7 +110,7 @@ class PeopleKoryciarskieUrls(IncrementalJsonlPipeline[PeopleKoryciarskieUrl]):
 
         min_score = article_facts_min_koryciarski_score() or MIN_SCORE
 
-        emitted = 0
+        per_person: dict[str, list[dict[str, Any]]] = defaultdict(list)
         with scores_path.open("r", encoding="utf-8") as handle:
             for line in tqdm(handle, desc="Reading koryciarski scores", unit="row"):
                 raw = line.strip()
@@ -131,22 +131,32 @@ class PeopleKoryciarskieUrls(IncrementalJsonlPipeline[PeopleKoryciarskieUrl]):
                 meta = mentions.get(_norm_url(url))
                 if meta is None:
                     continue
-                ctx.io.dumper.insert_into(  # type: ignore[attr-defined]
-                    PeopleKoryciarskieUrl(
-                        url=meta["url"],
-                        koryciarski_llm_score=score,
-                        people_mentioned=meta["people_mentioned"],
-                        domain=meta["domain"],
-                        title=meta["title"],
-                        date=meta["date"],
-                        tags=meta["tags"],
-                    ),
-                    [],
-                )
-                emitted += 1
+                article = {
+                    "url": meta["url"],
+                    "title": meta["title"],
+                    "date": meta["date"],
+                    "koryciarski_llm_score": score,
+                }
+                for person in meta["people_mentioned"]:
+                    per_person[person].append(article)
+
+        emitted = 0
+        for person, articles in per_person.items():
+            articles.sort(
+                key=lambda a: (-int(a["koryciarski_llm_score"]), str(a["date"]))
+            )
+            ctx.io.dumper.insert_into(  # type: ignore[attr-defined]
+                PersonKoryciarskieUrls(
+                    person=person,
+                    urls=articles,
+                    total_articles=len(articles),
+                ),
+                [],
+            )
+            emitted += 1
 
         print(
-            f"Emitted {emitted:,} mentioned articles with koryciarski "
-            f"score >= {min_score}"
+            f"Emitted {emitted:,} people with koryciarski score >= {min_score} "
+            f"articles ({sum(len(v) for v in per_person.values()):,} pairs)"
         )
         return pd.DataFrame()

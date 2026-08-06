@@ -196,3 +196,22 @@ class PeopleKoryciarskieUrl:
     title: str | None = None
     date: str | None = None
     tags: list[str] = field(default_factory=list)
+
+
+@dataclass
+class PersonKoryciarskieUrls:
+    """One person and the mentioned articles of theirs that clear the score gate.
+
+    Flips the URL-centric PeopleKoryciarskieUrl record per person: each row is a
+    person with the list of articles (URL, title, date, score) in which they
+    were mentioned and which scored at least the configured minimum. A URL
+    repeats across every person mentioned in it.
+    """
+
+    __output_path__: ClassVar[Path] = Path(
+        "people_koryciarskie_urls/people_koryciarskie_urls.jsonl.tmp"
+    )
+
+    person: str
+    urls: list[dict[str, Any]]
+    total_articles: int
