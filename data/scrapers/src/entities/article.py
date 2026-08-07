@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -160,6 +160,13 @@ class ArticlePeopleMentioned:
     One record per article: carries the URL together with the title, date and
     tags recovered from the article's ld+json metadata, and the people matched
     in its text, so a later pass can summarize the articles per person.
+
+    ``people_mentioned`` only lists people for whom at least one piece of
+    independent evidence (``proof``) confirmed the name match is not a
+    coincidence - the article's region matching the person's teryt, the person's
+    party appearing in the text, or one of the person's organizations (KRS)
+    being named. ``proof`` maps each confirmed person to the list of such
+    signals.
     """
 
     __output_path__: ClassVar[Path] = Path(
@@ -172,6 +179,7 @@ class ArticlePeopleMentioned:
     date: str | None
     tags: list[str]
     people_mentioned: list[str]
+    proof: dict[str, list[str]] = field(default_factory=dict)
 
 
 @dataclass
