@@ -48,6 +48,32 @@ async function addEntity(page: Page, name: string, term: string) {
   ).toBeVisible({ timeout: 30_000 });
 }
 
+/** Clicks a node on the canvas and waits for its action menu.
+ *
+ * Not `locator.click()`: v-network-graph re-renders the whole graph as the force
+ * layout runs, replacing the `<text>` element each time, so playwright's
+ * actionability check never gets two frames with the same element and calls it
+ * "not stable" until the test times out. Waiting for the position to hold still
+ * and then aiming the mouse at it is the same wait without that requirement.
+ */
+async function clickNode(page: Page, name: string) {
+  const node = label(page, name).first();
+  const menu = page.getByTestId("analysis-node-actions");
+  await expect(node).toBeVisible({ timeout: 60_000 });
+
+  // Measure, click, check - and start over if it missed. The node is still
+  // drifting while the simulation settles, so a point measured a moment ago can
+  // be empty canvas by the time the mouse gets there, and a click on empty
+  // canvas closes the menu rather than opening it. Asserting the name is what
+  // catches the other failure mode, hitting a neighbour instead.
+  await expect(async () => {
+    const box = await node.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    await expect(menu).toContainText(name, { timeout: 2_000 });
+  }).toPass({ timeout: 60_000 });
+}
+
 /** Picks a value in one of the two relation-end selects. */
 async function pickEnd(page: Page, testId: string, name: string) {
   await page.getByTestId(testId).click();
@@ -157,6 +183,96 @@ test.describe("Analysis", () => {
     } finally {
       await other.close();
     }
+  });
+
+  test("writes a note straight from the node on the graph", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+
+    await createAnalysis(page, "Notatka z grafu");
+    await page.getByTestId("analysis-tab-scene").click();
+    await addEntity(page, "Jan Kowalski", "Kowalski");
+
+    // Clicking the node is what raises the buttons.
+    await clickNode(page, "Jan Kowalski");
+    await page.getByTestId("analysis-node-action-note").click();
+    await page
+      .getByTestId("analysis-note-dialog-input")
+      .locator("textarea")
+      .first()
+      .fill("Rozmówca mówi, że to on załatwiał przetarg.");
+    await page.getByTestId("analysis-note-dialog-save").click();
+
+    await page.getByTestId("analysis-tab-details").click();
+    await expect(
+      page.getByText("Rozmówca mówi, że to on załatwiał przetarg."),
+    ).toBeVisible({ timeout: 30_000 });
+  });
+
+  test("starts a relation from the node on the graph", async ({ page }) => {
+    test.setTimeout(120_000);
+
+    await createAnalysis(page, "Powiązanie z grafu");
+    await page.getByTestId("analysis-tab-scene").click();
+    await addEntity(page, "Jan Kowalski", "Kowalski");
+
+    // A second entity, added last, so it is the one the composer starts on.
+    // Without it this test would pass whether or not the button did anything:
+    // adding an entity already preselects it.
+    await page.getByTestId("analysis-add-local").click();
+    await page
+      .getByTestId("analysis-local-name")
+      .locator("input")
+      .fill("Kuzyn Zenek");
+    await page.getByTestId("analysis-local-save").click();
+    await expect(page.getByTestId("analysis-relation-source")).toContainText(
+      "Kuzyn Zenek",
+      { timeout: 30_000 },
+    );
+
+    await clickNode(page, "Jan Kowalski");
+    await page.getByTestId("analysis-node-action-connect").click();
+
+    // Back on the composer, with the clicked node now on the "kto" end.
+    await expect(page.getByTestId("analysis-relation-source")).toContainText(
+      "Jan Kowalski",
+      { timeout: 30_000 },
+    );
+  });
+
+  test("pulls a neighbour off the graph into the analysis", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+
+    await createAnalysis(page, "Sąsiad");
+    await page.getByTestId("analysis-tab-scene").click();
+    await addEntity(page, "Jan Kowalski", "Kowalski");
+
+    // Orlen is his seeded employer, so it is on the canvas as a neighbour but
+    // is not one of the entities the analysis is about.
+    await expect(
+      page.getByTestId("analysis-entity-row").filter({ hasText: "Orlen" }),
+    ).toHaveCount(0);
+
+    await clickNode(page, "Orlen");
+    // A neighbour offers only the one action - it has to join the case before
+    // notes or relations can hang off it.
+    await expect(page.getByTestId("analysis-node-action-add")).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId("analysis-node-action-note")).toHaveCount(0);
+
+    await page.getByTestId("analysis-node-action-add").click();
+
+    await expect(
+      page.getByTestId("analysis-entity-row").filter({ hasText: "Orlen" }),
+    ).toBeVisible({ timeout: 30_000 });
+    // And now it does offer them.
+    await expect(page.getByTestId("analysis-node-action-note")).toBeVisible({
+      timeout: 30_000,
+    });
   });
 
   test("gives the graph the width the window has", async ({ page }) => {

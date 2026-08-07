@@ -7,8 +7,12 @@
           :nodes="graph.nodes.value"
           :edges="graph.edges.value"
           :ready="graph.ready.value"
+          :editable="analysis.editable.value"
           @select="onSelect"
           @open="onOpen"
+          @note="onNoteFromGraph"
+          @connect="onConnectFromGraph"
+          @add="onAddFromGraph"
         />
       </div>
 
@@ -92,7 +96,9 @@
 
                 <template v-if="analysis.editable.value">
                   <v-divider class="my-4" />
-                  <div class="text-subtitle-2 mb-2">Dodaj powiązanie</div>
+                  <div ref="relationSection" class="text-subtitle-2 mb-2">
+                    Dodaj powiązanie
+                  </div>
                   <AnalysisAddRelation
                     :entities="analysis.entities.value"
                     :preselected-id="selectedId"
@@ -115,13 +121,19 @@
       </div>
 
       <AnalysisShareDialog v-if="!notFound" v-model="shareOpen" />
+      <AnalysisNoteDialog
+        v-if="!notFound"
+        v-model="noteOpen"
+        :entity-id="selectedId"
+      />
     </div>
   </ClientOnly>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { mdiAccountMultipleOutline } from "@mdi/js";
+import type { NodeType } from "~~/shared/model";
 import { ANALYSIS_MAX_DEPTH } from "~~/shared/analysis";
 import { provideAnalysis, useAnalysis } from "~/composables/analysis";
 import { useAnalysisGraph } from "~/composables/analysisGraph";
@@ -204,6 +216,41 @@ watch(
 );
 
 const shareOpen = ref(false);
+const noteOpen = ref(false);
+const relationSection = useTemplateRef<HTMLElement>("relationSection");
+
+/** The note button on a node. Selecting first is what points the dialog at the
+ * right entity, since it reads `selectedId`. */
+function onNoteFromGraph(nodeId: string) {
+  const entityId = toEntityId(nodeId);
+  if (!entityId) return;
+  onSelect(nodeId, false);
+  noteOpen.value = true;
+}
+
+/** The relation button on a node: put it on the "kto" end of the composer and
+ * show the composer, rather than making the reader find it themselves. */
+async function onConnectFromGraph(nodeId: string) {
+  const entityId = toEntityId(nodeId);
+  if (!entityId) return;
+  onSelect(nodeId, false);
+  tab.value = "scene";
+  await nextTick();
+  relationSection.value?.scrollIntoView({ block: "center" });
+}
+
+/** The plus on a neighbour the base supplied: make it one of the entities the
+ * analysis is actually about, so notes and relations can hang off it. */
+async function onAddFromGraph(nodeId: string) {
+  const node = graph.nodes.value[nodeId];
+  if (!node?.entityType) return;
+  await analysis.addEntity({
+    id: nodeId,
+    type: node.entityType as NodeType,
+    name: node.name,
+  });
+  onSelect(nodeId, false);
+}
 </script>
 
 <style scoped>
