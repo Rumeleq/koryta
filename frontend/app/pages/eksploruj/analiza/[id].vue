@@ -207,9 +207,27 @@ const shareOpen = ref(false);
 </script>
 
 <style scoped>
+/* The default layout drops the page into `.v-container.fill-height`, which
+   vuetify styles `display: flex; align-items: center; flex-wrap: wrap`
+   (VContainer.css). A plain child of that is a flex item sized by its own
+   content and centred vertically, so this view collapsed into a ~450px column
+   against the left edge with the graph squeezed to ~190px of it, however wide
+   the window was. `w-100` is how layouts/gray.vue defeats the horizontal half
+   of the same rule; `align-self: stretch` is the vertical half, and
+   `flex-basis: 100%` stops the wrap from ever putting anything beside us. */
 .analysis-page {
   display: flex;
-  height: calc(100vh - 64px);
+  width: 100%;
+  flex: 1 1 100%;
+  align-self: stretch;
+  /* `--v-layout-top` is the app bar, which vuetify already pads `.v-main` by.
+     The signed-in toolbar is not a layout item, so it is not in that variable
+     and has to be subtracted by hand - this page is behind `middleware: auth`,
+     so it is always there. Its height is `--v-toolbar-height` on the compact
+     toolbar itself, which is out of reach from here, hence the constant. */
+  height: calc(
+    100dvh - var(--v-layout-top, 64px) - var(--analysis-toolbar, 48px)
+  );
   min-height: 500px;
 }
 
@@ -219,9 +237,11 @@ const shareOpen = ref(false);
   border-right: 1px solid rgba(0, 0, 0, 0.12);
 }
 
+/* Wide enough for a name and a relation to read on one line, but a share of the
+   window rather than a fixed slab: at 420px it is a third of a laptop and a
+   fifth of a desktop, and the graph is what the extra room should go to. */
 .analysis-page__panel {
-  flex: 0 0 420px;
-  max-width: 420px;
+  flex: 0 0 clamp(360px, 28vw, 520px);
   display: flex;
   flex-direction: column;
   overflow: hidden;

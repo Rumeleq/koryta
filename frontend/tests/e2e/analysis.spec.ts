@@ -159,6 +159,33 @@ test.describe("Analysis", () => {
     }
   });
 
+  test("gives the graph the width the window has", async ({ page }) => {
+    test.setTimeout(120_000);
+
+    await page.setViewportSize({ width: 1600, height: 900 });
+    await createAnalysis(page, "Szerokość");
+
+    const graph = page.locator(".analysis-page__graph");
+    const panel = page.locator(".analysis-page__panel");
+    await expect(graph).toBeVisible();
+
+    const graphBox = (await graph.boundingBox())!;
+    const panelBox = (await panel.boundingBox())!;
+
+    // The page used to render as a ~450px column against the left edge, with
+    // the graph squeezed into ~190px of it, because `.v-container.fill-height`
+    // in the default layout sizes a plain child to its content. The two panes
+    // together have to span the window, and the graph has to be the larger.
+    expect(graphBox.width + panelBox.width).toBeGreaterThan(1500);
+    expect(graphBox.width).toBeGreaterThan(panelBox.width);
+    expect(graphBox.x).toBeLessThan(10);
+
+    // And it has to fill the height rather than sit centred in a short band -
+    // `align-items: center` on that container is the other half of the bug.
+    expect(graphBox.height).toBeGreaterThan(600);
+    expect(graphBox.y).toBeLessThan(200);
+  });
+
   test("refuses an address with no account here", async ({ page }) => {
     test.setTimeout(60_000);
 
