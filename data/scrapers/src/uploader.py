@@ -14,7 +14,15 @@ from entities.composite import PersonScore
 from entities.person import is_pipeline_uid
 from scrapers.stores import iterate_pipeline_dict
 from stores.auth import authenticate_user
-from util.firestore import Firestore
+from stores.upload_state import STATE_DIR, UploadState, target_slug
+from util.firestore import BATCH_LIMIT, Firestore
+
+#: Votes per Firestore batch, and the rest between batches. Together they cap
+#: how fast `onVoteWritten` invocations pile up: the default lets through about
+#: a hundred a second, against the several thousand a second an unpaced run
+#: managed. Raise them for an emulator, which has no such queue to overwhelm.
+DEFAULT_BATCH_SIZE = 100
+DEFAULT_BATCH_PAUSE = 1.0
 
 
 class NumpyEncoder(json.JSONEncoder):
@@ -32,6 +40,11 @@ class Args:
     limit: int | None
     offset: int | None
     model: str | None
+    batch_size: int
+    batch_pause: float
+    max_operations: int | None
+    resume: bool
+    state_dir: str
 
 
 def parse_args() -> Args:
@@ -64,7 +77,39 @@ def parse_args() -> Args:
         type=str,
         help="For --type score: store the votes under this pipeline uid instead "
         "of the one the rows carry. The name must contain 'pipeline', which is "
-        "what marks a vote as not cast by a person.",
+        "what marks a vote as not cast by a person. With --resume, resume only "
+        "this model rather than everything outstanding.",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=DEFAULT_BATCH_SIZE,
+        help=f"For --type score: votes per Firestore batch (max {BATCH_LIMIT}).",
+    )
+    parser.add_argument(
+        "--batch-pause",
+        type=float,
+        default=DEFAULT_BATCH_PAUSE,
+        help="For --type score: seconds to rest between batches. 0 uploads as "
+        "fast as the network allows, which is what overwhelms the vote trigger.",
+    )
+    parser.add_argument(
+        "--max-operations",
+        type=int,
+        help="For --type score: stop after this many votes and leave the rest "
+        "for a later --resume. Lets one plan be spread over several runs.",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="For --type score: read nothing, and instead finish the plans an "
+        "earlier run left outstanding. Without --submit, lists them.",
+    )
+    parser.add_argument(
+        "--state-dir",
+        type=str,
+        default=STATE_DIR,
+        help="Where unfinished score uploads are kept between runs.",
     )
     args = parser.parse_known_args()[0]
     return args  # type: ignore
@@ -266,10 +311,17 @@ class ScoreUploader(Uploader):
     Each model votes under its own uid, so uploading one model never touches
     another's scores.
 
-    Unlike the per-entity uploaders this writes the whole run at once, because
-    what to write can only be decided against what the model wrote last time -
-    see `Firestore.replace_scores`.
+    Unlike the per-entity uploaders it decides what to write for the whole run
+    at once, because what to write can only be decided against what the model
+    wrote last time - see `Firestore.plan_scores`. Sending that plan is a
+    separate, slower step: the votes go out in paced batches, and what has not
+    gone out yet is kept on disk so an interrupted upload can be finished
+    without re-running the pipeline that produced the scores.
     """
+
+    @property
+    def target(self) -> str:
+        return target_slug(self.args.endpoint, self.args.database)
 
     @typing.override
     def submit_results(self, entities):
@@ -282,17 +334,97 @@ class ScoreUploader(Uploader):
         # Only part of the run reached us, so a person missing from it may
         # simply have been cut off rather than dropped by the model.
         partial = bool(self.args.limit or self.args.offset)
-        written, retracted = self.firestore.replace_scores(
-            model, rows, retract=not partial
+        operations = self.firestore.plan_scores(model, rows, retract=not partial)
+
+        left_over = UploadState.load(
+            UploadState.path_for(model, self.target, self.args.state_dir)
         )
+        if left_over is not None and left_over.pending:
+            print(
+                f"{model}: an earlier run left {len(left_over.pending)} operations "
+                "outstanding; the plan above was diffed against Firestore as it "
+                "stands, so it already covers them.",
+                file=sys.stderr,
+            )
 
         self.total = len(rows)
         self.success_count = len(rows)
+        if not operations:
+            if left_over is not None:
+                left_over.finish()
+            print(f"\n{model}: already up to date, nothing to upload.", file=sys.stderr)
+            return
+
+        state = UploadState.start(model, self.target, operations, self.args.state_dir)
+        self.drain(state)
+
+    def resume(self) -> None:
+        """Finish the plans earlier runs did not get through."""
+        states = UploadState.pending_runs(
+            self.target, self.args.model, self.args.state_dir
+        )
+        if not states:
+            print(f"Nothing outstanding for {self.target}.", file=sys.stderr)
+            return
+
+        for state in states:
+            print(
+                f"{state.model}: {len(state.pending)} of {state.planned} operations "
+                f"still to send ({state.applied} already written).",
+                file=sys.stderr,
+            )
+
+        if not self.args.submit:
+            print("\nUse --submit to send them.", file=sys.stderr)
+            return
+
+        for state in states:
+            self.drain(state)
+
+    def drain(self, state: UploadState) -> None:
+        """Send as much of `state` as this run is allowed to, then report.
+
+        Records progress as it goes rather than at the end: whatever this
+        returns without sending stays on disk, so a later `--resume` - or the
+        next full run, which re-diffs and finds the same gap - picks it up.
+        """
+        # Slices a copy even when max_operations is None, so `state.advance`
+        # is not editing the list being sent.
+        todo = state.pending[: self.args.max_operations]
+        capped = len(todo) < len(state.pending)
+
         print(
-            f"\nUpload complete. Model: {model}, written: {written}, "
-            f"retracted: {retracted}, unchanged: {len(rows) - written}",
+            f"{state.model}: sending {len(todo)}"
+            + (f" of {len(state.pending)}" if capped else "")
+            + f" operations, {self.args.batch_size} at a time, "
+            f"{self.args.batch_pause}s apart.",
             file=sys.stderr,
         )
+
+        try:
+            self.firestore.apply_scores(
+                state.model,
+                todo,
+                batch_size=self.args.batch_size,
+                pause=self.args.batch_pause,
+                on_batch=state.advance,
+            )
+        finally:
+            if state.pending:
+                print(
+                    f"\n{state.model}: {len(state.pending)} operations left of "
+                    f"{state.planned}. Finish them with:\n"
+                    f"  koryta_uploader --type score --submit --resume "
+                    f"--endpoint {self.args.endpoint}",
+                    file=sys.stderr,
+                )
+            else:
+                state.finish()
+                print(
+                    f"\nUpload complete. Model: {state.model}, "
+                    f"{state.applied} operations written.",
+                    file=sys.stderr,
+                )
 
     def model_of(self, rows: list[PersonScore]) -> str:
         """The uid to store this run under, and a check that it is a robot's.
@@ -405,6 +537,14 @@ def read_payloads_filtered(args) -> list[dict]:
 
 def main():
     args = parse_args()
+
+    if args.resume:
+        # Nothing to read: what to send is already on disk, which is the whole
+        # point - the rows came from a pipeline run nobody wants to repeat.
+        if args.type != "score":
+            raise ValueError("--resume only applies to --type score")
+        typing.cast(ScoreUploader, Uploader.create(args)).resume()
+        return
 
     entities = read_payloads_filtered(args)
     print(f"Query returned {len(entities)} rows.", file=sys.stderr)
