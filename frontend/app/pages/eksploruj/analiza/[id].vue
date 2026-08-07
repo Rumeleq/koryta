@@ -278,9 +278,12 @@ async function onAddFromGraph(nodeId: string) {
   min-height: 500px;
 }
 
+/* `overflow: hidden` so nothing the canvas draws against its own edges - the
+   legend, the action menu - can ever land on the panel beside or below it. */
 .analysis-page__graph {
   flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
   border-right: 1px solid rgba(0, 0, 0, 0.12);
 }
 

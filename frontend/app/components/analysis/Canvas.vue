@@ -311,11 +311,14 @@ const eventHandlers: EventHandlers = {
 <style scoped>
 @import "v-network-graph/lib/style.css";
 
+/* No `min-height` here. It used to be 400px, and on a phone - where the pane
+   above is 55vh, about 367px - that made the canvas taller than the pane it
+   sits in, so the legend, pinned to the canvas's bottom, spilled out over the
+   title of the panel below. The pane sizes itself now; this just fills it. */
 .analysis-canvas {
   position: relative;
   height: 100%;
   width: 100%;
-  min-height: 400px;
 }
 
 .analysis-canvas__graph {

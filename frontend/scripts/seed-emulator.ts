@@ -9,6 +9,7 @@ import nodes from "./nodes.json";
 import edges from "./edges.json";
 import revisions from "./revisions.json";
 import extractions from "./extractions.json";
+import analyses from "./analyses.json";
 
 const projectId =
   process.env.USE_PROD_PROJECT === "true" ? "koryta-pl" : "demo-koryta-pl";
@@ -69,7 +70,13 @@ async function seedDatabase() {
   console.log("Seeding database...");
 
   // Clear existing collections
-  const collections = ["nodes", "edges", "revisions", "extractions"];
+  const collections = [
+    "nodes",
+    "edges",
+    "revisions",
+    "extractions",
+    "analyses",
+  ];
   for (const col of collections) {
     const docs = await db.collection(col).listDocuments();
     if (docs.length > 0) {
@@ -106,6 +113,16 @@ async function seedDatabase() {
     batch.set(ref, rev);
   }
 
+  // A worked example of /eksploruj/analiza: entities from the fixtures above,
+  // one entity that exists only inside it, a relation somebody was told about
+  // and a note. Every timestamp is fixed, so the visual baselines that capture
+  // this page do not move day to day. Owned by the normal user and shared with
+  // the admin, which is also what gives the share panel something to show.
+  for (const [id, analysis] of Object.entries(analyses)) {
+    const ref = db.collection("analyses").doc(id);
+    batch.set(ref, analysis);
+  }
+
   for (const [id, fact] of Object.entries(extractions)) {
     const ref = db.collection("extractions").doc(id);
     // The fixture carries an ISO string because JSON has no timestamp; the
@@ -126,6 +143,7 @@ async function seedDatabase() {
     (await db.collection("extractions").get()).docs.length,
     "extractions",
   );
+  console.log((await db.collection("analyses").get()).docs.length, "analyses");
 }
 
 async function seedAuth() {

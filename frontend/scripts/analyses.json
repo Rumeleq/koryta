@@ -1,0 +1,61 @@
+{
+  "seeded-analysis": {
+    "title": "Przetarg w Aleksandrowie",
+    "description": "Przykładowa analiza z danych testowych.",
+    "ownerUid": "test-user",
+    "members": {
+      "test-user": "editor",
+      "test-admin": "viewer"
+    },
+    "memberUids": ["test-user", "test-admin"],
+    "entities": [
+      {
+        "id": "1",
+        "type": "person",
+        "name": "Jan Kowalski",
+        "note": "Prowadził rozmowy z ramienia spółki.",
+        "addedBy": "test-user",
+        "addedAt": "2026-01-05T09:00:00.000Z"
+      },
+      {
+        "id": "2",
+        "type": "place",
+        "name": "Orlen",
+        "addedBy": "test-user",
+        "addedAt": "2026-01-05T09:01:00.000Z"
+      },
+      {
+        "id": "local:seed-1",
+        "type": "person",
+        "name": "Kuzyn z przetargu",
+        "note": "Nazwisko padło w rozmowie, nie ma go w bazie.",
+        "addedBy": "test-user",
+        "addedAt": "2026-01-05T09:02:00.000Z"
+      }
+    ],
+    "edges": [
+      {
+        "id": "seed-edge-1",
+        "source": "1",
+        "target": "local:seed-1",
+        "type": "connection",
+        "name": "szwagier",
+        "content": "Tak twierdzi rozmówca z 5 stycznia.",
+        "addedBy": "test-user",
+        "addedAt": "2026-01-05T09:03:00.000Z"
+      }
+    ],
+    "notes": [
+      {
+        "id": "seed-note-1",
+        "entityId": "1",
+        "content": "Rozmówca mówi, że to on prowadził negocjacje.",
+        "authorUid": "test-user",
+        "createdAt": "2026-01-05T09:04:00.000Z"
+      }
+    ],
+    "depth": 1,
+    "createdAt": "2026-01-05T09:00:00.000Z",
+    "updatedAt": "2026-01-05T09:05:00.000Z"
+  }
+}
