@@ -117,6 +117,9 @@ export default defineNuxtConfig({
       // has no indexable content to lose, and every entity URL 301s into it
       // with its own ?krs=/?teryt=. That is the bulk of the crawl budget.
       "/eksploruj/tabela",
+      // Private by construction - an analysis is only readable by the people it
+      // has been shared with, so a crawler would get nothing but the shell.
+      "/eksploruj/analiza",
       // The bare page stays indexable; only the facet permutations are barred.
       "/lista?",
     ],
@@ -258,6 +261,14 @@ export default defineNuxtConfig({
   routeRules: {
     "/": { swr: 3600 },
     "/admin/**": { ssr: false },
+
+    // Every byte of an analysis comes out of Firestore under the reader's own
+    // credentials, so there is nothing for the server to render - and rendering
+    // it anyway would mean the node running SSR deciding who may read a
+    // collaborator's case file, which is the one thing the firestore rules are
+    // there to do.
+    "/eksploruj/analiza": { ssr: false },
+    "/eksploruj/analiza/**": { ssr: false },
 
     // Nitro only injects a Cache-Control route rule for public assets mounted
     // under a sub-path (it zeroes maxAge for anything at the site root), so

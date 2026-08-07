@@ -73,6 +73,13 @@
           Rewizje
         </v-btn>
         <v-btn
+          :prepend-icon="mdiGraphOutline"
+          variant="text"
+          to="/eksploruj/analiza"
+        >
+          Analizy
+        </v-btn>
+        <v-btn
           v-if="isAdmin"
           :prepend-icon="mdiNoteTextOutline"
           variant="text"
@@ -114,6 +121,7 @@
 <script lang="ts" setup>
 import {
   mdiAccount,
+  mdiGraphOutline,
   mdiLightningBolt,
   mdiShieldAccount,
   mdiViewList,

@@ -26,6 +26,41 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // A collaborative case file, see shared/analysis.ts. The only collection
+    // whose readership is decided per document: `memberUids` lists everyone it
+    // has been shared with, and `members` says what each of them may do.
+    //
+    // Admins reach every analysis. That is what the moderation view relies on,
+    // and it is spelled out here rather than being an API-only power like the
+    // rest of the app's admin surface, because the whole document is read and
+    // written by the client SDK - there is no server route to put it behind.
+    match /analyses/{analysisId} {
+      allow read: if request.auth != null
+          && (request.auth.token.admin == true
+              || request.auth.uid in resource.data.memberUids);
+
+      allow create: if request.auth != null
+          && request.resource.data.ownerUid == request.auth.uid
+          && request.auth.uid in request.resource.data.memberUids;
+
+      // An editor may change the contents and re-share, but not hand the
+      // analysis to somebody else - `ownerUid` is what decides who can delete
+      // it, so letting an editor rewrite it would be an escalation. Sharing
+      // itself goes through /api/analyses/share, which is the only place that
+      // can turn an email address into a uid; this clause is what stops a
+      // hand-rolled write from doing the same thing badly.
+      allow update: if request.auth != null
+          && request.resource.data.ownerUid == resource.data.ownerUid
+          && (request.auth.token.admin == true
+              || resource.data.ownerUid == request.auth.uid
+              || (request.auth.uid in resource.data.members
+                  && resource.data.members[request.auth.uid] == "editor"));
+
+      allow delete: if request.auth != null
+          && (request.auth.token.admin == true
+              || resource.data.ownerUid == request.auth.uid);
+    }
+
     match /votes/{voteId} {
       allow read: if true;
       allow create, update, delete: if request.auth != null 
