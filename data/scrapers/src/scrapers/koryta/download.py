@@ -10,6 +10,7 @@ It defines two main pipelines:
 """
 
 import dataclasses
+import typing
 from datetime import datetime
 
 import pandas as pd
@@ -25,7 +26,7 @@ from scrapers.stores import (
     Context,
     Pipeline,
 )
-from scrapers.stores.file import DownloadableFile
+from scrapers.stores.file import DataRef, DownloadableFile
 
 CURRENT_DATE = datetime.now().strftime("%Y-%m-%d")
 
@@ -39,6 +40,19 @@ MAX_EXPORT_LOOKBACK_DAYS = 14
 KORYTA_DUMP = CloudStorage(
     prefix="hostname=koryta.pl", max_namespaces=["date"], binary=True
 )
+
+
+def export_timestamp(blob_ref: DownloadableFile) -> str | None:
+    """The `date=` namespace on a blob path, which is a full ISO timestamp.
+
+    Read off `url` rather than `filename`, because `filename` is the blob name
+    with every `/` turned into a `.` and the namespace is no longer a path
+    segment there.
+    """
+    for field in blob_ref.url.split("/"):
+        if field.startswith("date="):
+            return field.split("=", 1)[1]
+    return None
 
 
 class FirestoreCollection(Pipeline):
@@ -128,33 +142,59 @@ class FirestoreCollection(Pipeline):
             f"gs://koryta-pl-crawled/hostname=koryta.pl/ has probably stopped."
         )
 
+    def wanted_blobs(self, blobs: typing.Iterable[DataRef]) -> list[DownloadableFile]:
+        """This collection's blobs, from one export rather than a day's worth.
+
+        `self.date` names a day, but the `date=` namespace on a blob holds a
+        full timestamp - `date=2026-08-07T18:16:39.344Z` - so matching the day
+        as a substring selects every export made that day and reads each
+        document once per export. 2026-08-07 has two, and returned 12230 person
+        nodes for a site with 6115 people; the same doubling reaches
+        `KorytaVotes` as every human vote counted twice, which is somebody's
+        opinion weighed double in `PeopleScoreModel.human_votes`.
+
+        The newest export of the day wins, because a later dump supersedes the
+        earlier one rather than adding to it. With no date set the caller wants
+        everything it can see - `KorytaDiffer` compares one export against
+        another - so nothing is dropped there.
+        """
+        selected = []
+        for blob in blobs:
+            assert isinstance(blob, DownloadableFile)
+            if (
+                # Only outputs hold exported documents.
+                "output" in blob.filename
+                and self.collection_name in blob.filename
+                and (not self.date or f"date={self.date}" in blob.filename)
+            ):
+                selected.append(blob)
+
+        if not self.date:
+            return selected
+
+        stamps = {
+            stamp for blob in selected if (stamp := export_timestamp(blob)) is not None
+        }
+        if len(stamps) <= 1:
+            return selected
+
+        newest = max(stamps)
+        print(
+            f"{len(stamps)} exports on {self.date}; reading {newest} and "
+            f"ignoring the {len(stamps) - 1} earlier"
+        )
+        return [blob for blob in selected if export_timestamp(blob) == newest]
+
     def process(self, ctx: Context):
         """
         List the objects from the specified Firestore collection and output entities.
         """
         output = []
-        blobs = list(
-            ctx.io.list_files(CloudStorage(prefix="hostname=koryta.pl", binary=True))
+        blobs = ctx.io.list_files(
+            CloudStorage(prefix="hostname=koryta.pl", binary=True)
         )
-        for blob_ref in tqdm(blobs):
-            assert isinstance(blob_ref, DownloadableFile)
-
-            date: str | None = None
-            for fields in blob_ref.url.split("/"):
-                if fields.startswith("date="):
-                    date = fields.split("=")[1]
-                    break
-
-            if "output" not in blob_ref.filename:
-                # Process only outputs that contain exported documents
-                continue
-            if self.date and f"date={self.date}" not in blob_ref.filename:
-                # If a specific date is set, skip other dates
-                continue
-            if self.collection_name not in blob_ref.filename:
-                # Skip files that do not belong to the specified collection
-                continue
-
+        for blob_ref in tqdm(self.wanted_blobs(blobs)):
+            date = export_timestamp(blob_ref)
             content = ctx.io.read_data(blob_ref).read_file()
 
             for data in parse_leveldb_documents(content):
