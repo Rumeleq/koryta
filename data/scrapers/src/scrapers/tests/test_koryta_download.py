@@ -18,8 +18,16 @@ from scrapers.koryta.download import (
     KorytaCompanies,
     KorytaPeople,
     KorytaVotes,
+    export_timestamp,
 )
 from scrapers.stores import Context
+from scrapers.stores.file import DownloadableFile
+
+
+def blob(stamp: str, kind: str = "nodes", part: str = "output-0") -> DownloadableFile:
+    """A blob ref shaped like the ones `Client.list_blobs` hands back."""
+    name = f"hostname=koryta.pl/date={stamp}/all_namespaces/kind_{kind}/{part}"
+    return DownloadableFile(f"gs://koryta-pl-crawled/{name}", name.replace("/", "."))
 
 
 def mock_ctx() -> Mock:
@@ -177,6 +185,70 @@ class TestPipelinesFallBack(unittest.TestCase):
 
         self.assertEqual(len(df), 1)
         self.assertEqual(df.iloc[0]["krs"], "0000123456")
+
+
+class TestWantedBlobs(unittest.TestCase):
+    """A day can hold more than one export; only the newest should be read."""
+
+    EARLY = "2026-08-07T07:55:08.653Z"
+    LATE = "2026-08-07T18:16:39.344Z"
+
+    def test_reads_only_the_newest_export_of_the_day(self):
+        blobs = [
+            blob(self.EARLY, part="output-0"),
+            blob(self.EARLY, part="output-1"),
+            blob(self.LATE, part="output-0"),
+            blob(self.LATE, part="output-1"),
+        ]
+        wanted = FirestoreCollection("nodes", date="2026-08-07").wanted_blobs(blobs)
+
+        self.assertEqual(len(wanted), 2)
+        self.assertEqual({export_timestamp(b) for b in wanted}, {self.LATE})
+
+    def test_a_single_export_is_untouched(self):
+        blobs = [blob(self.LATE, part="output-0"), blob(self.LATE, part="output-1")]
+        wanted = FirestoreCollection("nodes", date="2026-08-07").wanted_blobs(blobs)
+        self.assertEqual(len(wanted), 2)
+
+    def test_other_days_and_other_collections_are_dropped(self):
+        blobs = [
+            blob(self.LATE, kind="nodes"),
+            blob(self.LATE, kind="votes"),
+            blob("2026-08-06T07:55:00.000Z", kind="nodes"),
+        ]
+        wanted = FirestoreCollection("votes", date="2026-08-07").wanted_blobs(blobs)
+
+        self.assertEqual(len(wanted), 1)
+        self.assertIn("kind_votes", wanted[0].url)
+
+    def test_non_output_files_are_dropped(self):
+        blobs = [
+            blob(self.LATE, part="output-0"),
+            blob(self.LATE, part="all_namespaces_kind_nodes.export_metadata"),
+        ]
+        wanted = FirestoreCollection("nodes", date="2026-08-07").wanted_blobs(blobs)
+
+        self.assertEqual(len(wanted), 1)
+        self.assertTrue(wanted[0].url.endswith("output-0"))
+
+    def test_without_a_date_every_export_is_kept(self):
+        # `KorytaDiffer` compares one export against another, so it needs them
+        # all - the de-duplication is only meaningful within a single day.
+        blobs = [blob(self.EARLY), blob(self.LATE), blob("2026-08-06T07:55:00.000Z")]
+        wanted = FirestoreCollection("nodes").wanted_blobs(blobs)
+        self.assertEqual(len(wanted), 3)
+
+
+class TestExportTimestamp(unittest.TestCase):
+    def test_reads_the_full_timestamp_off_the_path(self):
+        self.assertEqual(
+            export_timestamp(blob("2026-08-07T18:16:39.344Z")),
+            "2026-08-07T18:16:39.344Z",
+        )
+
+    def test_none_when_the_path_carries_no_date(self):
+        ref = DownloadableFile("gs://koryta-pl-crawled/somewhere/output-0", "x")
+        self.assertIsNone(export_timestamp(ref))
 
 
 if __name__ == "__main__":
