@@ -29,6 +29,12 @@ from scrapers.stores.file import DownloadableFile
 
 CURRENT_DATE = datetime.now().strftime("%Y-%m-%d")
 
+#: How far back `latest_on_or_before` walks when the day it was asked for has
+#: no export. The site dumps at least daily, so a gap wider than this means the
+#: export job itself has stopped, and quietly scoring against a fortnight-old
+#: snapshot of the site is worse than saying so.
+MAX_EXPORT_LOOKBACK_DAYS = 14
+
 
 KORYTA_DUMP = CloudStorage(
     prefix="hostname=koryta.pl", max_namespaces=["date"], binary=True
@@ -70,6 +76,57 @@ class FirestoreCollection(Pipeline):
         if self.date:
             base += f"_{self.date}"
         return base
+
+    @classmethod
+    def latest_on_or_before(
+        cls,
+        ctx: Context,
+        collection_name: str,
+        type_name: str | None = None,
+        date: str | None = None,
+        max_lookback_days: int = MAX_EXPORT_LOOKBACK_DAYS,
+    ) -> tuple[pd.DataFrame, str]:
+        """The newest export on or before `date`, and the date it came from.
+
+        The site dumps once or twice a day, so a pipeline that asks for today
+        before that day's dump has landed finds nothing. Walking back a day at
+        a time is what `KorytaPeople` has always done; it lives here so that
+        every collection gets it rather than only the ones that spelled the
+        loop out. `KorytaVotes` did not, and an unlucky run therefore read zero
+        votes and said nothing - which reaches the scoring models as "no human
+        has ever voted on anybody", seeding them on published pages alone.
+
+        An empty result is read as "no export that day" rather than "the
+        collection is empty", which is the same assumption the loop has always
+        made and is safe for the collections here: a site with no people, no
+        places or no votes at all is not a state worth optimising for.
+
+        Bounded rather than `while True`: with no exports reachable at all - an
+        empty bucket, or credentials that can see none of it - an unbounded
+        walk lists the bucket once per simulated day forever instead of saying
+        what is wrong.
+        """
+        asked_for = date or CURRENT_DATE
+        date_read = asked_for
+        for _ in range(max_lookback_days + 1):
+            print(f"Reading {collection_name} for {date_read}")
+            df = cls(collection_name, type_name, date_read).process(ctx)
+            if len(df) > 0:
+                return df, date_read
+
+            print(
+                f"Found no {collection_name} for date {date_read}. "
+                "Going one day earlier"
+            )
+            date_read = (
+                datetime.strptime(date_read, "%Y-%m-%d") - pd.Timedelta(days=1)
+            ).strftime("%Y-%m-%d")
+
+        raise FileNotFoundError(
+            f"No {collection_name} export in the {max_lookback_days} days up to "
+            f"{asked_for}. The nightly Firestore dump to "
+            f"gs://koryta-pl-crawled/hostname=koryta.pl/ has probably stopped."
+        )
 
     def process(self, ctx: Context):
         """
@@ -135,21 +192,9 @@ class KorytaPeople(Pipeline[Person]):
         """
         Pipeline to process and output `Person` entities.
         """
-        date_read = self.date
-        while True:
-            print(f"Reading for {date_read}")
-            # TODO this should be probably inside of FirestoreCollection
-            input_documents = FirestoreCollection("nodes", "person", date_read)
-            df = input_documents.process(ctx)
-            print(df.head())
-
-            if len(df) > 0:
-                break
-
-            print(f"Found no people for date {date_read}. Going one day earlier")
-            date_read = (
-                datetime.strptime(date_read, "%Y-%m-%d") - pd.Timedelta(days=1)
-            ).strftime("%Y-%m-%d")
+        df, _ = FirestoreCollection.latest_on_or_before(
+            ctx, "nodes", "person", self.date
+        )
 
         outputs = []
         for data in tqdm(df.to_dict(orient="records")):
@@ -192,19 +237,9 @@ class KorytaCompanies(Pipeline[KorytaCompany]):
         return "company_koryta"
 
     def process(self, ctx: Context):
-        date_read = self.date
-        while True:
-            print(f"Reading for {date_read}")
-            input_documents = FirestoreCollection("nodes", "place", date_read)
-            df = input_documents.process(ctx)
-
-            if len(df) > 0:
-                break
-
-            print(f"Found no companies for date {date_read}. Going one day earlier")
-            date_read = (
-                datetime.strptime(date_read, "%Y-%m-%d") - pd.Timedelta(days=1)
-            ).strftime("%Y-%m-%d")
+        df, _ = FirestoreCollection.latest_on_or_before(
+            ctx, "nodes", "place", self.date
+        )
 
         outputs = []
         for data in tqdm(df.to_dict(orient="records")):
@@ -240,10 +275,9 @@ class KorytaVotes(Pipeline[PersonVote]):
 
     def process(self, ctx: Context):
         """
-        Pipeline to process and output `Person` entities.
+        Pipeline to process and output `PersonVote` entities.
         """
-        input_documents = FirestoreCollection("votes", date=self.date)
-        df = input_documents.process(ctx)
+        df, _ = FirestoreCollection.latest_on_or_before(ctx, "votes", date=self.date)
 
         outputs = []
         for data in tqdm(df.to_dict(orient="records")):
