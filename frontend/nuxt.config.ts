@@ -4,7 +4,6 @@ import { bundleSharpBinaries } from "./build/sharp-binaries";
 // Force IPv4 for emulators to avoid Node 17+ IPv6 issues
 process.env.FIRESTORE_EMULATOR_HOST = "127.0.0.1:8080";
 process.env.FIREBASE_AUTH_EMULATOR_HOST = "127.0.0.1:9099";
-process.env.FIREBASE_DATABASE_EMULATOR_HOST = "127.0.0.1:9000";
 const isLocal =
   !!process.env.VITEST ||
   process.env.USE_EMULATORS === "true" ||
@@ -213,10 +212,6 @@ export default defineNuxtConfig({
       firestore: {
         host: "127.0.0.1",
         port: 8080,
-      },
-      database: {
-        host: "127.0.0.1",
-        port: 9000,
       },
       storage: {
         host: "127.0.0.1",

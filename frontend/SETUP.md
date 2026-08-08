@@ -16,7 +16,7 @@ This guide explains how to set up the local development environment for the Kory
 
 ## Local Development
 
-To run the application locally with a full Firebase Emulator suite (Auth, Firestore, Realtime Database, Functions):
+To run the application locally with a full Firebase Emulator suite (Auth, Firestore, Functions):
 
 ```bash
 npm run dev:local
