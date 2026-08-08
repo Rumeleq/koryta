@@ -183,6 +183,35 @@ class ArticlePeopleMentioned:
 
 
 @dataclass
+class ArticleMentionJudge:
+    """LLM judgement of whether a known person really appears in an article.
+
+    One record per (article, person) pair that the rule-based proof suggested
+    as a match. Carries the person's profile (parties, regions, organizations)
+    and the LLM's binary verdict (``yes``/``no``) plus a free-text justification
+    grounded in the article. Used to filter out same-name coincidences that the
+    region/party/org heuristics cannot resolve.
+    """
+
+    __output_path__: ClassVar[Path] = Path(
+        "article_mention_judge/article_mention_judge.jsonl.tmp"
+    )
+
+    url: str
+    person: str
+    parties: list[str]
+    regions: list[str]
+    organizations: list[str]
+    judge_model: str
+    judge_version: int
+    verdict: str  # "yes" | "no" | "unknown"
+    justification: str
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+
+@dataclass
 class AffairTag:
     """A single affair/event tag with how often a person appeared next to it."""
 

@@ -22,6 +22,9 @@ from scrapers.article.pipelines import (
     ArticleKoryciarskiScores,
     ArticleParsed,
 )
+from scrapers.article.pipelines.mention_judge_pipeline import (
+    ArticleMentionJudgePipeline,
+)
 from scrapers.article.pipelines.people_affair_tags_pipeline import PeopleAffairTags
 from scrapers.cru.dump import CruDump
 from scrapers.cru.umowy import CruUmowy
@@ -49,6 +52,7 @@ PIPELINES = [
     ArticleFactsVerified,
     ArticleAnalyzed,
     ArticlePersonMentions,
+    ArticleMentionJudgePipeline,
     PeopleAffairTags,
     CompaniesKRS,
     Companies,
