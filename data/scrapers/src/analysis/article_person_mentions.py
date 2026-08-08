@@ -43,7 +43,7 @@ from scrapers.stores import (
 )
 
 JUDGE_VERSION = 1
-MAX_TOKENS = 1500
+MAX_TOKENS = 2000
 TEMPERATURE = 0.0
 TEXT_LIMIT = 30000
 
