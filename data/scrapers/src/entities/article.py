@@ -161,12 +161,13 @@ class ArticlePeopleMentioned:
     tags recovered from the article's ld+json metadata, and the people matched
     in its text, so a later pass can summarize the articles per person.
 
-    ``people_mentioned`` only lists people for whom at least one piece of
-    independent evidence (``proof``) confirmed the name match is not a
-    coincidence - the article's region matching the person's teryt, the person's
-    party appearing in the text, or one of the person's organizations (KRS)
-    being named. ``proof`` maps each confirmed person to the list of such
-    signals.
+    ``people_mentioned`` only lists people who survived two gates: at least one
+    rule-based proof signal (``proof`` - the article's region matching the
+    person's teryt, the person's party in the text, or one of the person's
+    organizations being named) AND an LLM judge verdict of ``yes`` (``judge``).
+    ``proof`` maps each candidate to the signals that matched; ``judge`` maps
+    them to the LLM's verdict and justification. Candidates the judge rejected
+    are listed in ``judge`` but not in ``people_mentioned``.
     """
 
     __output_path__: ClassVar[Path] = Path(
@@ -180,35 +181,7 @@ class ArticlePeopleMentioned:
     tags: list[str]
     people_mentioned: list[str]
     proof: dict[str, list[str]] = field(default_factory=dict)
-
-
-@dataclass
-class ArticleMentionJudge:
-    """LLM judgement of whether a known person really appears in an article.
-
-    One record per (article, person) pair that the rule-based proof suggested
-    as a match. Carries the person's profile (parties, regions, organizations)
-    and the LLM's binary verdict (``yes``/``no``) plus a free-text justification
-    grounded in the article. Used to filter out same-name coincidences that the
-    region/party/org heuristics cannot resolve.
-    """
-
-    __output_path__: ClassVar[Path] = Path(
-        "article_mention_judge/article_mention_judge.jsonl.tmp"
-    )
-
-    url: str
-    person: str
-    parties: list[str]
-    regions: list[str]
-    organizations: list[str]
-    judge_model: str
-    judge_version: int
-    verdict: str  # "yes" | "no" | "unknown"
-    justification: str
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    total_tokens: int = 0
+    judge: dict[str, dict[str, str]] = field(default_factory=dict)
 
 
 @dataclass

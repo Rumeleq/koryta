@@ -264,10 +264,6 @@ ignore_imports = [
     # PeopleAffairTags chains the ArticlePersonMentions output as a pipeline
     # source instead of hardcoding its jsonl path.
     "scrapers.article.pipelines.people_affair_tags_pipeline -> analysis.article_person_mentions",
-    # The mention judge reads the person profiles (regions/parties/orgs) that
-    # ArticlePersonMentions builds to disambiguate name matches.
-    "scrapers.article.pipelines.mention_judge_pipeline -> analysis.article_person_mentions",
-    "scrapers.article.pipelines.mention_judge_pipeline -> analysis.people",
 ]
 
 [[tool.importlinter.contracts]]

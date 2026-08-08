@@ -17,6 +17,7 @@ looked up in the article text. A person is kept only when at least one signal
 matches, and the ``proof`` dict records which ones did.
 """
 
+import asyncio
 import json
 import re
 import unicodedata
@@ -32,7 +33,21 @@ from entities.article import ArticlePeopleMentioned
 from scrapers.article.parse import date_iso_from_ld_json, title_from_ld_json
 from scrapers.article.pipelines.incremental import IncrementalJsonlPipeline
 from scrapers.article.pipelines.parsed_pipeline import ArticleParsed
-from scrapers.stores import VERSIONED_DIR, Context, iterate_pipeline_dict
+from scrapers.article.pipelines.pipeline_utils import llm_model
+from scrapers.stores import (
+    LLM,
+    VERSIONED_DIR,
+    Context,
+    LLMRequest,
+    iterate_pipeline_dict,
+)
+
+JUDGE_VERSION = 1
+MAX_TOKENS = 1500
+TEMPERATURE = 0.0
+TEXT_LIMIT = 30000
+
+_THINK_RE = re.compile(r"<think>.*?</think>", flags=re.DOTALL)
 
 # A word is capitalized when it starts with an uppercase Polish letter.
 _CAP = "A-ZĄĆĘŁŃÓŚŹŻ"
@@ -496,6 +511,210 @@ def _confirm_mentions(
     return confirmed
 
 
+_JUDGE_PROMPT = (
+    "Jesteś dokładnym weryfikatorem danych. Twoim zadaniem jest ocenić, czy "
+    "znana osoba NAPRAWDĘ występuje w danym artykule, czy mamy do czynienia z "
+    "przypadkiem, gdy w artykule występuje inna osoba o tym samym lub podobnym "
+    "imieniu i nazwisku (tzw. zbieżność nazwisk).\n\n"
+    "Poniżej podajemy: fragment artykułu, dane znanej osoby (partie, regiony, "
+    "organizacje, w których jest zarejestrowana) oraz sygnały dopasowania, "
+    "które zostały wykryte automatycznie.\n\n"
+    "Oceń, czy osoba opisana w artykule to ta sama znana osoba. Zwróć uwagę na:\n"
+    "- Czy artykuł podaje pełne imię i nazwisko lub jednoznacznie ją identyfikuje.\n"
+    "- Czy kontekst (partia, region, organizacja, stanowisko) zgadza się z danymi "
+    "znanej osoby. ROZBIEŻNOŚĆ w partii, regionie lub organizacji to mocny sygnał, "
+    "że to inna osoba o tym samym nazwisku.\n"
+    "- Czy osoba może mieć wiele partii w przeszłości - ale jeśli artykuł opisuje "
+    "ją jako działającą w innej partii lub przeciw innej partii, to prawdopodobnie "
+    "to NIE jest ta znana osoba.\n"
+    "- Czy nazwisko jest popularne (Nowak, Kowalski, Kamiński) - wtedy same "
+    "wystąpienia nazwiska NIE wystarczają, potrzebny jest zgodny kontekst.\n\n"
+    "Artykuł:\n{article}\n\n"
+    "Znana osoba: {name}\n"
+    "Partie w danych: {parties}\n"
+    "Regiony (kody TERYT) w danych: {regions}\n"
+    "Organizacje w danych: {orgs}\n"
+    "Wykryte sygnały dopasowania: {proof}\n\n"
+    "Odpowiedz zwięźle, w dwóch częściach:\n"
+    "1. Uzasadnienie (1-2 zdania): co w artykule potwierdza lub zaprzecza, że to "
+    "ta sama osoba.\n"
+    "2. Werdykt: TAK lub NIE (wyłącznie jedno słowo).\n\n"
+    "Format odpowiedzi:\n"
+    "Uzasadnienie: <twoje uzasadnienie>\n"
+    "Werdykt: TAK\n"
+)
+
+
+def _judge_request(
+    person: str,
+    profile: PersonProfile | None,
+    proof: list[str],
+    content: str,
+    model: str,
+) -> LLMRequest:
+    parties = sorted(profile.parties) if profile else []
+    regions = sorted(profile.woj | profile.powiat) if profile else []
+    orgs = sorted(profile.orgs) if profile else []
+    return LLMRequest(
+        prompt=_JUDGE_PROMPT.format(
+            article=content[:TEXT_LIMIT],
+            name=person,
+            parties=", ".join(parties) or "brak",
+            regions=", ".join(regions) or "brak",
+            orgs=", ".join(orgs) or "brak",
+            proof=", ".join(proof) or "brak",
+        ),
+        max_tokens=MAX_TOKENS,
+        temperature=TEMPERATURE,
+        model=model,
+        enable_thinking=True,
+    )
+
+
+def _parse_verdict(text: str) -> tuple[str, str]:
+    text = _THINK_RE.sub("", text or "")
+    lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
+    justification = ""
+    verdict = "unknown"
+    for line in lines:
+        low = line.lower()
+        if low.startswith("uzasadnienie") or low.startswith("justification"):
+            justification = line.split(":", 1)[1].strip() if ":" in line else line
+        elif "werdykt" in low or "verdict" in low:
+            val = line.split(":", 1)[1].strip().upper() if ":" in line else ""
+            if val in {"TAK", "NIE", "YES", "NO"}:
+                verdict = "yes" if val in {"TAK", "YES"} else "no"
+    if verdict == "unknown":
+        last = lines[-1].strip().upper() if lines else ""
+        if last in {"TAK", "NIE", "YES", "NO"}:
+            verdict = "yes" if last in {"TAK", "YES"} else "no"
+        else:
+            m = re.search(r"\b(TAK|NIE|YES|NO)\b\s*$", text.upper())
+            if m:
+                verdict = "yes" if m.group(1) in {"TAK", "YES"} else "no"
+    if not justification and lines:
+        justification = lines[0][:300]
+    return verdict, justification[:500]
+
+
+def _judge_row(
+    ctx: Context,
+    row: dict[str, Any],
+    confirmed: dict[str, list[str]],
+    verdicts: dict[str, tuple[str, str]],
+    model: str,
+) -> None:
+    """Emit one mentions row, keeping only judge-`yes` people."""
+    judge: dict[str, dict[str, str]] = {}
+    kept: list[str] = []
+    for person, signals in confirmed.items():
+        verdict, justification = verdicts.get(person, ("unknown", "no verdict"))
+        judge[person] = {"verdict": verdict, "justification": justification}
+        if verdict == "yes":
+            kept.append(person)
+    row["people_mentioned"] = sorted(kept)
+    row["proof"] = confirmed
+    row["judge"] = judge
+    ctx.io.dumper.insert_into(  # type: ignore[attr-defined]
+        ArticlePeopleMentioned(**row), []
+    )
+
+
+async def _judge_and_emit(
+    ctx: Context,
+    rows: list[dict[str, Any]],
+    contents: dict[str, str],
+    profiles: PersonProfileIndex,
+    *,
+    model: str,
+) -> None:
+    """Send every confirmed (article, person) pair to the LLM, then emit rows.
+
+    ``rows`` is the confirmed mentions in scan order; each row's ``confirmed``
+    maps person -> proof signals. Rows whose people are all judged are emitted
+    as soon as their last request lands, keeping memory bounded.
+    """
+    await LLM.from_context(ctx).check_health()
+    total = sum(len(row["confirmed"]) for row in rows)
+    if total == 0:
+        return
+
+    # request_id -> (row_index, person)
+    inflight: dict[int, tuple[int, str]] = {}
+    pending_counts = [len(row["confirmed"]) for row in rows]
+    verdicts: list[dict[str, tuple[str, str]]] = [{} for _ in rows]
+    done = [False] * len(rows)
+
+    def emit_if_done(row_index: int) -> None:
+        if done[row_index]:
+            return
+        done[row_index] = True
+        _judge_row(
+            ctx,
+            rows[row_index],
+            rows[row_index]["confirmed"],
+            verdicts[row_index],
+            model,
+        )
+
+    with tqdm(total=total, desc="Judging mentions", unit="pair") as bar:
+        async with LLM.from_context(ctx).response_pool() as pool:
+            for row_index, row in enumerate(rows):
+                content = contents.get(row["url"], "")
+                for person, proof in row["confirmed"].items():
+                    profile = profiles.profile(person)
+                    while pool.is_full():
+                        await _drain_judge(
+                            pool,
+                            inflight,
+                            pending_counts,
+                            verdicts,
+                            done,
+                            emit_if_done,
+                            bar,
+                        )
+                    request_id = await pool.put_request(
+                        _judge_request(person, profile, proof, content, model)
+                    )
+                    inflight[request_id] = (row_index, person)
+
+            while inflight:
+                await _drain_judge(
+                    pool,
+                    inflight,
+                    pending_counts,
+                    verdicts,
+                    done,
+                    emit_if_done,
+                    bar,
+                )
+
+
+async def _drain_judge(
+    pool, inflight, pending_counts, verdicts, done, emit_if_done, bar
+) -> None:
+    request_id, response = await pool.get_response()
+    row_index, person = inflight.pop(request_id)
+    if isinstance(response, Exception):
+        verdict, justification = "unknown", str(response)[:200]
+    else:
+        verdict, justification = _parse_verdict(response.content)
+    verdicts[row_index][person] = (verdict, justification)
+    pending_counts[row_index] -= 1
+    bar.update(1)
+    if pending_counts[row_index] == 0:
+        emit_if_done(row_index)
+
+
+def _print_llm_usage(ctx: Context) -> None:
+    llm = LLM.from_context(ctx)
+    print(
+        "Mention judge LLM usage: "
+        f"{int(getattr(llm, 'request_count', 0) or 0)} requests, "
+        f"{int(getattr(llm, 'total_tokens', 0) or 0)} total tokens"
+    )
+
+
 class ArticlePersonMentions(IncrementalJsonlPipeline[ArticlePeopleMentioned]):
     """Cross-reference people_merged with article_parsed to find mentions."""
 
@@ -504,6 +723,7 @@ class ArticlePersonMentions(IncrementalJsonlPipeline[ArticlePeopleMentioned]):
 
     people_merged: PeopleMerged
     parsed: ArticleParsed
+    llm: LLM
 
     @property
     def output_class(self):
@@ -534,8 +754,11 @@ class ArticlePersonMentions(IncrementalJsonlPipeline[ArticlePeopleMentioned]):
             print("No parsed articles found, nothing to emit")
             return pd.DataFrame()
 
-        emitted = 0
-        kept = 0
+        # Pass 1: scan parsed, keep the proof-confirmed rows (meta + person->proof)
+        # and the article content each row needs for the LLM judge.
+        rows: list[dict[str, Any]] = []
+        contents: dict[str, str] = {}
+        candidates = 0
         dropped = 0
         with parsed_path.open(encoding="utf-8") as f:
             for line in tqdm(f, desc="Scanning parsed articles", unit="article"):
@@ -561,22 +784,21 @@ class ArticlePersonMentions(IncrementalJsonlPipeline[ArticlePeopleMentioned]):
                 confirmed = _confirm_mentions(
                     names, content, row.get("domain"), profiles, domain_map
                 )
-                for _ in confirmed:
-                    kept += 1
                 dropped += len(names) - len(confirmed)
                 if not confirmed:
                     continue
                 meta = _mention_meta(row)
-                meta["people_mentioned"] = sorted(confirmed)
-                meta["proof"] = confirmed
-                ctx.io.dumper.insert_into(  # type: ignore[attr-defined]
-                    ArticlePeopleMentioned(**meta), []
-                )
-                emitted += 1
-                kept += len(confirmed)
+                meta["confirmed"] = confirmed
+                rows.append(meta)
+                contents[meta["url"]] = content
+                candidates += len(confirmed)
 
         print(
-            f"Emitted {emitted:,} mentions ({kept:,} people, {dropped:,} "
-            f"dropped for lack of proof)"
+            f"Confirmed {candidates:,} candidate people across {len(rows):,} "
+            f"articles ({dropped:,} dropped for lack of proof)"
         )
+
+        model = llm_model()
+        asyncio.run(_judge_and_emit(ctx, rows, contents, profiles, model=model))
+        _print_llm_usage(ctx)
         return pd.DataFrame()

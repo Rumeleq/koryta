@@ -10,6 +10,7 @@ from analysis.article_person_mentions import (
     _ascii_lower,
     _confirm_mentions,
     _org_match_terms,
+    _parse_verdict,
     _party_match_terms,
     _stem,
 )
@@ -163,6 +164,29 @@ def test_entity_has_proof_field():
         tags=[],
         people_mentioned=["Jan Kowalski"],
         proof={"Jan Kowalski": ["region:powiat"]},
+        judge={
+            "Jan Kowalski": {"verdict": "yes", "justification": "kontekst się zgadza"}
+        },
     )
     assert record.proof["Jan Kowalski"] == ["region:powiat"]
-    assert json.dumps({"proof": record.proof})  # serializable
+    assert record.judge["Jan Kowalski"]["verdict"] == "yes"
+    assert json.dumps({"proof": record.proof, "judge": record.judge})  # serializable
+
+
+def test_parse_verdict_justification_then_label():
+    text = (
+        "<think>Sprawdzam kontekst.</think>\n"
+        "Uzasadnienie: Artykuł opisuje Marka Sowę jako krytyka rządzących, "
+        "a w danych ma partie PiS - to rozbieżność.\n"
+        "Werdykt: NIE\n"
+    )
+    verdict, justification = _parse_verdict(text)
+    assert verdict == "no"
+    assert "krytyka rządzących" in justification
+
+
+def test_parse_verdict_bare_label_fallback():
+    verdict, _ = _parse_verdict("Artykuł wyraźnie opisuje posła PiS z Podlasia. TAK")
+    assert verdict == "yes"
+    verdict, _ = _parse_verdict("Nie mam pewności, czy to ta sama osoba.")
+    assert verdict == "unknown"
