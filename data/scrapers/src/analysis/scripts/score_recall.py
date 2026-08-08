@@ -49,11 +49,7 @@ if str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
 
 from analysis.scores import PEOPLE_SCORE_MODELS  # noqa: E402
-from analysis.scores.base import (  # noqa: E402
-    IS_PUBLIC_SCORE,
-    Population,
-    banded_scores,
-)
+from analysis.scores.base import Population, banded_scores  # noqa: E402
 from analysis.scores.company import (  # noqa: E402
     NormalizationFactors,
     PeopleScores,
@@ -238,6 +234,43 @@ def report(
     }
 
 
+def distinct_shortlist_size(base: Population) -> int:
+    """How many people the shortlist actually names.
+
+    `FirestoreCollection` selects its export by a `date=<day>` substring, so a
+    day with two exports yields every node twice and `shortlist` carries every
+    name twice with it. Scoring is unaffected - the models key on name through
+    dicts - but a doubled denominator would halve every control rate reported
+    here, which is the number the recall is judged against.
+    """
+    size = len(set(base.shortlist))
+    if size != len(base.shortlist):
+        print(
+            f"note: shortlist had {len(base.shortlist)} entries for {size} "
+            "distinct names - the export was read twice."
+        )
+    return size
+
+
+def answer_key(base: Population, model, ctx) -> tuple[list[str], list[str], list[str]]:
+    """The published, the upvoted-or-published, and the downvoted.
+
+    Which positives were published has to be read back off the koryta frame
+    rather than inferred from the seed weight. `Population` stores a published
+    person at `IS_PUBLIC_SCORE` and a voted-on person at their own vote, so a
+    `weight >= IS_PUBLIC_SCORE` test also catches everybody a human scored 3 or
+    more - 150 people on today's data - reporting them as published and
+    draining the upvoted group that is meant to be the comparison.
+    """
+    positives = sorted(n for n, w in base.seed_weights.items() if w > 0)
+    negatives = sorted(n for n, w in base.seed_weights.items() if w < 0)
+
+    koryta = model.people_koryta.read_or_process(ctx)
+    is_public = dict(zip(koryta["full_name"], koryta["is_public"].fillna(False)))
+    published = sorted(n for n in positives if bool(is_public.get(n, False)))
+    return published, positives, negatives
+
+
 def print_answer_key(published, positives, negatives, known, shortlist_size) -> None:
     """What the models are being graded against, and what it cannot cover."""
     print("=" * 72)
@@ -286,21 +319,8 @@ def main() -> int:
     base = models[0].population(ctx)
     payloads = models[0].people_payloads.read_or_process(ctx)
 
-    # `KorytaPeople` selects its export by a `date=<day>` substring, so a day
-    # with two exports yields every node twice and `shortlist` carries every
-    # name twice with it. Scoring is unaffected - the models key on name
-    # through dicts - but a doubled denominator would halve every control rate
-    # printed below, so count distinct names here.
-    shortlist_size = len(set(base.shortlist))
-    if shortlist_size != len(base.shortlist):
-        print(
-            f"note: shortlist had {len(base.shortlist)} entries for "
-            f"{shortlist_size} distinct names - the export was read twice."
-        )
-
-    positives = sorted(n for n, w in base.seed_weights.items() if w > 0)
-    negatives = sorted(n for n, w in base.seed_weights.items() if w < 0)
-    published = sorted(n for n, w in base.seed_weights.items() if w >= IS_PUBLIC_SCORE)
+    shortlist_size = distinct_shortlist_size(base)
+    published, positives, negatives = answer_key(base, models[0], ctx)
 
     def known(names):
         return [n for n in names if n in base.employments]
