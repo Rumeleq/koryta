@@ -287,7 +287,10 @@ describe("api/ingest/person", () => {
 
       mockGet.mockResolvedValueOnce({
         empty: false,
-        docs: [{ id: "person-id", ref: mockRef }],
+        // These tests are about the candidacy rather than the person, so the
+        // node carries nothing - `data()` still has to be there, because the
+        // person branch reads the visibility off the document it looked up.
+        docs: [{ id: "person-id", ref: mockRef, data: () => ({}) }],
       });
       mockGet.mockResolvedValueOnce({
         empty: false,
@@ -569,14 +572,25 @@ describe("api/ingest/person", () => {
   });
 
   describe("a person the database already has", () => {
-    /** Queue a lookup that finds `nodes` already holding this person. */
-    function personExists(stored: Record<string, unknown>) {
+    /** Queue a lookup that finds `nodes` already holding this person.
+     *
+     * `stored` is what a revision would carry; `published` is the node's own
+     * visibility, which no revision carries and which the lookup reads off the
+     * document itself.
+     */
+    function personExists(stored: Record<string, unknown>, published = false) {
       mockGet.mockReset();
       mockDoc.mockReset();
       mockDoc.mockReturnValue({ id: "person-id", ref: mockRef });
       mockGet.mockResolvedValueOnce({
         empty: false,
-        docs: [{ id: "person-id", ref: mockRef }],
+        docs: [
+          {
+            id: "person-id",
+            ref: mockRef,
+            data: () => ({ ...stored, published }),
+          },
+        ],
       });
       mockBaseNodeFields.mockResolvedValue(stored);
     }
@@ -602,6 +616,61 @@ describe("api/ingest/person", () => {
         expect.anything(),
         expect.objectContaining({ parties: ["PiS"] }),
         true,
+        false,
+        false,
+      );
+    });
+
+    it("leaves a live page live", async () => {
+      // A revision is written to its target with `set`, and `published` is not
+      // part of any revision, so an update that does not carry it takes the
+      // page off the site. Re-running the scrapers over the 889 published
+      // people did exactly that.
+      personExists({ name: "Test Person", type: "person", parties: [] }, true);
+      mockReadBody.mockResolvedValue({
+        name: "Test Person",
+        parties: ["PiS"],
+        companies: [],
+        elections: [],
+      });
+
+      await handler({} as any);
+
+      expect(createRevisionTransaction).toHaveBeenCalledWith(
+        mockDb,
+        expect.anything(),
+        expect.objectContaining({ uid: "test-user-id" }),
+        expect.anything(),
+        expect.anything(),
+        true,
+        // A live page's node is a copy of an approved revision, so the update
+        // has to be approved with it rather than left pending.
+        true,
+        true,
+      );
+    });
+
+    it("leaves a draft a draft", async () => {
+      // The other half of the same rule: learning a party about somebody
+      // nobody has published must not publish them.
+      personExists({ name: "Test Person", type: "person", parties: [] }, false);
+      mockReadBody.mockResolvedValue({
+        name: "Test Person",
+        parties: ["PiS"],
+        companies: [],
+        elections: [],
+      });
+
+      await handler({} as any);
+
+      expect(createRevisionTransaction).toHaveBeenCalledWith(
+        mockDb,
+        expect.anything(),
+        expect.objectContaining({ uid: "test-user-id" }),
+        expect.anything(),
+        expect.anything(),
+        true,
+        false,
         false,
       );
     });
@@ -634,6 +703,7 @@ describe("api/ingest/person", () => {
           wikipedia: "https://pl.wikipedia.org/wiki/Test",
         }),
         true,
+        false,
         false,
       );
     });
