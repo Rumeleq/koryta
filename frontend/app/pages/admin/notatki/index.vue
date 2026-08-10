@@ -18,7 +18,27 @@
       </v-btn>
     </div>
 
-    <v-card class="mb-4 pa-3">
+    <v-alert
+      v-if="singleNote"
+      class="mb-4"
+      type="info"
+      variant="tonal"
+      density="compact"
+    >
+      <div class="d-flex align-center justify-space-between flex-wrap ga-2">
+        <span>Pojedyncza notatka, otwarta z linku.</span>
+        <v-btn
+          size="small"
+          variant="text"
+          :prepend-icon="mdiFormatListBulleted"
+          @click="filterNote = null"
+        >
+          Pokaż wszystkie
+        </v-btn>
+      </div>
+    </v-alert>
+
+    <v-card v-else class="mb-4 pa-3">
       <v-row dense>
         <v-col cols="12" md="4">
           <v-text-field
@@ -93,10 +113,17 @@
         loading-text="Ładowanie..."
         items-per-page-text="Wierszy na stronę:"
       >
+        <!-- The date doubles as the entry's permalink. A reviewer working
+             through the queue needs a way to hand one row to somebody else,
+             and the date is the one cell that was carrying nothing else. -->
         <template #[`item.createdAt`]="{ item }">
-          <span class="text-no-wrap text-caption">
+          <NuxtLink
+            class="text-no-wrap text-caption"
+            :to="{ path: '/admin/notatki', query: { note: item.key } }"
+            title="Link do tej notatki"
+          >
             {{ formatDate(item.createdAt) }}
-          </span>
+          </NuxtLink>
         </template>
 
         <template #[`item.nodeName`]="{ item }">
@@ -136,7 +163,15 @@
 
         <template #[`item.note`]="{ item }">
           <div class="note-cell py-1">
-            <div class="note-text" :title="item.note">{{ item.note }}</div>
+            <!-- Clamped in the queue so a page of rows stays scannable, whole
+                 when the link opened this one entry - there is nothing below
+                 it to keep short for. -->
+            <div
+              :class="singleNote ? 'note-text-full' : 'note-text'"
+              :title="item.note"
+            >
+              {{ item.note }}
+            </div>
             <a
               v-if="item.url"
               :href="item.url"
@@ -214,6 +249,7 @@ import {
   mdiAccountOutline,
   mdiCommentQuestionOutline,
   mdiFileDocumentOutline,
+  mdiFormatListBulleted,
   mdiGestureTapButton,
   mdiHelp,
   mdiLink,
@@ -295,6 +331,12 @@ const filterStatus = stringFilter("status");
 const filterAdminType = stringFilter("adminType");
 const filterNodeType = stringFilter("nodeType");
 const filterSearch = stringFilter("q");
+
+/** The entry a permalink named, if this page was opened from one. Not a filter
+ * but a selector - it addresses one row, so the filter card has nothing left
+ * to narrow and is put away while it is set. */
+const filterNote = stringFilter("note");
+const singleNote = computed(() => Boolean(filterNote.value));
 
 // Typing runs ahead of the url so every keystroke does not push a history entry
 // and a request.
@@ -420,6 +462,7 @@ const apiQuery = computed(() => ({
   deferred: filterAdminType.value === "deferred" ? "true" : undefined,
   nodeType: filterNodeType.value || undefined,
   q: filterSearch.value || undefined,
+  note: filterNote.value || undefined,
 }));
 
 // Requests can land out of order once a filter and a page change chase each
@@ -523,6 +566,10 @@ const formatDate = (value: string | null) =>
 .note-cell {
   min-width: 260px;
   max-width: 520px;
+}
+
+.note-text-full {
+  white-space: pre-wrap;
 }
 
 .note-text {

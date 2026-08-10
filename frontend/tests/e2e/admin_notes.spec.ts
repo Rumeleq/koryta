@@ -112,6 +112,25 @@ test.describe("Admin notes queue", () => {
     });
     await expect(rows).toHaveCount(1);
 
+    // The date is the entry's permalink, so one row can be handed to somebody
+    // else to resolve. It carries nothing but the entry, dropping the node
+    // type filter that was narrowing the queue around it.
+    await rows.first().getByTitle("Link do tej notatki").click();
+    await expect(page).toHaveURL(/note=/);
+    await expect(page).not.toHaveURL(/nodeType=/);
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText(`nowa notatka ${stamp}`);
+    await expect(page.locator(".v-alert")).toContainText("Pojedyncza notatka");
+
+    // And it survives being pasted somewhere and opened cold, which is the
+    // only way it is ever going to be used.
+    const permalink = page.url();
+    await page.goto(permalink, { waitUntil: "domcontentloaded" });
+    await expect(rows.first()).toContainText(`nowa notatka ${stamp}`, {
+      timeout: 30000,
+    });
+    await expect(rows).toHaveCount(1);
+
     // Clearing the type filter and asking for what is still open hides the
     // entry an admin already signed off.
     await page.goto(`${queue}&status=unresolved`, {

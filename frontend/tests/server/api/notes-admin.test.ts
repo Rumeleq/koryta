@@ -280,6 +280,50 @@ describe("/api/notes/admin", () => {
     expect(byAdminType.notes.map((n) => n.note)).toEqual(["załatwione"]);
   });
 
+  it("answers a permalink with the one entry it names", async () => {
+    mockNotesGet.mockResolvedValue({
+      docs: [
+        noteDoc("note-1", {
+          nodeId: "node-1",
+          userUid: "user-a",
+          sources: [
+            { note: "pierwsza" },
+            { note: "druga", adminStatus: "resolved" },
+          ],
+        }),
+        noteDoc("note-2", {
+          nodeId: "node-2",
+          userUid: "user-b",
+          sources: [{ note: "o spółce" }],
+        }),
+      ],
+    });
+    mockGetAll.mockResolvedValue([
+      nodeDoc("node-1", "Jan Testowy", "person"),
+      nodeDoc("node-2", "Spółka Testowa", "place"),
+    ]);
+
+    const linked = (await callHandler({ note: "note-1:1" })) as Result;
+    expect(linked.total).toBe(1);
+    expect(linked.notes.map((n) => n.note)).toEqual(["druga"]);
+
+    // The whole point of a permalink: a filter left over in the url beside it
+    // cannot empty the page the link was sent to open.
+    const despiteFilters = (await callHandler({
+      note: "note-1:0",
+      status: "resolved",
+      nodeType: "place",
+      q: "coś czego tam nie ma",
+      page: 3,
+    })) as Result;
+    expect(despiteFilters.notes.map((n) => n.note)).toEqual(["pierwsza"]);
+
+    // An entry that has since been deleted answers empty rather than falling
+    // back to the whole queue.
+    const gone = (await callHandler({ note: "note-1:9" })) as Result;
+    expect(gone).toEqual({ notes: [], total: 0 });
+  });
+
   it("serves the phone queue: untyped entries nobody handed back", async () => {
     // What /admin/notatki/kategoryzacja asks for. An entry a reviewer could
     // not classify there is marked deferred and must not come round again.
