@@ -22,6 +22,10 @@ const queryValidator = z.object({
   nodeType: z.enum(["person", "place", "article", "region"]).optional(),
   /** Free text over the note, its url and the name of the node it is on. */
   q: z.string().min(1).optional(),
+  /** One entry, addressed by its row key - `<noteId>:<sourceIndex>`. A
+   * selector rather than a filter: it names the entry to answer with, so it
+   * takes precedence over everything above. */
+  note: z.string().min(1).optional(),
 
   sortBy: z
     .enum(["createdAt", "nodeName", "nodeType", "kind", "adminStatus"])
@@ -47,6 +51,15 @@ export default defineEventHandler(async (event) => {
 
   const query = await getValidatedQuery(event, (q) => queryValidator.parse(q));
   const rows = await getNoteRows(getFirestore("koryta-pl"));
+
+  // A link to one entry has to open that entry. Answering it as one more
+  // filter would let a `status` or `q` left over in the url quietly empty the
+  // page the link was sent to open, which is the one thing a permalink may not
+  // do - so it is answered on its own, before any of them.
+  if (query.note) {
+    const row = rows.find((candidate) => candidate.key === query.note);
+    return { notes: row ? [row] : [], total: row ? 1 : 0 };
+  }
 
   const needle = query.q?.toLowerCase();
   const matching = rows.filter((row) => {
