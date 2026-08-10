@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
+  applyRevision,
   getRevisionsForNodes,
   createRevisionTransaction,
   proposalId,
@@ -18,6 +19,7 @@ vi.mock("firebase-admin/firestore", () => {
     Timestamp: {
       now: vi.fn(() => ({ toMillis: () => 1234567890 })),
     },
+    FieldValue: { delete: vi.fn(() => "<delete>") },
     // the rest are types and don't need mocking at runtime
   };
 });
@@ -140,15 +142,9 @@ describe("createRevisionTransaction", () => {
     const targetRef = nodeRef("node-1");
     const data = { title: "New Title" };
 
-    createRevisionTransaction(
-      mockDb,
-      mockBatch,
-      user,
-      targetRef,
-      data,
-      false,
-      true,
-    );
+    createRevisionTransaction(mockDb, mockBatch, user, targetRef, data, {
+      approve: true,
+    });
 
     const revisionDoc = vi.mocked(mockBatch.set).mock.calls[0][1] as {
       data: Record<string, unknown>;
@@ -167,16 +163,10 @@ describe("createRevisionTransaction", () => {
     const targetRef = nodeRef("node-1");
     const data = { title: "New Title" };
 
-    createRevisionTransaction(
-      mockDb,
-      mockBatch,
-      user,
-      targetRef,
-      data,
-      false,
-      true,
-      false,
-    );
+    createRevisionTransaction(mockDb, mockBatch, user, targetRef, data, {
+      approve: true,
+      published: false,
+    });
 
     const revisionDoc = vi.mocked(mockBatch.set).mock.calls[0][1] as {
       data: Record<string, unknown>;
@@ -209,6 +199,196 @@ describe("createRevisionTransaction", () => {
       node_id: "edge-1",
       collection: "edges",
     });
+  });
+
+  describe("updating a document that already exists", () => {
+    /** A published person as the export has them: the data a revision states,
+     * and the fields the node owns and no revision carries. */
+    const stored = {
+      name: "Krystian Probierz",
+      type: "person",
+      published: true,
+      revision_id: { id: "old-rev" },
+      votes: { interesting: 3 },
+      nameChunksLower: ["k", "kr"],
+      stats: {
+        isApproved: true,
+        notesCount: 2,
+        nodeGroupSize: 4,
+        edges: { all: {}, approved: {} },
+      },
+    };
+
+    /** What `set` was told to write to the node. */
+    function targetWrite(
+      options: Parameters<typeof createRevisionTransaction>[5],
+    ) {
+      createRevisionTransaction(
+        mockDb,
+        mockBatch,
+        { uid: "test-user" },
+        nodeRef("node-1"),
+        { name: "Krystian Probierz", type: "person", parties: ["PiS"] },
+        options,
+      );
+      return vi.mocked(mockBatch.set).mock.calls[1][1] as Record<
+        string,
+        unknown
+      >;
+    }
+
+    it("keeps the stats the listings filter on", () => {
+      // `/api/nodes` filters on `stats.isApproved == true`, and a Firestore
+      // equality filter does not match a document that lacks the field at all -
+      // so dropping this took a re-ingested person out of every listing while
+      // leaving their page up.
+      expect(targetWrite({ approve: true, stored }).stats).toEqual(
+        stored.stats,
+      );
+    });
+
+    it("keeps the votes cast on the document", () => {
+      expect(targetWrite({ approve: true, stored }).votes).toEqual(
+        stored.votes,
+      );
+    });
+
+    it("keeps the page's visibility without being told it", () => {
+      // The caller says what changed, not who may see it.
+      expect(targetWrite({ approve: true, stored }).published).toBe(true);
+    });
+
+    it("lets the caller override the stored visibility", () => {
+      // Publishing or hiding a document is exactly this decision.
+      expect(
+        targetWrite({ approve: true, stored, published: false }).published,
+      ).toBe(false);
+    });
+
+    it("does not let a revision restore a stale count over the live one", () => {
+      // Revisions written before the internal fields were stripped out carry a
+      // snapshot of them. The document owns those fields; the revision does not
+      // get to speak for them.
+      createRevisionTransaction(
+        mockDb,
+        mockBatch,
+        { uid: "test-user" },
+        nodeRef("node-1"),
+        { name: "Krystian Probierz", stats: { notesCount: 99 } },
+        { approve: true, stored },
+      );
+      const targetData = vi.mocked(mockBatch.set).mock.calls[1][1] as Record<
+        string,
+        unknown
+      >;
+      expect(targetData.stats).toEqual(stored.stats);
+    });
+
+    it("keeps a removed page removed", () => {
+      // An approved removal is a decision, and a scraper re-run is not a review
+      // of it. `pageIsPublic` reads `deleted` too, so losing it would put the
+      // page back up.
+      const removed = { ...stored, deleted: true, delete_reason: "duplicate" };
+      const targetData = targetWrite({ approve: true, stored: removed });
+      expect(targetData.deleted).toBe(true);
+      expect(targetData.delete_reason).toBe("duplicate");
+    });
+
+    it("carries nothing when there is no stored document to carry from", () => {
+      // A document being created owns nothing yet.
+      expect(targetWrite({ approve: true, published: true })).toEqual({
+        name: "Krystian Probierz",
+        type: "person",
+        parties: ["PiS"],
+        revision_id: { id: "new-rev-id" },
+        published: true,
+      });
+    });
+
+    it("still states the change itself", () => {
+      // The carry-over is of what the node owns, not of what it said.
+      expect(targetWrite({ approve: true, stored }).parties).toEqual(["PiS"]);
+    });
+  });
+});
+
+describe("applyRevision", () => {
+  const user = { uid: "reviewer" };
+  const revisionRef = { id: "rev-2" } as unknown as DocumentReference;
+
+  /** Approve `revision` over a target that currently holds `stored`, and
+   * return what the target was written with. */
+  async function approveOver(
+    stored: Record<string, unknown>,
+    data: Record<string, unknown>,
+    publish?: boolean,
+  ) {
+    const batch = { set: vi.fn(), update: vi.fn(), commit: vi.fn() };
+    const targetRef = {
+      id: "node-1",
+      parent: { id: "nodes" },
+      get: vi.fn().mockResolvedValue({ data: () => stored }),
+    };
+    const db = {
+      collection: vi.fn(() => ({ doc: vi.fn(() => targetRef) })),
+      batch: vi.fn(() => batch),
+    } as unknown as Firestore;
+
+    await applyRevision(
+      db,
+      revisionRef,
+      { node_id: "node-1", collection: "nodes", data } as never,
+      user,
+      publish,
+    );
+    return batch.set.mock.calls[0]![1] as Record<string, unknown>;
+  }
+
+  it("keeps the counters and votes the node owns", async () => {
+    // The same carry `createRevisionTransaction` makes, through the same
+    // function - the two writing the same document by different rules is how
+    // `stats` came to be dropped by one of them.
+    const written = await approveOver(
+      { stats: { isApproved: true, notesCount: 2 }, votes: { interesting: 3 } },
+      { name: "Krystian Probierz" },
+    );
+    expect(written.stats).toEqual({ isApproved: true, notesCount: 2 });
+    expect(written.votes).toEqual({ interesting: 3 });
+  });
+
+  it("points the node at the revision being approved", async () => {
+    const written = await approveOver({}, { name: "Krystian Probierz" });
+    expect(written.revision_id).toBe(revisionRef);
+  });
+
+  it("does not change who can see the page unless told to", async () => {
+    expect((await approveOver({ published: true }, {})).published).toBe(true);
+    expect((await approveOver({ published: false }, {})).published).toBe(false);
+  });
+
+  it("publishes when told to", async () => {
+    expect((await approveOver({ published: false }, {}, true)).published).toBe(
+      true,
+    );
+  });
+
+  it("applies a removal, which states `deleted` in its own data", async () => {
+    const written = await approveOver(
+      { published: true },
+      { deleted: true, delete_reason: "duplicate" },
+    );
+    expect(written.deleted).toBe(true);
+    expect(written.delete_reason).toBe("duplicate");
+  });
+
+  it("does not resurrect a removed page by approving an ordinary edit", async () => {
+    // A removal is a decision on the record; a later content edit is not a
+    // review of it.
+    const written = await approveOver(
+      { deleted: true, delete_reason: "duplicate" },
+      { name: "Krystian Probierz" },
+    );
+    expect(written.deleted).toBe(true);
   });
 });
 

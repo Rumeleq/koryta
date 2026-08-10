@@ -59,8 +59,6 @@ vi.mock("../../../../server/utils/auth", async (importOriginal) => ({
   getUser: (...args: unknown[]) => mockGetUser(...args),
 }));
 
-const mockBaseNodeFields = vi.fn().mockResolvedValue({});
-
 vi.mock("../../../../server/utils/revisions", async (importOriginal) => {
   // `withoutInternalFields` is pure and is what decides which of the stored
   // edge's fields a proposal carries, so the tests below want the real one.
@@ -76,7 +74,6 @@ vi.mock("../../../../server/utils/revisions", async (importOriginal) => {
       revisionRef: { id: "mock-revision-id", path: "mock/path" },
       targetRef: { id: "mock-target-id", path: "mock/target/path" },
     })),
-    baseNodeFields: (...args: unknown[]) => mockBaseNodeFields(...args),
   };
 });
 
@@ -196,9 +193,7 @@ describe("api/ingest/person", () => {
         party: "Test Party",
         start_date: "2023-01-01",
       },
-      true,
-      false, // approve
-      false, // published
+      { automatic: true, approve: false, published: false },
     );
     expect(result.elections).toHaveLength(1);
   });
@@ -249,9 +244,7 @@ describe("api/ingest/person", () => {
         type: "election",
         committee: "Komitet Wyborczy Prawo i Sprawiedliwość",
       }),
-      true,
-      false,
-      false,
+      { automatic: true, approve: false, published: false },
     );
   });
 
@@ -279,12 +272,6 @@ describe("api/ingest/person", () => {
         id: id ?? "new-doc-id",
         ref: mockRef,
       }));
-      mockBaseNodeFields.mockResolvedValue({
-        name: "Test Person",
-        type: "person",
-        parties: [],
-      });
-
       mockGet.mockResolvedValueOnce({
         empty: false,
         // These tests are about the candidacy rather than the person, so the
@@ -341,7 +328,7 @@ describe("api/ingest/person", () => {
         committee: "Komitet Wyborczy Prawo i Sprawiedliwość",
         party: "PiS",
       });
-      expect(call[6]).toBe(true); // approve
+      expect(call[5]).toMatchObject({ approve: true });
     });
 
     it("leaves an unrecognised committee for a reviewer", async () => {
@@ -378,9 +365,14 @@ describe("api/ingest/person", () => {
 
       await handler({} as any);
 
-      expect(vi.mocked(createRevisionTransaction).mock.calls[0]![7]).toBe(
-        false,
-      );
+      // The stored edge is handed over whole, which is what carries its
+      // visibility - and its votes, and anything else it owns - through the
+      // `set` that writes the revision.
+      expect(vi.mocked(createRevisionTransaction).mock.calls[0]![5]).toEqual({
+        automatic: true,
+        approve: true,
+        stored: expect.objectContaining({ type: "election" }),
+      });
     });
 
     it("keeps a published candidacy published", async () => {
@@ -396,7 +388,13 @@ describe("api/ingest/person", () => {
       await handler({} as any);
 
       const call = vi.mocked(createRevisionTransaction).mock.calls[0]!;
-      expect(call[7]).toBe(true);
+      expect(call[5]).toMatchObject({
+        stored: expect.objectContaining({ published: true }),
+      });
+      // No visibility of its own: deciding it here rather than carrying the
+      // stored document's is what published/unpublished a candidacy by
+      // accident.
+      expect(call[5]).not.toHaveProperty("published");
       // The pointer to the old revision is not copied into the new one.
       expect(call[4]).not.toHaveProperty("revision_id");
     });
@@ -574,9 +572,9 @@ describe("api/ingest/person", () => {
   describe("a person the database already has", () => {
     /** Queue a lookup that finds `nodes` already holding this person.
      *
-     * `stored` is what a revision would carry; `published` is the node's own
-     * visibility, which no revision carries and which the lookup reads off the
-     * document itself.
+     * The one document is the whole answer: what a revision would carry, and
+     * the visibility and counters no revision carries. Both are read off it,
+     * so the ingest never asks for the person a second time.
      */
     function personExists(stored: Record<string, unknown>, published = false) {
       mockGet.mockReset();
@@ -592,7 +590,6 @@ describe("api/ingest/person", () => {
           },
         ],
       });
-      mockBaseNodeFields.mockResolvedValue(stored);
     }
 
     it("writes the party the pipeline has learned since", async () => {
@@ -615,10 +612,38 @@ describe("api/ingest/person", () => {
         expect.objectContaining({ uid: "test-user-id" }),
         expect.anything(),
         expect.objectContaining({ parties: ["PiS"] }),
-        true,
-        false,
-        false,
+        expect.objectContaining({ automatic: true, approve: false }),
       );
+    });
+
+    it("leaves the person in the listings they were in", async () => {
+      // `/api/nodes` filters on `stats.isApproved == true`, and a Firestore
+      // equality filter does not match a document that lacks the field. Losing
+      // `stats` to the overwrite left five measured people published and
+      // unreachable - the page was up, nothing linked to it. The endpoint hands
+      // the stored document over; `createRevisionTransaction` is what carries
+      // the fields through, and is covered in its own test.
+      const stats = { isApproved: true, notesCount: 2, nodeGroupSize: 4 };
+      personExists(
+        { name: "Test Person", type: "person", parties: [], stats },
+        true,
+      );
+      mockReadBody.mockResolvedValue({
+        name: "Test Person",
+        parties: ["PiS"],
+        companies: [],
+        elections: [],
+      });
+
+      await handler({} as any);
+
+      const call = vi.mocked(createRevisionTransaction).mock.calls[0]!;
+      expect(call[5]).toMatchObject({
+        stored: expect.objectContaining({ stats }),
+      });
+      // And not restated as data: a revision describes the person, not the
+      // counters something else maintains about them.
+      expect(call[4]).not.toHaveProperty("stats");
     });
 
     it("leaves a live page live", async () => {
@@ -642,11 +667,15 @@ describe("api/ingest/person", () => {
         expect.objectContaining({ uid: "test-user-id" }),
         expect.anything(),
         expect.anything(),
-        true,
-        // A live page's node is a copy of an approved revision, so the update
-        // has to be approved with it rather than left pending.
-        true,
-        true,
+        {
+          automatic: true,
+          // A live page's node is a copy of an approved revision, so the update
+          // has to be approved with it rather than left pending.
+          approve: true,
+          // Visibility rides along with the rest of what the node owns rather
+          // than being decided here.
+          stored: expect.objectContaining({ published: true }),
+        },
       );
     });
 
@@ -669,9 +698,11 @@ describe("api/ingest/person", () => {
         expect.objectContaining({ uid: "test-user-id" }),
         expect.anything(),
         expect.anything(),
-        true,
-        false,
-        false,
+        {
+          automatic: true,
+          approve: false,
+          stored: expect.objectContaining({ published: false }),
+        },
       );
     });
 
@@ -702,9 +733,7 @@ describe("api/ingest/person", () => {
           parties: ["PO", "PiS"],
           wikipedia: "https://pl.wikipedia.org/wiki/Test",
         }),
-        true,
-        false,
-        false,
+        expect.objectContaining({ automatic: true }),
       );
     });
 

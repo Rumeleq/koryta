@@ -44,16 +44,9 @@ export default defineEventHandler(async (event) => {
   // written without it is invisible to `where("published", "==", false)` and
   // would never reach the queue in /admin/krawedzie that is supposed to find
   // it. Same reasoning as /api/revisions/create for a brand new node.
-  createRevisionTransaction(
-    db,
-    batch,
-    user,
-    edgeRef,
-    revisionData,
-    false,
-    false,
-    false,
-  );
+  createRevisionTransaction(db, batch, user, edgeRef, revisionData, {
+    published: false,
+  });
 
   await batch.commit();
 

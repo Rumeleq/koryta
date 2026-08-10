@@ -1,8 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import {
-  baseNodeFields,
-  createRevisionTransaction,
-} from "../../../../server/utils/revisions";
+import { createRevisionTransaction } from "../../../../server/utils/revisions";
 import handler from "../../../../server/api/ingest/company.post";
 
 // Mock dependencies
@@ -54,9 +51,13 @@ vi.mock("../../../../server/utils/auth", () => ({
   getUser: vi.fn().mockResolvedValue({ uid: "test-user-id" }),
 }));
 
-vi.mock("../../../../server/utils/revisions", () => ({
+// `withoutInternalFields` is pure and is what decides which of the stored
+// company's fields the revision carries, so the test wants the real one.
+vi.mock("../../../../server/utils/revisions", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("../../../../server/utils/revisions")
+  >()),
   createRevisionTransaction: vi.fn(),
-  baseNodeFields: vi.fn().mockResolvedValue({}),
 }));
 
 const { mockReadBody } = vi.hoisted(() => {
@@ -114,9 +115,7 @@ describe("api/ingest/company", () => {
         type: "place",
         krsNumber: "12345",
       },
-      true,
-      true, // approve
-      true, // published
+      { automatic: true, approve: true, published: true },
     );
     // ref.id is accessed in handler return statement
     expect(result).toEqual({ id: "doc-ref-id", code: 200 });
@@ -153,13 +152,19 @@ describe("api/ingest/company", () => {
       { uid: "test-user-id" },
       existingRef, // Expect the ref from the doc
       {
+        // Layered over what is stored, so a field the payload says nothing
+        // about is not deleted by the write.
+        content: "Old Content",
         name: "Updated Company",
         type: "place",
         krsNumber: "12345",
       },
-      true,
-      true, // already public => stays public
-      true,
+      {
+        automatic: true,
+        approve: true, // already public => stays public
+        published: true,
+        stored: expect.objectContaining({ published: true }),
+      },
     );
     expect(result).toEqual({ id: "existing-id", code: 200 });
   });
@@ -190,13 +195,17 @@ describe("api/ingest/company", () => {
       { uid: "test-user-id" },
       existingRef,
       {
+        content: "Old Content",
         name: "Updated Company",
         type: "place",
         krsNumber: "12345",
       },
-      true,
-      false, // pending => not force-published
-      false,
+      {
+        automatic: true,
+        approve: false, // pending => not force-published
+        published: false,
+        stored: expect.objectContaining({ content: "Old Content" }),
+      },
     );
     expect(result).toEqual({ id: "existing-id", code: 200 });
   });
@@ -231,9 +240,12 @@ describe("api/ingest/company", () => {
         type: "place",
         krsNumber: "12345",
       },
-      true,
-      false, // hidden => not force-published
-      false,
+      {
+        automatic: true,
+        approve: false, // hidden => not force-published
+        published: false,
+        stored: expect.objectContaining({ published: false }),
+      },
     );
   });
 
@@ -260,26 +272,33 @@ describe("api/ingest/company", () => {
         krsNumber: "12345",
         isPublic: true,
       },
-      true,
-      true,
-      true,
+      { automatic: true, approve: true, published: true },
     );
   });
 
   it("should leave a manually set isPublic alone", async () => {
     // KRS cannot see who owns a spółka akcyjna, so a re-ingest that found no
-    // public owner must not overturn somebody who knew there was one.
-    vi.mocked(baseNodeFields).mockResolvedValueOnce({
-      isPublic: true,
-      isPublicSource: "manual",
-    });
+    // public owner must not overturn somebody who knew there was one. The
+    // answer is read off the stored document the KRS lookup already returned.
     mockReadBody.mockResolvedValue({
       krs: "12345",
       name: "Public Company",
       is_public: false,
     });
-    mockGet.mockResolvedValue({ empty: true, docs: [] });
-    mockDoc.mockReturnValue(mockRef);
+    const existingRef = { id: "existing-id" };
+    mockGet.mockResolvedValue({
+      empty: false,
+      docs: [
+        {
+          ref: existingRef,
+          data: () => ({
+            isPublic: true,
+            isPublicSource: "manual",
+            published: true,
+          }),
+        },
+      ],
+    });
 
     await handler({} as any);
 
@@ -288,7 +307,7 @@ describe("api/ingest/company", () => {
       mockDb,
       expect.anything(),
       { uid: "test-user-id" },
-      mockRef,
+      existingRef,
       {
         name: "Public Company",
         type: "place",
@@ -296,9 +315,7 @@ describe("api/ingest/company", () => {
         isPublic: true,
         isPublicSource: "manual",
       },
-      true,
-      true,
-      true,
+      expect.objectContaining({ automatic: true }),
     );
   });
 
@@ -340,9 +357,7 @@ describe("api/ingest/company", () => {
         target: "parent-id",
         type: "owns",
       },
-      true,
-      true, // approve
-      true, // published
+      { automatic: true, approve: true, published: true },
     );
   });
 
@@ -380,9 +395,7 @@ describe("api/ingest/company", () => {
         target: "company-id",
         type: "owns",
       },
-      true,
-      true, // approve
-      true, // published
+      { automatic: true, approve: true, published: true },
     );
   });
 
@@ -442,9 +455,7 @@ describe("api/ingest/company", () => {
         target: "company-id",
         type: "owns",
       },
-      true,
-      true,
-      true,
+      { automatic: true, approve: true, published: true },
     );
   });
 
