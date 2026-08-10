@@ -2,8 +2,8 @@ import { getFirestore } from "firebase-admin/firestore";
 import { getApp } from "firebase-admin/app";
 import { getUser } from "~~/server/utils/auth";
 import {
-  baseNodeFields,
   createRevisionTransaction,
+  withoutInternalFields,
 } from "~~/server/utils/revisions";
 import {
   companyRequestSchema,
@@ -21,11 +21,17 @@ export default defineEventHandler(async (event) => {
   const user = await getUser(event);
   const db = getFirestore(getApp(), "koryta-pl");
 
-  const { ref: nodeRef, publish } = await findCompanyByKRS(db, body.krs, true);
+  const {
+    ref: nodeRef,
+    publish,
+    stored,
+  } = await findCompanyByKRS(db, body.krs, true);
   // Layered over what is already stored: a payload carries only the fields the
-  // scrapers found, and the revision is written to the node wholesale.
+  // scrapers found, and the revision is written to the node wholesale. Taken
+  // from the document the KRS lookup has already read, rather than asking for
+  // it a second time.
   const revisionData: Record<string, unknown> = {
-    ...(await baseNodeFields(nodeRef)),
+    ...withoutInternalFields(stored ?? {}),
     name: body.name,
     type: "place",
     krsNumber: body.krs,
@@ -45,16 +51,12 @@ export default defineEventHandler(async (event) => {
   }
 
   const batch = db.batch();
-  createRevisionTransaction(
-    db,
-    batch,
-    user,
-    nodeRef,
-    revisionData,
-    true,
-    publish,
-    publish,
-  );
+  createRevisionTransaction(db, batch, user, nodeRef, revisionData, {
+    automatic: true,
+    approve: publish,
+    stored,
+    published: publish,
+  });
 
   const dbb = { db, batch, user, added: new Set<string>() };
 
@@ -136,16 +138,12 @@ async function createEdge(
   added.add(edgeId);
 
   const edgeRef = db.collection("edges").doc(edgeId);
-  createRevisionTransaction(
-    db,
-    batch,
-    user,
-    edgeRef,
-    edgeData,
-    true,
-    publish,
-    publish,
-  );
+  // Only reached when no such edge exists, so there is nothing stored to carry.
+  createRevisionTransaction(db, batch, user, edgeRef, edgeData, {
+    automatic: true,
+    approve: publish,
+    published: publish,
+  });
   return true;
 }
 
@@ -155,12 +153,22 @@ async function createEdge(
  * published. To keep a migration safe, an existing company keeps its current
  * visibility: an already-public company stays public, while a still-pending
  * one is not force-published by a re-ingest. A brand-new company is published
- * as before. */
+ * as before.
+ *
+ * `stored` is the document as it is now, and is undefined for a company being
+ * created. The caller needs it twice over - as the base the payload's fields
+ * are layered onto, and as the state to carry through the `set` that writes the
+ * revision - and this query has already read it, so returning it saves a second
+ * read of every company in the pipeline. */
 async function findCompanyByKRS(
   db: FirebaseFirestore.Firestore,
   krs: string,
   createNew: boolean,
-): Promise<{ ref: FirebaseFirestore.DocumentReference; publish: boolean }> {
+): Promise<{
+  ref: FirebaseFirestore.DocumentReference;
+  publish: boolean;
+  stored?: Record<string, unknown>;
+}> {
   // Check if company already exists
   const existingQuery = await db
     .collection("nodes")
@@ -173,7 +181,8 @@ async function findCompanyByKRS(
     if (!doc) {
       throw new Error("Unexpected empty docs array");
     }
-    return { ref: doc.ref, publish: pageIsPublic(doc.data()) };
+    const stored = doc.data();
+    return { ref: doc.ref, publish: pageIsPublic(stored), stored };
   } else if (createNew) {
     return { ref: db.collection("nodes").doc(), publish: true };
   } else {

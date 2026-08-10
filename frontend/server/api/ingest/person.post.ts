@@ -2,7 +2,6 @@ import { getFirestore } from "firebase-admin/firestore";
 import { getApp } from "firebase-admin/app";
 import { getUser, requireDatascience } from "~~/server/utils/auth";
 import {
-  baseNodeFields,
   createRevisionTransaction,
   proposeRevisionTransaction,
   withoutInternalFields,
@@ -66,34 +65,32 @@ export default defineEventHandler(async (event) => {
         user,
         personRef,
         createPerson(body),
-        true,
-        ctx.autoapprove,
-        ctx.autoapprove,
+        {
+          automatic: true,
+          approve: ctx.autoapprove,
+          published: ctx.autoapprove,
+        },
       );
     } else {
       const personRef = db.collection("nodes").doc(personId);
-      // What the page's visibility already is. A revision is written to its
-      // target with `set`, and `published` is not part of any revision, so
-      // leaving it out here does not mean "unchanged" - it means "gone". Every
-      // re-ingested person came off the site that way, which is the one thing
-      // a scraper re-run must never do. The company ingest has carried it
-      // through since the categories backfill; this is the same rule.
-      const published = pageIsPublic(personDoc?.data() ?? {});
-      const revision = await updatedPerson(personRef, body);
+      // The stored document, not just its visibility. A revision is written to
+      // its target with `set` and states only the data, so every field the node
+      // owns - whether it is published, the counters the listings filter on,
+      // the votes - is deleted by an update that does not carry it back. Every
+      // re-ingested person came off the site that way, and then out of every
+      // listing, which is the one thing a scraper re-run must never do.
+      const stored = personDoc?.data() ?? {};
+      const published = pageIsPublic(stored);
+      const revision = updatedPerson(stored, body);
       if (revision) {
-        createRevisionTransaction(
-          db,
-          batch,
-          user,
-          personRef,
-          revision,
-          true,
+        createRevisionTransaction(db, batch, user, personRef, revision, {
+          automatic: true,
           // A live page's node is a copy of an approved revision, so an update
           // to one has to be approved with it or the page would show data no
           // reviewer ever accepted.
-          ctx.autoapprove || published,
-          published,
-        );
+          approve: ctx.autoapprove || published,
+          stored,
+        });
       }
     }
 
@@ -181,12 +178,16 @@ function badRequest(message: string) {
  *
  * Returns undefined when the payload says nothing the node does not already
  * say, so an unchanged person does not accrue a revision per run.
+ *
+ * `storedDoc` is the document as the name lookup read it, rather than a fresh
+ * read of it, and the fields a revision may not carry are dropped here - what
+ * the node owns is carried through the write itself, not restated as data.
  */
-async function updatedPerson(
-  personRef: FirebaseFirestore.DocumentReference,
+function updatedPerson(
+  storedDoc: Record<string, unknown>,
   body: PersonRequest,
-): Promise<Record<string, unknown> | undefined> {
-  const stored = await baseNodeFields(personRef);
+): Record<string, unknown> | undefined {
+  const stored = withoutInternalFields(storedDoc);
   const learned: Record<string, unknown> = {};
 
   const storedParties = Array.isArray(stored.parties)
@@ -304,9 +305,11 @@ async function createArticle(
       ctx.user,
       articleRef,
       revisionData,
-      true,
-      ctx.autoapprove,
-      ctx.autoapprove,
+      {
+        automatic: true,
+        approve: ctx.autoapprove,
+        published: ctx.autoapprove,
+      },
     );
     created = true;
   }
@@ -547,12 +550,14 @@ async function findEdgeOrCreate(
         ctx.user,
         edgeRef,
         enriched,
-        true,
-        true,
-        // Carried across rather than decided here, so learning a committee
-        // neither publishes a candidacy that was awaiting review nor hides one
-        // that was live.
-        pageIsPublic(candidate.stored),
+        {
+          automatic: true,
+          approve: true,
+          // Carried across rather than decided here, so learning a committee
+          // neither publishes a candidacy that was awaiting review nor hides one
+          // that was live - and does not drop the votes cast on it either.
+          stored: candidate.stored,
+        },
       );
     } else {
       proposeRevisionTransaction(
@@ -583,16 +588,11 @@ async function findEdgeOrCreate(
   while (ids.has(edgeDocumentId(edge, copy))) copy++;
 
   const edgeRef = ctx.db.collection("edges").doc(edgeDocumentId(edge, copy));
-  createRevisionTransaction(
-    ctx.db,
-    ctx.batch,
-    ctx.user,
-    edgeRef,
-    edge,
-    true,
-    ctx.autoapprove,
-    ctx.autoapprove,
-  );
+  createRevisionTransaction(ctx.db, ctx.batch, ctx.user, edgeRef, edge, {
+    automatic: true,
+    approve: ctx.autoapprove,
+    published: ctx.autoapprove,
+  });
   ctx.claimedEdgeIds.add(edgeRef.id);
   return edgeRef.id;
 }

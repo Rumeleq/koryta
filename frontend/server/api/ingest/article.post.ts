@@ -57,17 +57,11 @@ export default defineEventHandler(async (event) => {
         publishedDate: parseDate(body.publishedDate),
       };
 
-      createRevisionTransaction(
-        db,
-        batch,
-        user,
-        articleRef,
-        revisionData,
-        false,
+      createRevisionTransaction(db, batch, user, articleRef, revisionData, {
         // TODO don't autoapprove
-        true,
-        true,
-      );
+        approve: true,
+        published: true,
+      });
       created = true;
     }
 

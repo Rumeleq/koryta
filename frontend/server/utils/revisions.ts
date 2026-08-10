@@ -120,16 +120,60 @@ export function withoutInternalFields(
   return base;
 }
 
+/** The half of a stored document that `withoutInternalFields` leaves behind.
+ *
+ * The two partition it: a revision describes the data, and this is everything
+ * else the document owns - the counters the triggers maintain, the votes,
+ * whether the page is live, whether it has been removed. None of it is in any
+ * revision, and a revision is written to its target with `set`, so a write that
+ * does not put this back does not leave those fields alone: it deletes them.
+ *
+ * `stats` is the one that hurts. `/api/nodes` filters every listing on
+ * `stats.isApproved == true`, and a Firestore equality filter does not match a
+ * document that lacks the field at all - so a re-ingested person kept their
+ * page, kept their visibility, and disappeared from every list that led to it.
+ * The trigger in `functions/src/nodes.ts` only rewrites `stats.isApproved` when
+ * visibility *changes*, so once visibility is carried across correctly it stops
+ * covering for this.
+ */
+export function nodeOwnedFields(
+  data: Record<string, unknown>,
+): Record<string, unknown> {
+  const owned: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (INTERNAL_FIELDS.has(key)) {
+      owned[key] = value;
+    }
+  }
+  return owned;
+}
+
+export interface RevisionWriteOptions {
+  /** Written by a pipeline rather than by a person. */
+  automatic?: boolean;
+  /** Approve the revision as it is written, and point the target at it. */
+  approve?: boolean;
+  /** The document being overwritten, where the caller is updating one that
+   * already exists rather than creating it. Everything the document owns rather
+   * than states is taken from here - see `nodeOwnedFields`, and note that this
+   * includes its current visibility, so an update that says nothing about
+   * `published` leaves it alone rather than deleting it. */
+  stored?: Record<string, unknown>;
+  /** Visibility, where the caller decides it rather than carrying the stored
+   * document's: a document being created has none to carry, and a caller
+   * publishing or hiding one is making exactly this decision. */
+  published?: boolean;
+}
+
 export function createRevisionTransaction(
   db: Firestore,
   batch: WriteBatch,
   user: { uid: string },
   targetRef: DocumentReference,
   data: Record<string, unknown> | Node | Edge, // TODO unify this
-  automatic: boolean = false,
-  approve: boolean = false,
-  published?: boolean,
+  options: RevisionWriteOptions = {},
 ): BatchResult {
+  const { automatic = false, approve = false, stored, published } = options;
   const revisionRef = db.collection("revisions").doc();
   const timestamp = Timestamp.now();
 
@@ -159,12 +203,20 @@ export function createRevisionTransaction(
 
   batch.set(revisionRef, revision);
 
-  // The target document is fully replaced by the revision data plus the
-  // node-level state (`revision_id`, `published`) that is not part of any
-  // revision. Callers updating an existing document must pass `published`
-  // through, otherwise the flag is dropped by the overwrite.
+  // The target document is fully replaced, so everything it owns and no
+  // revision carries has to be written back with it. Passing `stored` is what
+  // does that; a caller creating a document has nothing to carry, and one
+  // updating an existing document that leaves it out is asking for every
+  // counter, vote and flag on that document to be deleted.
+  // The document's own state is layered *over* the revision, not under it: it
+  // owns those fields, so a revision that happens to carry one - an old one
+  // written before they were stripped out - does not get to restore a stale
+  // count over the live one. A field absent from `stored` is not overridden, so
+  // a revision that legitimately states one (a removal states `deleted`) still
+  // applies to a document that has none.
   const targetData = {
     ...(revision.data as Record<string, unknown>),
+    ...nodeOwnedFields(stored ?? {}),
   };
   if (approve) {
     console.info(
@@ -221,16 +273,17 @@ export async function applyRevision(
   const targetSnap = await targetRef.get();
   const stored = targetSnap.data() ?? {};
 
+  // Kept out of the revision on purpose (see INTERNAL_FIELDS), so it has to
+  // survive the overwrite explicitly - the same carry `createRevisionTransaction`
+  // makes, through the same function, so the two cannot drift apart on which
+  // fields a document owns. A removal revision states `deleted` in its own data
+  // and so still applies, but approving an ordinary edit no longer resurrects a
+  // page somebody had removed.
   const targetData: Record<string, unknown> = {
     ...(revision.data as Record<string, unknown>),
+    ...nodeOwnedFields(stored),
     revision_id: revisionRef,
   };
-
-  // Kept out of the revision on purpose (see INTERNAL_FIELDS), so they have to
-  // survive the overwrite explicitly.
-  for (const field of ["stats", "revisions", "votes", "nameChunksLower"]) {
-    if (stored[field] !== undefined) targetData[field] = stored[field];
-  }
 
   const published = publish ?? stored.published === true;
   targetData.published = published;
