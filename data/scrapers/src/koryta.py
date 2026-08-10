@@ -60,6 +60,20 @@ def get_args():
         "(also settable via DISABLE_BACKUP in the environment or .env)",
     )
     parser.add_argument(
+        "--force-download-shared-cache",
+        action="store_true",
+        help="Restore pipeline outputs from the shared GCS cache even for "
+        "pipelines marked local-only (backup_to_shared_cache=False). "
+        "Streams to disk. Still disabled by --no-backup/DISABLE_BACKUP.",
+    )
+    parser.add_argument(
+        "--force-upload-shared-cache",
+        action="store_true",
+        help="Upload pipeline outputs to the shared GCS cache even for "
+        "pipelines marked local-only (backup_to_shared_cache=False). "
+        "Streams from disk. Still disabled by --no-backup/DISABLE_BACKUP.",
+    )
+    parser.add_argument(
         "--exclude",
         action="append",
         default=[],
@@ -124,7 +138,12 @@ def main():
             else:
                 refresh.append(r)
 
-    policy = ProcessPolicy.with_default(refresh, exclude_refresh=exclude_refresh)
+    policy = ProcessPolicy.with_default(
+        refresh,
+        exclude_refresh=exclude_refresh,
+        force_download_shared_cache=args.force_download_shared_cache,
+        force_upload_shared_cache=args.force_upload_shared_cache,
+    )
 
     selected = select_pipelines(args)
     required = selected_resources(selected)
