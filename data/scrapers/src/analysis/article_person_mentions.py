@@ -36,6 +36,7 @@ from scrapers.article.pipelines.parsed_pipeline import ArticleParsed
 from scrapers.article.pipelines.pipeline_utils import llm_model
 from scrapers.stores import (
     LLM,
+    LLMResponsePool,
     VERSIONED_DIR,
     Context,
     LLMRequest,
@@ -615,95 +616,110 @@ def _judge_row(
     row["people_mentioned"] = sorted(kept)
     row["proof"] = confirmed
     row["judge"] = judge
+    fields = {
+        key: value
+        for key, value in row.items()
+        if not key.startswith("_") and key != "confirmed"
+    }
     ctx.io.dumper.insert_into(  # type: ignore[attr-defined]
-        ArticlePeopleMentioned(**row), []
+        ArticlePeopleMentioned(**fields), []
     )
 
 
-async def _judge_and_emit(
+async def _scan_and_judge(
     ctx: Context,
-    rows: list[dict[str, Any]],
-    contents: dict[str, str],
+    parsed_path: Path,
+    index: PersonNameIndex,
     profiles: PersonProfileIndex,
+    domain_map: DomainRegionMap,
     *,
     model: str,
 ) -> None:
-    """Send every confirmed (article, person) pair to the LLM, then emit rows.
+    """Scan parsed articles and LLM-judge confirmed matches on the fly.
 
-    ``rows`` is the confirmed mentions in scan order; each row's ``confirmed``
-    maps person -> proof signals. Rows whose people are all judged are emitted
-    as soon as their last request lands, keeping memory bounded.
+    Reads the corpus line by line; every article whose names pass the proof
+    filter has its (article, person) pairs submitted to the LLM response pool
+    immediately, so judging overlaps the scan and article text is never kept in
+    memory. Each row is emitted as soon as its last request lands.
     """
     await LLM.from_context(ctx).check_health()
-    total = sum(len(row["confirmed"]) for row in rows)
-    if total == 0:
-        return
 
-    # request_id -> (row_index, person)
-    inflight: dict[int, tuple[int, str]] = {}
-    pending_counts = [len(row["confirmed"]) for row in rows]
-    verdicts: list[dict[str, tuple[str, str]]] = [{} for _ in rows]
-    done = [False] * len(rows)
+    inflight: dict[int, tuple[dict[str, Any], str]] = {}
+    candidates = 0
+    dropped = 0
+    rows = 0
 
-    def emit_if_done(row_index: int) -> None:
-        if done[row_index]:
+    def emit_if_done(row: dict[str, Any]) -> None:
+        if row["_emitted"]:
             return
-        done[row_index] = True
-        _judge_row(
-            ctx,
-            rows[row_index],
-            rows[row_index]["confirmed"],
-            verdicts[row_index],
-            model,
-        )
+        row["_emitted"] = True
+        _judge_row(ctx, row, row["confirmed"], row["_verdicts"], model)
 
-    with tqdm(total=total, desc="Judging mentions", unit="pair") as bar:
+    async def drain(pool: LLMResponsePool) -> None:
+        request_id, response = await pool.get_response()
+        row, person = inflight.pop(request_id)
+        if isinstance(response, Exception):
+            verdict, justification = "unknown", str(response)[:200]
+        else:
+            verdict, justification = _parse_verdict(response.content)
+        row["_verdicts"][person] = (verdict, justification)
+        row["_pending"] -= 1
+        bar.update(1)
+        if row["_pending"] == 0:
+            emit_if_done(row)
+
+    with tqdm(total=0, desc="Judging mentions", unit="pair") as bar:
         async with LLM.from_context(ctx).response_pool() as pool:
-            for row_index, row in enumerate(rows):
-                content = contents.get(row["url"], "")
-                for person, proof in row["confirmed"].items():
-                    profile = profiles.profile(person)
-                    while pool.is_full():
-                        await _drain_judge(
-                            pool,
-                            inflight,
-                            pending_counts,
-                            verdicts,
-                            done,
-                            emit_if_done,
-                            bar,
-                        )
-                    request_id = await pool.put_request(
-                        _judge_request(person, profile, proof, content, model)
+            with parsed_path.open(encoding="utf-8") as f:
+                for line in tqdm(f, desc="Scanning parsed articles", unit="article"):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        raw = json.loads(line)
+                    except Exception:
+                        continue
+                    if raw.get("parse_status") != "ok":
+                        continue
+                    content = (
+                        str(raw.get("title") or "")
+                        + " "
+                        + str(raw.get("article_content") or "")
                     )
-                    inflight[request_id] = (row_index, person)
-
+                    if not content.strip():
+                        continue
+                    names = index.find_in_text(content)
+                    if not names:
+                        continue
+                    confirmed = _confirm_mentions(
+                        names, content, raw.get("domain"), profiles, domain_map
+                    )
+                    dropped += len(names) - len(confirmed)
+                    if not confirmed:
+                        continue
+                    row = _mention_meta(raw)
+                    row["confirmed"] = confirmed
+                    row["_verdicts"] = {}
+                    row["_pending"] = len(confirmed)
+                    row["_emitted"] = False
+                    candidates += len(confirmed)
+                    rows += 1
+                    bar.total += len(confirmed)
+                    for person, proof in confirmed.items():
+                        profile = profiles.profile(person)
+                        while pool.is_full():
+                            await drain(pool)
+                        request_id = await pool.put_request(
+                            _judge_request(person, profile, proof, content, model)
+                        )
+                        inflight[request_id] = (row, person)
             while inflight:
-                await _drain_judge(
-                    pool,
-                    inflight,
-                    pending_counts,
-                    verdicts,
-                    done,
-                    emit_if_done,
-                    bar,
-                )
+                await drain(pool)
 
-
-async def _drain_judge(
-    pool, inflight, pending_counts, verdicts, done, emit_if_done, bar
-) -> None:
-    request_id, response = await pool.get_response()
-    row_index, person = inflight.pop(request_id)
-    if isinstance(response, Exception):
-        verdict, justification = "unknown", str(response)[:200]
-    else:
-        verdict, justification = _parse_verdict(response.content)
-    verdicts[row_index][person] = (verdict, justification)
-    pending_counts[row_index] -= 1
-    bar.update(1)
-    if pending_counts[row_index] == 0:
-        emit_if_done(row_index)
+    print(
+        f"Confirmed {candidates:,} candidate people across {rows:,} articles "
+        f"({dropped:,} dropped for lack of proof)"
+    )
 
 
 def _print_llm_usage(ctx: Context) -> None:
@@ -754,51 +770,11 @@ class ArticlePersonMentions(IncrementalJsonlPipeline[ArticlePeopleMentioned]):
             print("No parsed articles found, nothing to emit")
             return pd.DataFrame()
 
-        # Pass 1: scan parsed, keep the proof-confirmed rows (meta + person->proof)
-        # and the article content each row needs for the LLM judge.
-        rows: list[dict[str, Any]] = []
-        contents: dict[str, str] = {}
-        candidates = 0
-        dropped = 0
-        with parsed_path.open(encoding="utf-8") as f:
-            for line in tqdm(f, desc="Scanning parsed articles", unit="article"):
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    row = json.loads(line)
-                except Exception:
-                    continue
-                if row.get("parse_status") != "ok":
-                    continue
-                content = (
-                    str(row.get("title") or "")
-                    + " "
-                    + str(row.get("article_content") or "")
-                )
-                if not content.strip():
-                    continue
-                names = index.find_in_text(content)
-                if not names:
-                    continue
-                confirmed = _confirm_mentions(
-                    names, content, row.get("domain"), profiles, domain_map
-                )
-                dropped += len(names) - len(confirmed)
-                if not confirmed:
-                    continue
-                meta = _mention_meta(row)
-                meta["confirmed"] = confirmed
-                rows.append(meta)
-                contents[meta["url"]] = content
-                candidates += len(confirmed)
-
-        print(
-            f"Confirmed {candidates:,} candidate people across {len(rows):,} "
-            f"articles ({dropped:,} dropped for lack of proof)"
-        )
-
         model = llm_model()
-        asyncio.run(_judge_and_emit(ctx, rows, contents, profiles, model=model))
+        asyncio.run(
+            _scan_and_judge(
+                ctx, parsed_path, index, profiles, domain_map, model=model
+            )
+        )
         _print_llm_usage(ctx)
         return pd.DataFrame()
