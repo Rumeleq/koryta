@@ -118,7 +118,61 @@ def people_merged(
     print("--- Running the long running query ---")
 
     query = """
-    WITH krs_pkw AS (
+    WITH krs_numbered AS (
+        -- The join below has to reason about all of one person's candidates at
+        -- once, and `rejestrio_id` is a list rather than a key, so the row
+        -- itself is the identity.
+        SELECT row_number() OVER () as krs_row, * FROM krs_people
+    ),
+    pkw_candidates AS (
+        -- Every PKW record this KRS person could be, with how much of the name
+        -- actually agreed.
+        --
+        -- A middle name only one of the two sources records is not a
+        -- disagreement. KRS carries what the court filing spelled out and PKW
+        -- what the candidate wrote on the form, and either can be silent where
+        -- the other is not: Jarosław Wieszołek is "jarosław maciej" to PKW and
+        -- plain "jarosław" to KRS, and requiring the two to agree exactly cost
+        -- him all three of his candidacies.
+        SELECT
+            k.krs_row,
+            p.*,
+            CASE
+                WHEN k.second_name = p.second_name
+                    OR ((k.second_name IS NULL OR k.second_name = '')
+                        AND (p.second_name IS NULL OR p.second_name = ''))
+                THEN 0
+                ELSE 1
+            END as second_name_tier
+        FROM krs_numbered k
+        JOIN pkw_people p ON (
+            ABS(k.birth_year - p.birth_year) <= 1 OR p.birth_year IS NULL)
+            AND k.last_name = p.last_name
+            AND k.first_name = p.first_name
+            AND (k.second_name = p.second_name
+                OR (k.second_name IS NULL OR k.second_name = '')
+                OR (p.second_name IS NULL OR p.second_name = ''))
+    ),
+    pkw_match AS (
+        -- Which of those to believe.
+        --
+        -- A middle name the two sources agree on outranks one only half of
+        -- them knows, so nobody who already had a match can be pulled off it
+        -- by a looser one - 4292 people have both kinds and would otherwise be
+        -- up for grabs.
+        --
+        -- Silence identifies somebody only when it leaves exactly one
+        -- candidate. Where it leaves several the honest answer is "one of
+        -- these four Piotr Mrozińskis", and picking by score would hang a
+        -- stranger's career on the page - the same harm
+        -- `drop_contradictory_candidacies` drops candidacies to avoid, so it
+        -- is answered the same way: no match rather than a guessed one.
+        SELECT * FROM pkw_candidates
+        QUALIFY second_name_tier = min(second_name_tier) OVER (PARTITION BY krs_row)
+            AND (second_name_tier = 0
+                OR count(*) OVER (PARTITION BY krs_row) = 1)
+    ),
+    krs_pkw AS (
         SELECT
             k.full_name[1] as krs_name,
             p.full_name[1] as pkw_name,
@@ -143,14 +197,8 @@ def people_merged(
                 ELSE NULL
             END as unique_chance,
             *,
-        FROM krs_people k
-        LEFT JOIN pkw_people p ON (
-            ABS(k.birth_year - p.birth_year) <= 1 OR p.birth_year IS NULL)
-            AND k.last_name = p.last_name
-            AND k.first_name = p.first_name
-            AND (k.second_name = p.second_name
-                OR ((k.second_name IS NULL OR k.second_name = '')
-                    AND (p.second_name IS NULL OR p.second_name = '')))
+        FROM krs_numbered k
+        LEFT JOIN pkw_match p USING (krs_row)
         LEFT JOIN first_name_freq_table p_fn ON k.first_name = p_fn.first_name
         LEFT JOIN first_name_freq_table p_sn ON k.second_name = p_sn.first_name
         LEFT JOIN names_count_by_region_table names_count
