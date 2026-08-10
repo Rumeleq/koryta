@@ -1,4 +1,5 @@
 import { getFirestore } from "firebase-admin/firestore";
+import { requireAdmin } from "~~/server/utils/auth";
 import type {
   Edge,
   Note,
@@ -96,9 +97,13 @@ function buildNodeUpdateData(
   };
 }
 
-export default defineEventHandler(async () => {
-  // TODO enable check here
-  // await getUser(event);
+export default defineEventHandler(async (event) => {
+  // Reads every node, edge, note, vote and revision and writes back to every
+  // node, so an open one is both a way to run up the bill and a way to
+  // overwrite the counters the whole site is filtered and ordered by. Admin
+  // rather than merely signed in, for the same reason approving a revision is:
+  // this decides what the public sees.
+  await requireAdmin(event);
 
   const db = getFirestore("koryta-pl");
 
