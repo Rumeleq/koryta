@@ -100,4 +100,26 @@ describe("companyIdentifiers", () => {
   it("has nothing to show for a place with no number at all", () => {
     expect(companyIdentifiers({})).toEqual([]);
   });
+
+  it("points a KRS number at the entry rejestr.io keeps for it", () => {
+    expect(companyIdentifiers({ krsNumber: "0000348888" })).toEqual([
+      {
+        register: "KRS",
+        value: "0000348888",
+        url: "https://rejestr.io/krs/0000348888",
+      },
+    ]);
+  });
+
+  it("links a KRS number written with separators", () => {
+    expect(companyIdentifiers({ krsNumber: " 0000 348-888 " })[0]?.url).toBe(
+      "https://rejestr.io/krs/0000348888",
+    );
+  });
+
+  it("leaves a KRS number that is not one unlinked", () => {
+    // Free text got typed into the field at some point; a link built from it
+    // would land on rejestr.io's 404 rather than on the company.
+    expect(companyIdentifiers({ krsNumber: "brak" })[0]?.url).toBeUndefined();
+  });
 });

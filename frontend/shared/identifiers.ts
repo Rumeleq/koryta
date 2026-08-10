@@ -7,6 +7,26 @@
  * plausible-looking number nobody can look up.
  */
 
+export type CompanyIdentifier = {
+  register: string;
+  value: string;
+  /** Where the register itself lists this number, when it has such a page. */
+  url?: string;
+};
+
+/** The entry rejestr.io publishes for a KRS number.
+ *
+ * It addresses a company by the number alone: the readable slug its own links
+ * carry ("/krs/348888/nowa-energia") is decorative, and a number padded to the
+ * official ten digits resolves the same as a bare one - so neither the
+ * company's name nor the shape of the stored number has to be right for the
+ * link to land. REGON and NIP have no comparable public page. */
+function registerUrl(register: string, value: string): string | undefined {
+  if (register !== "KRS") return undefined;
+  const digits = value.replace(/[\s-]/g, "");
+  return /^\d+$/.test(digits) ? `https://rejestr.io/krs/${digits}` : undefined;
+}
+
 /** The registers a place is listed in, most specific first, skipping the ones
  * it has no number for. An institution outside KRS is left with REGON and NIP,
  * and showing nothing at all would leave a reader no way to check who it is. */
@@ -14,14 +34,19 @@ export function companyIdentifiers(company: {
   krsNumber?: string;
   regonNumber?: string;
   nipNumber?: string;
-}): { register: string; value: string }[] {
+}): CompanyIdentifier[] {
   return [
     { register: "KRS", value: company.krsNumber },
     { register: "REGON", value: company.regonNumber },
     { register: "NIP", value: company.nipNumber },
-  ].filter(
-    (entry): entry is { register: string; value: string } => !!entry.value,
-  );
+  ]
+    .filter(
+      (entry): entry is { register: string; value: string } => !!entry.value,
+    )
+    .map((entry) => ({
+      ...entry,
+      url: registerUrl(entry.register, entry.value),
+    }));
 }
 
 /** Digits of an identifier as typed, with the separators people use.
