@@ -11,7 +11,16 @@
           <div class="d-flex flex-wrap align-center ga-4 text-body-2">
             <span v-for="identifier in identifiers" :key="identifier.register">
               <strong>{{ identifier.register }}:</strong>
-              {{ identifier.value }}
+              <a
+                v-if="identifier.url"
+                :href="identifier.url"
+                target="_blank"
+                class="text-primary text-decoration-none"
+              >
+                {{ identifier.value }}
+                <v-icon :icon="mdiOpenInNew" size="small" />
+              </a>
+              <template v-else>{{ identifier.value }}</template>
             </span>
             <span v-if="location">
               <strong>Lokalizacja:</strong> {{ location }}
