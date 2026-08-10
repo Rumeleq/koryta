@@ -52,7 +52,11 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    let personId: string | undefined = await lookupNode(ctx, "name", body.name);
+    // The document, not just its id: the update below needs the visibility
+    // stored on it, and this query has already read it - asking again would be
+    // a second read of every person in the payload.
+    const personDoc = await lookupNodeDoc(ctx, "name", body.name);
+    let personId: string | undefined = personDoc?.id;
     if (!personId) {
       const personRef = db.collection("nodes").doc();
       personId = personRef.id;
@@ -68,6 +72,13 @@ export default defineEventHandler(async (event) => {
       );
     } else {
       const personRef = db.collection("nodes").doc(personId);
+      // What the page's visibility already is. A revision is written to its
+      // target with `set`, and `published` is not part of any revision, so
+      // leaving it out here does not mean "unchanged" - it means "gone". Every
+      // re-ingested person came off the site that way, which is the one thing
+      // a scraper re-run must never do. The company ingest has carried it
+      // through since the categories backfill; this is the same rule.
+      const published = pageIsPublic(personDoc?.data() ?? {});
       const revision = await updatedPerson(personRef, body);
       if (revision) {
         createRevisionTransaction(
@@ -77,7 +88,11 @@ export default defineEventHandler(async (event) => {
           personRef,
           revision,
           true,
-          ctx.autoapprove,
+          // A live page's node is a copy of an approved revision, so an update
+          // to one has to be approved with it or the page would show data no
+          // reviewer ever accepted.
+          ctx.autoapprove || published,
+          published,
         );
       }
     }
@@ -454,15 +469,21 @@ async function lookupNode(
   field: string,
   value: string,
 ): Promise<string | undefined> {
+  return (await lookupNodeDoc(ctx, field, value))?.id;
+}
+
+/** The stored node itself, for callers that need more of it than its id. */
+async function lookupNodeDoc(
+  ctx: Context,
+  field: string,
+  value: string,
+): Promise<FirebaseFirestore.DocumentSnapshot | undefined> {
   const snap = await ctx.db
     .collection("nodes")
     .where(field, "==", value)
     .limit(1)
     .get();
-  if (!snap.empty) {
-    return snap.docs[0]?.id;
-  }
-  return undefined;
+  return snap.empty ? undefined : snap.docs[0];
 }
 
 /** The edge recording this fact, creating it if the database has no such edge.
