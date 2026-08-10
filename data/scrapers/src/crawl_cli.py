@@ -20,7 +20,7 @@ from scrapers.article.crawler import (
     run_crawler,
 )
 from scrapers.article.postgres_queue import PostgresClient, PostgresCrawlQueue
-from scrapers.article.scoring import get_scoring_function
+from scrapers.article.scoring import SCORING_FUNCTIONS, get_scoring_function
 from scrapers.article.url_store_queue import UrlStoreQueue
 from scrapers.stores import BlockedDomain, CrawlQueue, NewUrl
 
@@ -41,9 +41,11 @@ def _build_parser() -> ArgumentParser:
     parser.add_argument("--per-domain-rate-limit-qpm", type=int, default=20)
     parser.add_argument(
         "--url-scoring-function",
-        choices=["default", "kalisz"],
+        choices=sorted(SCORING_FUNCTIONS),
         default="default",
-    )  # TODO hook registered function here
+        help="Registered URL scorer to prioritize the crawl queue "
+        "(e.g. default, kalisz, koryciarski_ml, article_hub_ml).",
+    )
     parser.add_argument(
         "--reset",
         action="store_true",

@@ -151,3 +151,56 @@ class ArticleAnalyzedRecord:
     koryciarski_llm_reason: str
     extracted_facts: list[dict[str, Any]]
     tag: str | None = None
+
+
+@dataclass
+class ArticlePeopleMentioned:
+    """A parsed article and the known people mentioned in it.
+
+    One record per article: carries the URL together with the title, date and
+    tags recovered from the article's ld+json metadata, and the people matched
+    in its text, so a later pass can summarize the articles per person.
+    """
+
+    __output_path__: ClassVar[Path] = Path(
+        "article_person_mentions/article_person_mentions.jsonl.tmp"
+    )
+
+    url: str
+    domain: str
+    title: str | None
+    date: str | None
+    tags: list[str]
+    people_mentioned: list[str]
+
+
+@dataclass
+class AffairTag:
+    """A single affair/event tag with how often a person appeared next to it."""
+
+    tag: str
+    count: int
+    first_date: str | None = None
+    last_date: str | None = None
+
+
+@dataclass
+class PersonAffairTags:
+    """Interesting affair/event tags attributed to a single person.
+
+    One record per person: the person's display name together with the
+    interesting tags found on the articles mentioning them. A tag counts only
+    when it names an affair, scandal, investigative commission or notable
+    event - generic category tags (polityka, prokuratura, sport, ...) are
+    filtered out, so the list is a summary of the affairs a person shows up in.
+    Each tag carries the number of articles that used it and the date range
+    they span.
+    """
+
+    __output_path__: ClassVar[Path] = Path(
+        "people_affair_tags/people_affair_tags.jsonl.tmp"
+    )
+
+    person: str
+    tags: list[AffairTag]
+    total_articles: int

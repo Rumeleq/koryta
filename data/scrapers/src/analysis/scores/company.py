@@ -1,4 +1,5 @@
-"""
+"""The model the site started with: a person is as interesting as their employers.
+
 We have source of truth from two sources:
 node_id -> public - from KorytaPeople
 node_id -> interesting - from KorytaVotes
@@ -18,11 +19,10 @@ import dataclasses
 import pandas as pd
 
 from analysis.payloads.person import PeoplePayloads
-from entities.composite import PersonScore
+from analysis.scores.base import IS_PUBLIC_SCORE, PeopleScoreModel, Population
 from scrapers.koryta.download import KorytaPeople, KorytaVotes
 from scrapers.stores import Context, Pipeline
 
-IS_PUBLIC_SCORE = 3
 # Penalize companies with not enough votes
 CONFIDENCE_FACTOR = 2
 
@@ -63,6 +63,7 @@ class CompanyScores(Pipeline):
         # TODO use koryta_ids here instead of people names
         # names could lead to collisions
         scores = {}
+        unknown_targets = 0
 
         for _, row in self.people_scored.read_or_process(ctx).iterrows():
             is_public = row.get("is_public", False)
@@ -74,18 +75,27 @@ class CompanyScores(Pipeline):
 
         for _, row in self.people_votes.read_or_process(ctx).iterrows():
             person_koryta_id = row.get("person_koryta_id")
-            if not person_koryta_id or person_koryta_id == "":
+            if pd.isna(person_koryta_id) or not str(person_koryta_id).strip():
                 continue
             person_koryta_id = str(person_koryta_id)
             interesting = row.get("interesting", 0)
 
+            # A vote can name a node this pipeline has no person for - a place,
+            # or somebody deleted since the export - and that is the vote being
+            # uninteresting here, not an error worth stopping a run over.
+            name = koryta_id_to_name.get(person_koryta_id)
+            if name is None:
+                unknown_targets += 1
+                continue
+
             # TODO we're overriding votes of multiple people right now
-            name = koryta_id_to_name[person_koryta_id]
             current = scores.get(name, None)
             if current is not None:
                 scores[name] = max(interesting, current)
             scores[name] = interesting
 
+        if unknown_targets:
+            print(f"Ignored {unknown_targets} votes on nodes that are not people")
         return scores
 
     def process(self, ctx: Context):
@@ -134,76 +144,42 @@ class CompanyScores(Pipeline):
         return scores_df
 
 
-class PeopleScores(Pipeline):
+class PeopleScores(PeopleScoreModel):
+    """A person's employers' ratings, plus how often they have stood for office.
+
+    The site's first model, and still the default one: its votes are the ones
+    stored under the bare `pipeline` uid, which is why the tag is not renamed
+    to match the others. Renaming it would orphan every score already on the
+    site behind a uid nothing writes to any more.
+    """
+
     filename = "people_scores"
+    model_tag = "pipeline"
 
     company_scores: CompanyScores
-    people_payloads: PeoplePayloads
-    people_koryta: KorytaPeople
 
-    # TODO turn it into a flag
-    # Don't produce scores for people who are already public
-    ignore_public = True
-    # Don't produce scores for people who have votes
-    ignore_votes = True
+    #: How much of the verdict each half carries. Employers dominate because
+    #: standing for office is common and public; being on the board of a
+    #: company whose other board members are known is not.
+    COMPANY_WEIGHT = 0.6
+    ELECTION_WEIGHT = 0.4
 
-    def process(self, ctx: Context):
+    def raw_scores(self, ctx: Context, population: Population) -> dict[str, float]:
         company_scores_df = self.company_scores.read_or_process(ctx)
-        people_df = self.people_payloads.read_or_process(ctx)
-        koryta_people_df = self.people_koryta.read_or_process(ctx)
-        print(koryta_people_df.head())
-
         company_score_map = dict(
             zip(company_scores_df["krs"], company_scores_df["sum_score"])
         )
-        name_to_node_id: dict[str, str] = dict(
-            zip(koryta_people_df["full_name"], koryta_people_df["id"])
-        )
 
-        records = []
-        for _, row in people_df.iterrows():
-            person_name = str(row.get("name"))
-            node_id = name_to_node_id.get(person_name)
-            if node_id is None:
-                continue
-            koryta_entry = koryta_people_df[koryta_people_df["id"] == node_id].iloc[0]
-            if self.ignore_public and koryta_entry.get("is_public", False):
-                continue
-            if self.ignore_votes and koryta_entry.get("votes_interesting", 0) > 0:
-                continue
-
-            company_score = self.total_company_score(row, company_score_map)
-            election_score = self.elections_score(row)
-            total_score = self.calculate_weighted(
-                (company_score, 0.6), (election_score, 0.4)
+        scores = {}
+        for name in population.shortlist:
+            posts = population.employments.get(name, [])
+            company_score = self.total_company_score(posts, company_score_map)
+            election_score = self.elections_score(population.candidacies.get(name, []))
+            scores[name] = self.calculate_weighted(
+                (company_score, self.COMPANY_WEIGHT),
+                (election_score, self.ELECTION_WEIGHT),
             )
-
-            if total_score >= 0:
-                records.append(
-                    dataclasses.asdict(
-                        PersonScore(
-                            node_id=node_id,
-                            name=str(person_name),
-                            score=total_score,
-                        )
-                    )
-                )
-
-        if not records:
-            return pd.DataFrame(columns=["node_id", "name", "score"])
-        print("Found scores for", len(records), "people")
-
-        df = pd.DataFrame.from_records(records)
-        df = df.sort_values(by="score", ascending=False).reset_index(drop=True)
-        # df["score"] = pd.qcut(df["score"].rank(method="first"), q=6, labels=False)
-        df["score"] *= 5 / df["score"].max()
-        df["score"] = df["score"].round(0)
-        print(df.head())
-
-        print(df["score"].describe())
-        print(df["score"].value_counts())
-
-        return df.astype({"score": "int32"})
+        return scores
 
     def calculate_weighted(self, *args: tuple[float, float]):
         result: float = 0
@@ -214,29 +190,14 @@ class PeopleScores(Pipeline):
             weights += weight
         return result / weights
 
-    def total_company_score(self, row, company_score_map):
-        companies = row.get("companies", [])
+    def total_company_score(self, posts, company_score_map):
+        if not posts:
+            return 0.0
         total_person_score: float = 0
+        for post in posts:
+            if post.krs in company_score_map:
+                total_person_score += company_score_map[post.krs]
+        return total_person_score / len(posts)
 
-        if (
-            isinstance(companies, list)
-            or isinstance(companies, pd.Series)
-            or hasattr(companies, "__iter__")
-        ):
-            for company in companies:
-                krs = None
-                if isinstance(company, dict):
-                    krs = company.get("krs")
-                else:
-                    krs = getattr(company, "krs", None)
-
-                if krs and krs in company_score_map:
-                    total_person_score += company_score_map[krs]
-
-            total_person_score /= len(companies)
-
-        return total_person_score
-
-    def elections_score(self, row):
-        elections = row.get("elections", [])
-        return 1 - (2 / 3) ** len(elections)
+    def elections_score(self, candidacies):
+        return 1 - (2 / 3) ** len(candidacies)

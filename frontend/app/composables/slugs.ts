@@ -64,23 +64,31 @@ export function generateEntityUrl(
 export function generateNodeUrl(node: Node): string | undefined {
   if (!node.id) return undefined;
 
-  if (node.type === "person") {
-    return generateEntityUrl(node.type, node.id, node.name);
-  }
+  switch (node.type) {
+    // The two types with a readable page of their own. Both are what the
+    // sitemap lists, and both are what somebody shares.
+    case "person":
+    case "article":
+      return generateEntityUrl(node.type, node.id, node.name);
 
-  if (node.type === "place") {
-    // A place's page is the table filtered to it, addressed by node id. Keying
-    // this on the KRS number sent every institution without one - ministries,
-    // urzędy, WFOŚiGW - to the unfiltered table instead.
-    return `/eksploruj/tabela?place=${node.id}`;
-  }
+    case "place":
+      // A place's page is the table filtered to it, addressed by node id. Keying
+      // this on the KRS number sent every institution without one - ministries,
+      // urzędy, WFOŚiGW - to the unfiltered table instead.
+      return `/eksploruj/tabela?place=${node.id}`;
 
-  if (node.type === "region") {
-    if (node.id == "teryt1261") {
-      return "/region/krakow-teryt1261";
+    case "region": {
+      if (node.id == "teryt1261") {
+        return "/region/krakow-teryt1261";
+      }
+      const teryt = node.id.replace("teryt", "");
+      return `/eksploruj/tabela?teryt=${teryt}`;
     }
-    const teryt = node.id.replace("teryt", "");
-    return `/eksploruj/tabela?teryt=${teryt}`;
+
+    // A type the front end does not know about yet keeps whatever url it was
+    // reached by, rather than being sent somewhere wrong.
+    default:
+      return undefined;
   }
 }
 

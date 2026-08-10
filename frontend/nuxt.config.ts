@@ -4,7 +4,6 @@ import { bundleSharpBinaries } from "./build/sharp-binaries";
 // Force IPv4 for emulators to avoid Node 17+ IPv6 issues
 process.env.FIRESTORE_EMULATOR_HOST = "127.0.0.1:8080";
 process.env.FIREBASE_AUTH_EMULATOR_HOST = "127.0.0.1:9099";
-process.env.FIREBASE_DATABASE_EMULATOR_HOST = "127.0.0.1:9000";
 const isLocal =
   !!process.env.VITEST ||
   process.env.USE_EMULATORS === "true" ||
@@ -96,6 +95,16 @@ export default defineNuxtConfig({
 
   sitemap: {
     sources: ["/api/_sitemap-urls"],
+  },
+
+  seo: {
+    // nuxt-seo-utils lowercases the canonical by default, which is fine for a
+    // hand-written path and wrong for ours: an entity url ends in the Firestore
+    // document id, and those are case sensitive. Every person page was
+    // advertising a canonical and an og:url that render "Strona nieznaleziona",
+    // so a shared link previewed as the not-found page and the real url was
+    // never the one indexed.
+    canonicalLowercase: false,
   },
 
   // Without a `robots` key the module defaults to an empty `Disallow:`, i.e.
@@ -204,10 +213,6 @@ export default defineNuxtConfig({
         host: "127.0.0.1",
         port: 8080,
       },
-      database: {
-        host: "127.0.0.1",
-        port: 9000,
-      },
       storage: {
         host: "127.0.0.1",
         port: 9199,
@@ -270,6 +275,11 @@ export default defineNuxtConfig({
       headers: { "cache-control": "public, max-age=604800" },
     },
     "/logo_small.png": {
+      headers: { "cache-control": "public, max-age=604800" },
+    },
+    // Fetched fresh by every platform a link is posted to, and by each of them
+    // more than once.
+    "/social-card.png": {
       headers: { "cache-control": "public, max-age=604800" },
     },
     "/favicon.ico": { headers: { "cache-control": "public, max-age=604800" } },

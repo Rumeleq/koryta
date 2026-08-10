@@ -74,11 +74,6 @@ def get_args():
         "Streams from disk. Still disabled by --no-backup/DISABLE_BACKUP.",
     )
     parser.add_argument(
-        "--all",
-        action="store_true",
-        help="Run every pipeline except ScrapeRejestrIO, which bills per query.",
-    )
-    parser.add_argument(
         "--exclude",
         action="append",
         default=[],
@@ -116,11 +111,6 @@ def select_pipelines(args) -> set[str]:
             f"Available: {' '.join(sorted(pipeline_names))}"
         )
 
-    if args.all:
-        if args.pipeline:
-            raise ValueError("--all runs everything, so it takes no pipeline names")
-        # ScrapeRejestrIO bills per query -- never part of a bulk run.
-        return pipeline_names - {"ScrapeRejestrIO"} - exclude
     if args.pipeline:
         return set(args.pipeline) - exclude
     raise ValueError("No pipeline specified, use koryta PipelineName or --all")

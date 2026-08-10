@@ -4,6 +4,7 @@ import {
   type ActivityCounts,
   type ActivityKind,
 } from "~~/shared/activity";
+import { isPipelineUid } from "~~/shared/stats";
 
 /** One thing a human did, normalized out of whichever collection recorded it.
  *
@@ -44,10 +45,11 @@ export type ActivityAggregate = {
 };
 
 /** Writes the pipeline makes on a person's behalf. They dwarf everything a
- * human does and would turn the page into a chart of one robot's day. */
-export function isPipelineUid(uid: string | undefined | null): boolean {
-  return !!uid && uid.includes("pipeline");
-}
+ * human does and would turn the page into a chart of one robot's day.
+ *
+ * Defined next to the vote aggregate that has to draw the same line, and
+ * re-exported here because the activity page drew it first. */
+export { isPipelineUid };
 
 /** The UTC day an instant falls on, or null if it cannot be read as one. */
 export function utcDay(at: string | null | undefined): string | null {

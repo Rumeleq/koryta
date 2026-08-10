@@ -1,9 +1,17 @@
+from analysis.article_person_mentions import ArticlePersonMentions
 from analysis.extract import Extract
 from analysis.graph import CommitteeParties, PeopleParties
 from analysis.interesting import Companies
 from analysis.payloads import CompaniesPayloads, PeoplePayloads, RegionPayloads
 from analysis.people import PeopleEnriched, PeopleMerged
-from analysis.scores import CompanyScores, PeopleScores
+from analysis.scores import (
+    CompanyScores,
+    PeopleScores,
+    PeopleScoresCapture,
+    PeopleScoresCoappointment,
+    PeopleScoresPageRank,
+    PeopleScoresTurnover,
+)
 from analysis.stats import Statistics
 from scrapers.article.pipelines import (
     ArticleAnalyzed,
@@ -14,6 +22,7 @@ from scrapers.article.pipelines import (
     ArticleKoryciarskiScores,
     ArticleParsed,
 )
+from scrapers.article.pipelines.people_affair_tags_pipeline import PeopleAffairTags
 from scrapers.kmgp.companies import CompaniesKMGP
 from scrapers.kmgp.people import PeopleKMGP
 from scrapers.koryta.differ import KorytaDiffer
@@ -37,12 +46,18 @@ PIPELINES = [
     ArticleExtractedFacts,
     ArticleFactsVerified,
     ArticleAnalyzed,
+    ArticlePersonMentions,
+    PeopleAffairTags,
     CompaniesKRS,
     Companies,
     CompaniesKMGP,
     CompaniesPayloads,
     CompanyScores,
     PeopleScores,
+    PeopleScoresCapture,
+    PeopleScoresCoappointment,
+    PeopleScoresPageRank,
+    PeopleScoresTurnover,
     Extract,
     KRSAlreadyScraped,
     KRSCensoredPeople,

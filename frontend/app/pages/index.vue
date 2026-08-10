@@ -1,8 +1,5 @@
 <template>
   <HomeSection color>
-    <h1
-      class="text-h5 text-sm-h3 text-md-h3 font-weight-bold mb-6 lh-title justify-center"
-    ></h1>
     <v-container
       fluid
       class="d-flex align-center justify-center overflow-hidden w-100"
@@ -127,6 +124,7 @@
 <script setup lang="ts">
 import { mdiChevronRight, mdiLayersSearchOutline, mdiTable } from "@mdi/js";
 import { useStats } from "~/composables/stats/useStats";
+import { SOCIAL_CARD } from "~/composables/entitySeo";
 
 useSeoMeta({
   title: "Największy, niezależny agregator koryciarstwa",
@@ -135,7 +133,12 @@ useSeoMeta({
   ogTitle: "Największy, niezależny agregator koryciarstwa",
   ogDescription:
     "Jesteśmy największym, ogólnopolskim i niezależnym agregatorem koryciarstwa. Sprawdź którymi stanowiskami w publicznych spółkach podzielili się politycy.",
-  ogImage: "/logo.png",
+  // logo.png is 5906px square and 1.4 MB - cropped to a circle by every
+  // platform that accepts it at all. social-card.png is the 1200x630 they ask
+  // for.
+  ogImage: SOCIAL_CARD,
+  twitterCard: "summary_large_image",
+  twitterImage: SOCIAL_CARD,
 });
 
 definePageMeta({

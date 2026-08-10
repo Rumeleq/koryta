@@ -74,14 +74,12 @@ import {
   onAuthStateChanged,
   sendEmailVerification,
 } from "firebase/auth";
-import { set, ref as dbRef } from "firebase/database";
 
 const loading = ref(false);
 const isLogin = ref(true);
 const error = ref<string | null>(null);
 
 const auth = useFirebaseAuth()!;
-const db = useDatabase();
 const router = useRouter();
 const route = useRoute();
 
@@ -107,9 +105,6 @@ if (auth) {
     user.value = userIn;
     if (userIn) {
       console.log("User logged in:", userIn.uid, idToken.value, userIn.email);
-      set(dbRef(db, `user/${userIn.uid}/displayName`), userIn.displayName);
-      set(dbRef(db, `user/${userIn.uid}/email`), userIn.email);
-      set(dbRef(db, `user/${userIn.uid}/photoURL`), userIn.photoURL);
     }
   });
 }

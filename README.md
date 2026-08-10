@@ -12,7 +12,7 @@ This project uses the following technologies:
   - apex chart for the chart in the home page
   - v-network-graph for the /graf page
 - Firebase to serve the website, with locally emulated:
-  - Firestore and Realtime Database (no SQL, JSON, reactive and obserable)
+  - Firestore (no SQL, JSON, reactive and obserable)
   - Firebase hosting
   - Firebase cloud functions
 

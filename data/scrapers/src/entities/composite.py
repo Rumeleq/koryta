@@ -61,3 +61,7 @@ class PersonScore:
     node_id: str
     name: str
     score: float
+    # Which model said so, and the `userUid` the vote is stored under. The
+    # default is the tag the first model has always written under, so a score
+    # produced before models had names still uploads where it used to.
+    model: str = "pipeline"

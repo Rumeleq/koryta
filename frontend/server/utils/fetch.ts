@@ -7,7 +7,6 @@ import {
   type Region,
   pageIsPublic,
 } from "~~/shared/model";
-import { getDatabase } from "firebase-admin/database";
 import { getFirestore, Filter } from "firebase-admin/firestore";
 import { z } from "zod";
 
@@ -249,12 +248,6 @@ export async function fetchEdges(): Promise<Edge[]> {
   const db = getFirestore("koryta-pl");
   const edges = (await db.collection("edges").get()).docs.map(edgeFromDB);
   return edges as unknown as Edge[];
-}
-
-export async function fetchFirestore<T>(path: string): Promise<T> {
-  const db = getDatabase();
-  const snapshot = await db.ref(path).once("value");
-  return snapshot.val() || {};
 }
 
 export async function fetchNodesByIds(

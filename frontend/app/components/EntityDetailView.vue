@@ -349,6 +349,11 @@ import {
   mdiRefresh,
 } from "@mdi/js";
 import { useEdges } from "~/composables/edges";
+import {
+  entityDescription,
+  entityOgType,
+  SOCIAL_CARD,
+} from "~/composables/entitySeo";
 import { useAuthState, authFetch } from "@/composables/auth";
 import type {
   Person,
@@ -409,15 +414,6 @@ watch(
   { immediate: true },
 );
 
-useHead({
-  title: computed(() => {
-    if (status.value !== "success") {
-      return "Strona nieznaleziona";
-    }
-    return response.value?.node?.name ?? "Strona nieznaleziona";
-  }),
-});
-
 const revisionId = computed(() => route.query.revisionId as string | undefined);
 
 const { data: revisionResponse } = await useAsyncData<Revision | null>(
@@ -466,6 +462,37 @@ const subsidiaries = computed(() => {
   return targets.value.filter(
     (e) => e.type === "owns" && e.richNode.type == "place",
   );
+});
+
+/** An entity page is the thing a reader actually shares, so it carries its own
+ * card: the entity's own description rather than the site tagline, and an image,
+ * without which every platform renders the link as bare text.
+ *
+ * Everything is guarded on a successful load. A page that is missing, or a draft
+ * an anonymous visitor may not see, renders "Dostęp zastrzeżony" - describing
+ * that as though it were the entity would put the wrong name on the card.
+ */
+const seoEntity = computed(() =>
+  status.value === "success" ? entity.value : undefined,
+);
+const seoTitle = computed(
+  () => seoEntity.value?.name ?? "Strona nieznaleziona",
+);
+const seoDescription = computed(() =>
+  seoEntity.value
+    ? entityDescription(seoEntity.value, edges.value.length)
+    : null,
+);
+
+useSeoMeta({
+  title: seoTitle,
+  description: seoDescription,
+  ogTitle: seoTitle,
+  ogDescription: seoDescription,
+  ogType: () => (seoEntity.value ? entityOgType(seoEntity.value) : "website"),
+  ogImage: SOCIAL_CARD,
+  twitterCard: "summary_large_image",
+  twitterImage: SOCIAL_CARD,
 });
 
 /** The relations a reader may add by hand: who somebody knows, and where they

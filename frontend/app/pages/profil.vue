@@ -132,7 +132,6 @@
 <script lang="ts" setup>
 import { mdiCheckCircle, mdiAlertCircle } from "@mdi/js";
 import { updateProfile, sendEmailVerification } from "firebase/auth";
-import { set, ref as dbRef } from "firebase/database";
 import { doc, setDoc } from "firebase/firestore";
 import { useAuthState } from "@/composables/auth";
 
@@ -145,7 +144,6 @@ useHead({
 });
 
 const { user, userConfig, logout } = useAuthState();
-const rtdb = useDatabase();
 const firestore = useFirestore();
 
 const photoURL = computed(
@@ -196,15 +194,13 @@ const saveProfile = async () => {
   savingProfile.value = true;
   try {
     await updateProfile(user.value, { displayName: name });
-    // Keep the mirrors used elsewhere in sync (see login.vue).
-    await Promise.all([
-      set(dbRef(rtdb, `user/${user.value.uid}/displayName`), name),
-      setDoc(
-        doc(firestore, "users", user.value.uid),
-        { displayName: name },
-        { merge: true },
-      ),
-    ]);
+    // Keep the mirror `useAuthState().userConfig` reads in sync with the auth
+    // profile.
+    await setDoc(
+      doc(firestore, "users", user.value.uid),
+      { displayName: name },
+      { merge: true },
+    );
     notify("Zapisano nazwę użytkownika.");
   } catch (err) {
     console.error("Failed to save profile:", err);
