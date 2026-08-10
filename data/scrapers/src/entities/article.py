@@ -154,20 +154,15 @@ class ArticleAnalyzedRecord:
 
 
 @dataclass
-class ArticlePeopleMentioned:
-    """A parsed article and the known people mentioned in it.
+class ArticlePersonMentioned:
+    """A known person mentioned in one parsed article.
 
-    One record per article: carries the URL together with the title, date and
-    tags recovered from the article's ld+json metadata, and the people matched
-    in its text, so a later pass can summarize the articles per person.
-
-    ``people_mentioned`` only lists people who survived two gates: at least one
-    rule-based proof signal (``proof`` - the article's region matching the
-    person's teryt, the person's party in the text, or one of the person's
-    organizations being named) AND an LLM judge verdict of ``yes`` (``judge``).
-    ``proof`` maps each candidate to the signals that matched; ``judge`` maps
-    them to the LLM's verdict and justification. Candidates the judge rejected
-    are listed in ``judge`` but not in ``people_mentioned``.
+    One record per (article, person) pair that passed the proof gate: the
+    article's URL together with the person's display name, which rule-based
+    proof signals matched (``proof_region``/``proof_party``/``proof_organization``),
+    and the LLM judge's ``verdict`` (yes/no/unknown) with its ``justification``.
+    Only pairs with at least one proof signal are sent to the LLM; a ``yes``
+    verdict marks a genuine mention of the known person.
     """
 
     __output_path__: ClassVar[Path] = Path(
@@ -175,13 +170,16 @@ class ArticlePeopleMentioned:
     )
 
     url: str
+    person: str
     domain: str
     title: str | None
     date: str | None
     tags: list[str]
-    people_mentioned: list[str]
-    proof: dict[str, list[str]] = field(default_factory=dict)
-    judge: dict[str, dict[str, str]] = field(default_factory=dict)
+    proof_region: bool = False
+    proof_party: bool = False
+    proof_organization: bool = False
+    verdict: str = "unknown"
+    justification: str = ""
 
 
 @dataclass

@@ -20,7 +20,6 @@ matches, and the ``proof`` dict records which ones did.
 import asyncio
 import json
 import re
-import unicodedata
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
@@ -29,8 +28,9 @@ import pandas as pd
 from tqdm import tqdm
 
 from analysis.people import PeopleMerged
-from entities.article import ArticlePeopleMentioned
+from entities.article import ArticlePersonMentioned
 from scrapers.article.parse import date_iso_from_ld_json, title_from_ld_json
+from scrapers.article.pipelines.common import ascii_lower, normalize_text, strip_think_blocks
 from scrapers.article.pipelines.incremental import IncrementalJsonlPipeline
 from scrapers.article.pipelines.parsed_pipeline import ArticleParsed
 from scrapers.article.pipelines.pipeline_utils import llm_model
@@ -48,8 +48,6 @@ MAX_TOKENS = 2000
 TEMPERATURE = 0.0
 TEXT_LIMIT = 30000
 
-_THINK_RE = re.compile(r"<think>.*?</think>", flags=re.DOTALL)
-
 # A word is capitalized when it starts with an uppercase Polish letter.
 _CAP = "A-ZĄĆĘŁŃÓŚŹŻ"
 _LOW = "a-ząćęłńóśźż"
@@ -60,35 +58,18 @@ _RUN_RE = re.compile(rf"(?:{_WORD}\s+){{1,{_MAX_RUN_WORDS - 1}}}{_WORD}")
 
 # Domain -> region mapping, generated from files/seed.csv + TERYT codes. Each
 # entry lists the regions (woj/woj_code/powiat/powiat_code/miasto) the outlet
-# covers.
-_DOMAIN_REGION_FILE = "files/domain_to_region.json"
-
-
-def _norm_token(token: str) -> str:
-    """Lowercase a token with diacritics stripped (``Ząbek`` -> ``zabek``)."""
-    decomposed = unicodedata.normalize("NFKD", token)
-    stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
-    return stripped.lower()
-
-
-def _norm_text(text: str) -> str:
-    """Diacritics-stripped, lowercased text for party/org substring search."""
-    decomposed = unicodedata.normalize("NFKD", text)
-    stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
-    return stripped.lower()
-
-
-# Characters NFKD does not decompose (Polish ``ł``/``Ł``), mapped by hand.
-_ASCII_MAP = str.maketrans({"ł": "l", "Ł": "L"})
-
-
-def _ascii_lower(text: str) -> str:
-    """ASCII lowercased text: NFKD-strips accents and maps ``ł`` -> ``l``."""
-    return _norm_text(text).translate(_ASCII_MAP)
+# covers. Kept next to the verified domain->selector map.
+_DOMAIN_REGION_FILE = (
+    Path(__file__).resolve().parents[2]
+    / "scrapers"
+    / "article"
+    / "pipelines"
+    / "domain_to_region.json"
+)
 
 
 def _name_tuple(name: str) -> tuple[str, ...]:
-    return tuple(_norm_token(t) for t in str(name).split())
+    return tuple(normalize_text(t) for t in str(name).split())
 
 
 def _tags_from_ld_json(ld_json: Any) -> list[str]:
@@ -143,7 +124,7 @@ class PersonNameIndex:
         "Zielinski") are treated as one person; people_merged is ordered by
         confidence, so the first spelling seen wins.
         """
-        norm_display = _norm_token(display)
+        norm_display = normalize_text(display)
         if norm_display not in self._seen_people:
             self._seen_people.add(norm_display)
             self.people += 1
@@ -163,7 +144,7 @@ class PersonNameIndex:
             max_n = min(n_words, self.max_len)
             for n in range(2, max_n + 1):
                 for i in range(n_words - n + 1):
-                    key = tuple(_norm_token(w) for w in words[i : i + n])
+                    key = tuple(normalize_text(w) for w in words[i : i + n])
                     names = self._by_tuple.get(key)
                     if names:
                         found.update(names.values())
@@ -290,7 +271,7 @@ def _org_match_terms(org_norm: str) -> set[str]:
     """
     stems: set[str] = set()
     for word in org_norm.split():
-        stripped = _norm_text(word)
+        stripped = normalize_text(word)
         stemmed = _stem(stripped)
         if stripped in _STOP_ORG_WORDS or stemmed in _STOP_ORG_WORDS:
             continue
@@ -334,7 +315,7 @@ class PersonProfileIndex:
         self._by_display: dict[str, PersonProfile] = {}
 
     def add(self, display: str, profile: PersonProfile) -> None:
-        key = _norm_token(display)
+        key = normalize_text(display)
         existing = self._by_display.get(key)
         if existing is None:
             self._by_display[key] = profile
@@ -342,7 +323,7 @@ class PersonProfileIndex:
             existing.merge(profile)
 
     def profile(self, display: str) -> PersonProfile | None:
-        return self._by_display.get(_norm_token(display))
+        return self._by_display.get(normalize_text(display))
 
     def __len__(self) -> int:
         return len(self._by_display)
@@ -395,7 +376,7 @@ def _load_index_and_profiles(
         for election in row.get("elections") or []:
             party = (election or {}).get("party")
             if party:
-                profile.parties.update(_party_match_terms(_norm_text(str(party))))
+                profile.parties.update(_party_match_terms(normalize_text(str(party))))
             for t in (election or {}).get("teryt_wojewodztwo") or []:
                 if t not in (None, ""):
                     profile.woj.add(str(t))
@@ -406,7 +387,7 @@ def _load_index_and_profiles(
             krs = (employment or {}).get("employed_krs")
             name = krs_names.get(str(krs)) if krs else None
             if name:
-                profile.orgs.update(_org_match_terms(_ascii_lower(name)))
+                profile.orgs.update(_org_match_terms(ascii_lower(name)))
         profiles.add(display, profile)
     return index, profiles
 
@@ -471,7 +452,7 @@ def _proof_for(
                 break
 
     if profile.orgs:
-        ascii_content = _ascii_lower(norm_content)
+        ascii_content = ascii_lower(norm_content)
         text_words = {_stem(w) for w in re.findall(r"\w+", ascii_content)}
         matched = [o for o in profile.orgs if o in text_words]
         if len(matched) >= 2:
@@ -500,7 +481,7 @@ def _confirm_mentions(
     domain_map: DomainRegionMap,
 ) -> dict[str, list[str]]:
     """Keep names with at least one proof signal; map name -> proof list."""
-    norm_content = _norm_text(content)
+    norm_content = normalize_text(content)
     confirmed: dict[str, list[str]] = {}
     for name in names:
         profile = profiles.profile(name)
@@ -573,7 +554,7 @@ def _judge_request(
 
 
 def _parse_verdict(text: str) -> tuple[str, str]:
-    text = _THINK_RE.sub("", text or "")
+    text = strip_think_blocks(text)
     lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
     justification = ""
     verdict = "unknown"
@@ -598,31 +579,31 @@ def _parse_verdict(text: str) -> tuple[str, str]:
     return verdict, justification[:500]
 
 
-def _judge_row(
+def _emit_person(
     ctx: Context,
     row: dict[str, Any],
-    confirmed: dict[str, list[str]],
-    verdicts: dict[str, tuple[str, str]],
-    model: str,
+    person: str,
+    proof: list[str],
+    verdict: str,
+    justification: str,
 ) -> None:
-    """Emit one mentions row, keeping only judge-`yes` people."""
-    judge: dict[str, dict[str, str]] = {}
-    kept: list[str] = []
-    for person, signals in confirmed.items():
-        verdict, justification = verdicts.get(person, ("unknown", "no verdict"))
-        judge[person] = {"verdict": verdict, "justification": justification}
-        if verdict == "yes":
-            kept.append(person)
-    row["people_mentioned"] = sorted(kept)
-    row["proof"] = confirmed
-    row["judge"] = judge
-    fields = {
-        key: value
-        for key, value in row.items()
-        if not key.startswith("_") and key != "confirmed"
-    }
+    """Emit one ``ArticlePersonMentioned`` row for a judged (article, person) pair."""
+    proof_set = set(proof)
     ctx.io.dumper.insert_into(  # type: ignore[attr-defined]
-        ArticlePeopleMentioned(**fields), []
+        ArticlePersonMentioned(
+            url=row["url"],
+            person=person,
+            domain=row["domain"],
+            title=row["title"],
+            date=row["date"],
+            tags=row["tags"],
+            proof_region=any(s.startswith("region:") for s in proof_set),
+            proof_party=any(s.startswith("party:") for s in proof_set),
+            proof_organization=any(s.startswith("organization:") for s in proof_set),
+            verdict=verdict,
+            justification=justification,
+        ),
+        [],
     )
 
 
@@ -644,29 +625,20 @@ async def _scan_and_judge(
     """
     await LLM.from_context(ctx).check_health()
 
-    inflight: dict[int, tuple[dict[str, Any], str]] = {}
+    inflight: dict[int, tuple[dict[str, Any], str, list[str]]] = {}
     candidates = 0
     dropped = 0
     rows = 0
 
-    def emit_if_done(row: dict[str, Any]) -> None:
-        if row["_emitted"]:
-            return
-        row["_emitted"] = True
-        _judge_row(ctx, row, row["confirmed"], row["_verdicts"], model)
-
     async def drain(pool: LLMResponsePool) -> None:
         request_id, response = await pool.get_response()
-        row, person = inflight.pop(request_id)
+        row, person, proof = inflight.pop(request_id)
         if isinstance(response, Exception):
             verdict, justification = "unknown", str(response)[:200]
         else:
             verdict, justification = _parse_verdict(response.content)
-        row["_verdicts"][person] = (verdict, justification)
-        row["_pending"] -= 1
+        _emit_person(ctx, row, person, proof, verdict, justification)
         bar.update(1)
-        if row["_pending"] == 0:
-            emit_if_done(row)
 
     with tqdm(total=0, desc="Judging mentions", unit="pair") as bar:
         async with LLM.from_context(ctx).response_pool() as pool:
@@ -698,10 +670,6 @@ async def _scan_and_judge(
                     if not confirmed:
                         continue
                     row = _mention_meta(raw)
-                    row["confirmed"] = confirmed
-                    row["_verdicts"] = {}
-                    row["_pending"] = len(confirmed)
-                    row["_emitted"] = False
                     candidates += len(confirmed)
                     rows += 1
                     bar.total += len(confirmed)
@@ -712,7 +680,7 @@ async def _scan_and_judge(
                         request_id = await pool.put_request(
                             _judge_request(person, profile, proof, content, model)
                         )
-                        inflight[request_id] = (row, person)
+                        inflight[request_id] = (row, person, proof)
             while inflight:
                 await drain(pool)
 
@@ -731,7 +699,7 @@ def _print_llm_usage(ctx: Context) -> None:
     )
 
 
-class ArticlePersonMentions(IncrementalJsonlPipeline[ArticlePeopleMentioned]):
+class ArticlePersonMentions(IncrementalJsonlPipeline[ArticlePersonMentioned]):
     """Cross-reference people_merged with article_parsed to find mentions."""
 
     filename = "article_person_mentions"
@@ -743,7 +711,7 @@ class ArticlePersonMentions(IncrementalJsonlPipeline[ArticlePeopleMentioned]):
 
     @property
     def output_class(self):
-        return ArticlePeopleMentioned
+        return ArticlePersonMentioned
 
     def process(self, ctx: Context) -> pd.DataFrame:
         self.prepare_temp_output()

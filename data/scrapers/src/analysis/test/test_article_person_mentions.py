@@ -7,14 +7,14 @@ import pytest
 from analysis.article_person_mentions import (
     PersonProfile,
     PersonProfileIndex,
-    _ascii_lower,
     _confirm_mentions,
     _org_match_terms,
     _parse_verdict,
     _party_match_terms,
     _stem,
 )
-from entities.article import ArticlePeopleMentioned
+from entities.article import ArticlePersonMentioned
+from scrapers.article.pipelines.common import ascii_lower
 
 
 @pytest.fixture
@@ -40,7 +40,7 @@ def profiles_and_map():
 
 
 def test_ascii_lower_maps_l():
-    assert _ascii_lower("spółka Łódź") == "spolka lodz"
+    assert ascii_lower("spółka Łódź") == "spolka lodz"
 
 
 def test_stem_reduces_declined_forms():
@@ -51,7 +51,7 @@ def test_stem_reduces_declined_forms():
 
 def test_org_match_terms_skip_company_form_words():
     terms = _org_match_terms(
-        _ascii_lower(
+        ascii_lower(
             "Przedsiębiorstwo Gospodarki Komunalnej i Mieszkaniowej Sp. z o.o."
         )
     )
@@ -155,22 +155,25 @@ def test_no_proof_drops(profiles_and_map):
     assert confirmed == {}
 
 
-def test_entity_has_proof_field():
-    record = ArticlePeopleMentioned(
+def test_entity_has_typed_proof_and_verdict_fields():
+    record = ArticlePersonMentioned(
         url="x",
+        person="Jan Kowalski",
         domain="y",
         title="t",
         date="2020-01-01",
         tags=[],
-        people_mentioned=["Jan Kowalski"],
-        proof={"Jan Kowalski": ["region:powiat"]},
-        judge={
-            "Jan Kowalski": {"verdict": "yes", "justification": "kontekst się zgadza"}
-        },
+        proof_region=True,
+        proof_party=True,
+        proof_organization=False,
+        verdict="yes",
+        justification="kontekst się zgadza",
     )
-    assert record.proof["Jan Kowalski"] == ["region:powiat"]
-    assert record.judge["Jan Kowalski"]["verdict"] == "yes"
-    assert json.dumps({"proof": record.proof, "judge": record.judge})  # serializable
+    assert record.proof_region is True
+    assert record.proof_party is True
+    assert record.proof_organization is False
+    assert record.verdict == "yes"
+    assert json.dumps(record.__dict__)  # serializable
 
 
 def test_parse_verdict_justification_then_label():
