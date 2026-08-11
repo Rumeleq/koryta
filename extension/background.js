@@ -10,6 +10,7 @@ import { getOrigin, TOKEN_REFRESH_MARGIN_MS } from "./config.js";
 import { collectPage, readCanonicalUrl } from "./capture.js";
 import { scrollToQuote } from "./highlight.js";
 import { watchSelection } from "./selection.js";
+import { coalesceRefreshes } from "./refresh.js";
 
 /** The most recent job, per tab, so reopening the popup shows where it got to
  * rather than starting again. */
@@ -45,6 +46,10 @@ async function storeToken(payload) {
     datascience: !!payload.datascience,
   };
   await chrome.storage.local.set({ auth });
+  // However this one arrived — a handoff we asked for, or someone opening
+  // /rozszerzenie themselves — the site is answering again, so there is nothing
+  // left to wait out before the next tab may be opened.
+  refreshToken.arrived();
   for (const waiter of [...tokenWaiters]) waiter(auth);
   return { ok: true, datascience: auth.datascience };
 }
@@ -62,8 +67,12 @@ async function readToken() {
  * Firebase session — but it does not have to be looked at. If the person is
  * signed out the page cannot answer, so this gives up after a while and the
  * popup asks them to connect by hand.
+ *
+ * Never called directly: `refreshToken` is this behind `coalesceRefreshes`, so
+ * that six callers wanting a token at the same moment open one tab between them
+ * rather than one each.
  */
-async function refreshToken() {
+async function openHandoffTab() {
   const origin = await getOrigin();
   const tab = await chrome.tabs.create({
     url: `${origin}/rozszerzenie?silent=1`,
@@ -90,8 +99,10 @@ async function refreshToken() {
   }
 }
 
-async function requireToken() {
-  return (await readToken()) || (await refreshToken());
+const refreshToken = coalesceRefreshes(openHandoffTab);
+
+async function requireToken(options) {
+  return (await readToken()) || (await refreshToken(options));
 }
 
 chrome.runtime.onMessageExternal.addListener((message, _sender, sendResponse) => {
@@ -496,7 +507,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
   if (message?.type === "koryta-connect") {
-    refreshToken()
+    // Forced past the cooldown: somebody pressed this, which usually means
+    // they have just signed in and know something the last failure did not.
+    refreshToken({ force: true })
       .then((auth) => sendResponse({ auth }))
       .catch((error) => sendResponse({ error: error.message }));
     return true;
