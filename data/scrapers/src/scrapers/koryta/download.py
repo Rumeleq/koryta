@@ -241,6 +241,10 @@ class KorytaPeople(Pipeline[Person]):
             votes_interesting = (
                 data.get("stats", {}).get("votes", {}).get("interesting", None)
             )
+            # A node written before the field existed has no `rejestrIo` at
+            # all, and one written alongside nodes that do have it gets NaN
+            # from pandas rather than None. Both mean the same thing here.
+            rejestr_io = data.get("rejestrIo")
             outputs.append(
                 Person(
                     full_name=data.get("name", ""),
@@ -249,6 +253,7 @@ class KorytaPeople(Pipeline[Person]):
                     data={},  # data,
                     is_public=data.get("stats", {}).get("isApproved", False),
                     votes_interesting=votes_interesting,
+                    rejestr_io=rejestr_io if isinstance(rejestr_io, str) else None,
                 )
             )
 
