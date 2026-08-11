@@ -126,6 +126,19 @@ def stats_votes(document: dict) -> dict:
     return votes if isinstance(votes, dict) else {}
 
 
+def page_is_public(document: dict) -> bool:
+    """Whether a logged out visitor can see this document's page.
+
+    A port of `pageIsPublic` in `frontend/shared/model.ts`: an approved removal
+    outranks everything, and otherwise `published` is the whole answer. An
+    absent flag is a draft, which is what makes losing the field a way to
+    unpublish a page by accident rather than a no-op.
+    """
+    if document.get("deleted") is True:
+        return False
+    return document.get("published") is True
+
+
 def compute_vote_stats(votes: list[dict]) -> dict:
     """Recompute a vote aggregate the way the site does.
 
@@ -426,6 +439,91 @@ def test_is_approved_matches_the_approved_revision(nodes):
     assert not mismatched, (
         f"{len(mismatched)} nodes disagree with themselves about being "
         f"approved: {sample(mismatched)}"
+    )
+
+
+@pytest.mark.parametrize("collection", ["nodes", "edges"])
+def test_every_document_says_whether_it_is_published(snapshot, collection):
+    """`published` is stored on every node and edge, not merely on the live ones.
+
+    A revision is written to its target with `set` rather than `merge`, and
+    `withoutInternalFields` keeps `published` out of every revision on purpose -
+    a revision states the data, not who may see it. So a writer that does not
+    carry the flag back does not leave it alone, it deletes it, and
+    `pageIsPublic` reads an absent flag as a draft: the page comes off the site
+    without anything having decided to remove it.
+
+    That is not hypothetical. It is what re-running the scrapers over somebody
+    the database already had used to do, until the person ingest started handing
+    the stored document to `createRevisionTransaction` - which is the only
+    reason this test can be strict rather than carry a budget.
+    """
+    missing = [
+        document["id"]
+        for document in snapshot.collection(collection)
+        if "published" not in document
+    ]
+
+    assert not missing, (
+        f"{len(missing)} {collection} have no `published` field, so they read "
+        f"as drafts whatever was intended: {sample(missing)}"
+    )
+
+
+def test_every_node_keeps_the_counters_no_revision_carries(nodes):
+    """`stats` and `revisions` survive every write to a node.
+
+    Neither is part of any revision - see `INTERNAL_FIELDS` - and both are
+    written by triggers rather than by whoever last edited the node, so the
+    write that materialises a revision has to put them back explicitly. Missing
+    them is invisible on the page itself and only shows up in aggregate: `stats`
+    backs every filter, count and sort on /eksploruj, and `revisions` is the
+    history the edit UI offers.
+
+    `votes` and `nameChunksLower` belong to the same set but are not asserted
+    here. Exactly one node carries a `votes` field, so requiring it would state
+    a rule the data has never followed; `nameChunksLower` is absent from 520
+    nodes, 263 of them published articles, which is a gap in the search index
+    rather than anything a revision write did.
+    """
+    missing = [
+        (document["id"], field)
+        for document in nodes
+        for field in ("stats", "revisions")
+        if field not in document
+    ]
+
+    assert not missing, (
+        f"{len(missing)} nodes have lost a field no revision carries, as "
+        f"(node, field): {sample(missing)}"
+    )
+
+
+def test_a_published_node_is_in_the_listings(nodes):
+    """A node the public can see must also be one the listings can find.
+
+    `/api/nodes` filters every listing on `stats.isApproved == true`, and a
+    Firestore equality filter does not match a document that lacks the field at
+    all. So a node that is published but whose `stats` went missing keeps its
+    page and disappears from every table, search and graph that leads to it -
+    live, and reachable only by someone who already has the URL.
+
+    The two halves are written by different things, which is how they came
+    apart: `published` by whoever last wrote the node, `stats.isApproved` by the
+    `onNodeWritten` trigger, and that trigger only rewrites it when visibility
+    *changes*. Carrying visibility across correctly is what stopped it covering
+    for a `stats` that a re-ingest had erased.
+    """
+    invisible = [
+        document["id"]
+        for document in nodes
+        if page_is_public(document) and stats_of(document).get("isApproved") is not True
+    ]
+
+    assert not invisible, (
+        f"{len(invisible)} nodes are published but not `stats.isApproved`, so "
+        f"their pages are live and absent from every listing that leads to "
+        f"them: {sample(invisible)}"
     )
 
 
