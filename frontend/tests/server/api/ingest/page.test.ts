@@ -307,6 +307,16 @@ describe("api/ingest/page", () => {
         "extraction.error": "extractor not configured",
       }),
     );
+    // Named in the response too, so the extension can say what happened
+    // straight away rather than polling for what this request already knew.
+    expect(result.dispatched).toBe(false);
+    expect(result.dispatchError).toBe("extractor not configured");
+  });
+
+  it("says nothing about a dispatch that worked", async () => {
+    const result = await handler({} as never);
+    expect(result.dispatched).toBe(true);
+    expect(result.dispatchError).toBeUndefined();
   });
 
   it("refuses anyone outside the datascience group", async () => {

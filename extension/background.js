@@ -303,8 +303,19 @@ async function pollCapture(tabId, pageId, token) {
       });
     }
     if (capture.status === "error") {
+      // An extraction that never started is not a capture that failed. The
+      // page is in the archive, the article node exists, and the nightly
+      // pipeline reads the bucket regardless — so the only thing missing is
+      // the preview, and saying "nie udało się" about the whole thing is
+      // wrong.
+      //
+      // Told apart by `startedAt`, which the service writes before it reads
+      // anything: its absence means nothing ever picked the job up, whether
+      // because the frontend could not dispatch it or because the service
+      // refused the work as misconfigured. Both are somebody's deployment,
+      // neither is this capture.
       return setJob(tabId, {
-        state: "error",
+        state: capture.extraction?.startedAt ? "error" : "stored",
         pageId,
         error: capture.extraction?.error || "ekstrakcja nie powiodła się",
         url: capture.url,
@@ -422,6 +433,19 @@ async function captureTab(tabId, { selectionOnly = false } = {}) {
       state: "done",
       pageId: result.pageId,
       duplicate: true,
+      url: page.url,
+    });
+  }
+
+  // The server already knows this one and there is nothing to wait for, so it
+  // is said now rather than three seconds into a poll that will only find the
+  // same thing. `pollCapture` reaches the same verdict for a page whose earlier
+  // capture was left this way.
+  if (result.dispatched === false) {
+    return setJob(tabId, {
+      state: "stored",
+      pageId: result.pageId,
+      error: result.dispatchError,
       url: page.url,
     });
   }

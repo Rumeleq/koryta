@@ -17,6 +17,14 @@ const MESSAGES = {
   unauthenticated: () =>
     "Zaloguj się na koryta.pl i połącz rozszerzenie, żeby zapisywać artykuły.",
   slow: (job) => job.message,
+  // Neither success nor failure, and deliberately not styled as either: the
+  // page is archived and the nightly pipeline will read it out of the bucket
+  // whatever happens here. Only the preview is missing, and the reason for that
+  // is a deployment somewhere and not anything the reader did.
+  stored: (job) =>
+    job.error
+      ? `Zapisane w archiwum — ekstrakcja nie wystartowała (${job.error}). Nocny potok i tak przeczyta tę stronę.`
+      : "Zapisane w archiwum — ekstrakcja nie wystartowała. Nocny potok i tak przeczyta tę stronę.",
   done: (job) =>
     job.duplicate
       ? "Ten artykuł był już zapisany."

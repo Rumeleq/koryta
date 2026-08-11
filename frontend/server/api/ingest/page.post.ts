@@ -199,5 +199,8 @@ export default defineEventHandler(async (event) => {
     articleNodeCreated: created,
     storagePath,
     dispatched,
+    // Named here as well as on the document so the caller can say what happened
+    // without waiting for a poll to tell it what this request already knew.
+    dispatchError: dispatched ? undefined : (error ?? undefined),
   };
 });
