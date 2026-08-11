@@ -62,6 +62,13 @@ second-level domain in those patterns — so the handoff there goes through
 `bridge.js`, a content script that relays a `window.postMessage` from
 `/rozszerzenie`. Same page, same token, one more hop.
 
+Restarting the dev server invalidates every token the extension holds — an id
+token names the Firebase project it was issued for, and re-seeding the auth
+emulator is enough. The extension notices by way of a 401 and re-mints, which
+means opening `/rozszerzenie` in a tab; `refresh.js` is what keeps that one tab
+rather than one per asker, and leaves the site alone for a minute after a
+handoff that failed. **Połącz z koryta.pl** skips that wait.
+
 A dev server has no extractor behind it unless you start one, so a capture there
 usually ends at **"Zapisane w archiwum — ekstrakcja nie wystartowała"**. That is
 not a failed capture: the html is in `$TMPDIR/koryta-captures`, the article node
