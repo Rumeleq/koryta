@@ -70,7 +70,7 @@ to `$CAPTURE_LOCAL_DIR` (default `$TMPDIR/koryta-captures`) under the same
 | `FIREBASE_WEB_API_KEY`               | —                              | required; public, same value as `nuxt.config.ts`              |
 | `LLM_API_KEY`                        | —                              | required; also read from `OPENROUTER_APIKEY`/`OPENAI_API_KEY` |
 | `LLM_BASE_URL`                       | `https://openrouter.ai/api/v1` | any OpenAI-compatible endpoint                                |
-| `LLM_MODEL`                          | `qwen/qwen3-32b`               |                                                               |
+| `LLM_MODEL`                          | `qwen/qwen3-235b-a22b-2507`    |                                                               |
 | `LLM_LANES`                          | `4`                            | concurrent requests; the per-fact judgements use them         |
 | `EXTRACTOR_UID`                      | `capture-extractor`            | the Firebase uid this service signs in as                     |
 | `EXTRACTION_TAG`                     | `capture_v1`                   | stamped on every submitted fact                               |
@@ -81,6 +81,12 @@ to `$CAPTURE_LOCAL_DIR` (default `$TMPDIR/koryta-captures`) under the same
 The model is deliberately not the batch pipeline's `Qwen/Qwen3-14B`: there is no
 GPU behind Cloud Run, so this goes to a hosted endpoint. Facts from the two
 runs will not be identical, which is what the tag is for.
+
+It is also a much larger model than the batch run's, for the same reason the
+score does not gate extraction here: this is one page a person chose, not one of
+millions crawled, so the per-page cost that makes a 235B model impossible
+nightly is a rounding error on a single capture — and a capture is the one path
+where the reader is waiting for the answer and can see it be wrong.
 
 ## Deploying
 

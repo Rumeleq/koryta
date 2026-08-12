@@ -89,7 +89,7 @@ def config() -> Config:
         firebase_api_key=required["FIREBASE_WEB_API_KEY"],
         extractor_uid=os.environ.get("EXTRACTOR_UID", "capture-extractor"),
         firestore_database=os.environ.get("FIRESTORE_DATABASE", "koryta-pl"),
-        llm_model=os.environ.get("LLM_MODEL", "qwen/qwen3-32b"),
+        llm_model=os.environ.get("LLM_MODEL", "qwen/qwen3-235b-a22b-2507"),
         llm_base_url=os.environ.get("LLM_BASE_URL", "https://openrouter.ai/api/v1"),
         llm_api_key=required["LLM_API_KEY"],
         llm_lanes=_int("LLM_LANES", 4),
