@@ -1,6 +1,7 @@
 import io
 import logging
 import os
+import tarfile
 import typing
 from functools import cached_property
 
@@ -29,6 +30,7 @@ from scrapers.stores.file import (
     MirrorRef,
     NotInMirrorError,
     VersionedBackup,
+    split_crawl_date,
 )
 from stores import file
 from stores.config import PROJECT_ROOT
@@ -41,6 +43,9 @@ from stores.storage import CRAWLED_BUCKET, BatchClient
 from stores.storage import Client as CloudStorageClient
 from stores.utils import UtilsImpl
 from stores.web import WebImpl
+
+#: What `BatchClient.batch_upload` names an archive of crawled responses.
+_BATCH_SUFFIX = ".tar.gz"
 
 
 class Conductor(IO):
@@ -161,7 +166,45 @@ class Conductor(IO):
                 return
 
         for ref in self.list_files(path):
-            yield getattr(ref, "url", str(ref)), self.read_data(ref)
+            url = getattr(ref, "url", str(ref))
+            if url.endswith(_BATCH_SUFFIX):
+                yield from self._read_batch(ref, url)
+            else:
+                yield url, self.read_data(ref)
+
+    def _read_batch(
+        self, ref: DataRef, url: str
+    ) -> typing.Iterable[tuple[str, File]]:
+        """Unpack one archive written by `BatchClient.batch_upload`.
+
+        A batched crawl writes a tar.gz per hostname per day rather than an
+        object per response, so a listing of such a prefix returns archives
+        where every other prefix returns the responses themselves. Callers
+        read the object *path* -- for the KRS number, for the crawl date, for
+        which source a fact came from -- so the members are handed back under
+        the names they would have had unbatched:
+
+            hostname=h/date=D/uid_x.tar.gz   member  h/api/Thing/?Id=1
+            ->  gs://<bucket>/hostname=h/api/Thing/?Id=1/date=D
+
+        which is the layout `split_crawl_date` calls the newer of the two: the
+        crawl date trailing the path rather than following the hostname.
+        """
+        _, date = split_crawl_date(url.rsplit("/", 1)[0])
+        host = url.split("hostname=", 1)[1].split("/", 1)[0]
+        local = self.read_data(ref).path
+        with tarfile.open(local, mode="r:gz") as archive:
+            for member in archive:
+                if not member.isfile() or member.name == "index.txt":
+                    continue
+                handle = archive.extractfile(member)
+                if handle is None:
+                    continue
+                rel = member.name.removeprefix(f"{host}/")
+                name = f"gs://{CRAWLED_BUCKET}/hostname={host}/{rel}"
+                if date:
+                    name = f"{name}/date={date}"
+                yield name, file.FromBytesIO(handle.read(), name)
 
     def output_entity(self, entity, sort_by=[]):
         try:

@@ -9,7 +9,7 @@ class Source:
     """Represents a source of information for a company."""
 
     # TODO make sure you're supporting all the sources.
-    source: Literal["wiki", "rejestr-io", "hardcoded", "api-krs"]
+    source: Literal["wiki", "rejestr-io", "hardcoded", "api-krs", "msig"]
     source_krs: str | None = None
     reason: str | None = None
 

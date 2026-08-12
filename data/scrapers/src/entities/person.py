@@ -38,6 +38,40 @@ class KRS:
 
 
 @dataclass
+class MSiG:
+    """A person as one KRS entry in the Monitor Sądowy i Gospodarczy named them.
+
+    One row per person per entry, not per spell: the Monitor publishes the
+    register's diffs, so what it states is "on this date this person was
+    written into, or struck from, this post" -- `action` says which. Whoever
+    wants the roster of a company on a date replays these in order.
+
+    Unlike `KRS`, which comes from rejestr.io, this carries the name and PESEL
+    in full. That is the whole reason the source is worth crawling: the free
+    KRS API masks both.
+    """
+
+    krs: str
+    last_name: str
+    first_names: str | None
+    full_name: str
+    pesel: str | None
+    role: str
+    #: `wpisac`, `wykreslic`, `stan` (a first entry), or `dla_pozycji` (named
+    #: while some other field of theirs was amended, so: sitting at the time).
+    action: str
+    #: When the court made the entry. The publication follows days to weeks
+    #: later, and is what `publication_date` holds.
+    entry_date: str | None
+    publication_date: str | None
+    announcement_id: str
+    monitor_number: str | None = None
+    position: int | None = None
+    dzial: int | None = None
+    rubryka: int | None = None
+
+
+@dataclass
 class PKW:
     """Represents a person from a PKW (National Electoral Commission) dataset."""
 

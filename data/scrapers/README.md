@@ -47,6 +47,77 @@ You can run each script with `uv run scripts-name`.
 
 Refer to `pyproject.toml` for the most up-to-date list of the scripts available there.
 
+## Monitor Sądowy i Gospodarczy (MSiG)
+
+The only free source that gives people's names in full. `api-krs.ms.gov.pl`
+masks them by law -- a board member reads `G******* S********` with a PESEL of
+`6**********` -- and the unmasked "Full API" needs a decision from the
+Minister of Justice that a transparency project will not get. The Monitor
+published the KRS entries themselves, and those spell out
+`GOSIEWSKI STANISŁAW ANTONI 69032811497`.
+
+`wyszukiwarka-msig.ms.gov.pl` runs an undocumented JSON API under its Angular
+app: no key, no captcha, no robots.txt. `scrapers/msig/api.py` has the
+particulars, including the two parameters that 444 the request by their
+absence.
+
+**Two things bound what this is worth.**
+
+KRS entries stopped being published in the Monitor at the turn of 2026, when
+the obligation to publish them was repealed. Measured on the search itself,
+day by day: 201 entries on 2025-08-04, 3 on 2026-02-04, 1 on 2026-08-03; by
+month, 1622 in November 2025 down to 4 in July 2026. So this is a closed
+archive -- 2001 to late 2025 -- and nothing after it. Names of people
+appointed since then have no free source at all.
+
+And the whole Monitor is far too big to take: one publication day carries
+around 4000 KRS entries, which is tens of millions of announcements over the
+archive. The sweep therefore goes company by company, over the KRS numbers
+`CompaniesKRS` already knows, which is on the order of half a million
+requests.
+
+```bash
+uv run koryta_scrape_msig --limit 20   # a pilot, twenty companies
+uv run koryta_scrape_msig --dry-run    # what a full sweep would cover
+uv run koryta_scrape_msig              # the sweep: hours, resumable
+```
+
+It writes to `koryta-pl-crawled` under
+`hostname=wyszukiwarka-msig.ms.gov.pl/date=<crawl>/uid_*.tar.gz` -- batched,
+because half a million 5 KB objects is half a million GCS operations to write
+and to read back. `Conductor.read_many` unpacks such archives transparently
+and hands their members back under the object names they would have had
+unbatched, so pipelines do not know the difference.
+
+Resuming reads what actually landed in the bucket rather than a local ledger:
+
+```bash
+uv run koryta_scrape_msig --refresh MSiGCrawled   # after a previous run
+```
+
+Then the two pipelines, neither of which touches the network:
+
+```bash
+uv run koryta PeopleMSiG  --refresh PeopleMSiG    # people, one row per entry
+uv run koryta CompanyMSiG --refresh CompanyMSiG   # names, REGON, seats
+```
+
+`PeopleMSiG` is a history of appointments and dismissals, not a roster: each
+row says that on a date somebody was written into or struck from a post
+(`action`), because that is what the Monitor publishes. `dla_pozycji` is a
+third case -- named while some other field of theirs was amended, so: sitting
+at the time. A roster on a date is a replay of the rows up to it.
+
+The intended use is unmasking. Take the masked current board from
+`KRSCensoredPeople`, match first letter, surname length and the PESEL's first
+digit against the candidates `PeopleMSiG` holds for the same KRS, and the
+match is usually unique. Entries from 2026 on will not have a candidate.
+
+`scrapers/msig/people.py` classifies a rubryka before reading anybody out of
+it, and counts the ones it cannot classify. If a run prints `unclassified
+rubryki holding names`, the register has a kind of post that module has not
+been taught -- the rows are dropped, deliberately and loudly.
+
 ## Centralny Rejestr Umów (CRU)
 
 `CruDump` fetches the public contracts register from a postgres mirror of the

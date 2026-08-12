@@ -35,6 +35,7 @@ from scrapers.krs.scrape import KRSAlreadyScraped, KRSNeedsRefresh, ScrapeRejest
 from scrapers.krs.updates import KRSUpdates
 from scrapers.map.postal_codes import PostalCodes
 from scrapers.map.teryt import Regions
+from scrapers.msig.list import CompanyMSiG, MSiGCrawled, PeopleMSiG
 from scrapers.pkw.process import PeoplePKW
 from scrapers.wiki.process_articles import ProcessWiki
 from scrapers.wiki.process_articles_ner import ProcessWikiNer
@@ -54,6 +55,7 @@ PIPELINES = [
     Companies,
     CompaniesKMGP,
     CompaniesPayloads,
+    CompanyMSiG,
     CompanyScores,
     CruDump,
     CruUmowy,
@@ -67,12 +69,14 @@ PIPELINES = [
     KRSCensoredPeople,
     KRSNeedsRefresh,
     KRSUpdates,
+    MSiGCrawled,
     KorytaCompanies,
     KorytaDiffer,
     KorytaPeople,
     KorytaVotes,
     PeopleEnriched,
     PeopleKRS,
+    PeopleMSiG,
     PeopleMerged,
     PeopleParties,
     PeoplePayloads,
