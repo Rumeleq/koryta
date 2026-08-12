@@ -10,6 +10,7 @@ import pandas as pd
 
 from analysis.extract import Extract, check_auto_approved
 from analysis.payloads.election import get_election_type
+from analysis.payloads.site import SiteSnapshot
 from analysis.utils.elections import candidacy_teryt
 from entities.composite import Company, Election, Person
 from scrapers.koryta.download import KorytaPeople
@@ -54,6 +55,28 @@ class PeoplePayloads(Pipeline[Person]):
     def output_class(self) -> typing.Type:
         return Person
 
+    @cached_property
+    def args(self):
+        parser = argparse.ArgumentParser()
+        parser.add_argument(
+            "--only-changed",
+            help="Emit only the people whose payload would write something "
+            "koryta.pl does not already hold. The rest are uploads that end in "
+            "no revision and no edge, which is most of them once a region has "
+            "been submitted before.",
+            default=False,
+            required=False,
+            action=argparse.BooleanOptionalAction,
+        )
+        parser.add_argument(
+            "--koryta-date",
+            help="Date (YYYY-MM-DD) of the koryta.pl export to compare against "
+            "for --only-changed. Defaults to the latest available export.",
+            default=None,
+            required=False,
+        )
+        return parser.parse_known_args()[0]
+
     def process(self, ctx: Context):
         people_df = self.people.read_or_process(ctx)
         result = [self.map_person_payload(ctx, row) for _, row in people_df.iterrows()]
@@ -63,6 +86,8 @@ class PeoplePayloads(Pipeline[Person]):
         for person in result:
             unmapped.update(unmapped_committees(person.elections))
         report_unmapped_committees(unmapped)
+        if self.args.only_changed:
+            result = self.only_changed(ctx, result)
         return (
             pd.DataFrame.from_records([asdict(p) for p in result])
             if result
@@ -77,6 +102,34 @@ class PeoplePayloads(Pipeline[Person]):
                 ]
             )
         )
+
+    def only_changed(self, ctx: Context, people: list[Person]) -> list[Person]:
+        """The payloads that would write something, and a note of what.
+
+        Filtering here rather than in the uploader keeps the decision next to
+        the data it is made from: the snapshot is a pipeline output like any
+        other, and a run that drops nine payloads in ten should say so where
+        the rest of the pipeline's reporting is.
+        """
+        snapshot = SiteSnapshot.read(ctx, self.args.koryta_date)
+
+        changed = []
+        reasons: typing.Counter[str] = collections.Counter()
+        for person in people:
+            person_reasons = snapshot.changes(asdict(person))
+            if not person_reasons:
+                continue
+            changed.append(person)
+            reasons.update(person_reasons)
+
+        print(
+            f"{len(changed)} of {len(people)} payloads differ from koryta.pl; "
+            f"dropping {len(people) - len(changed)} that would write nothing. "
+            f"What the rest would write:"
+        )
+        for reason, count in reasons.most_common():
+            print(f"  {count:6d}  {reason}")
+        return changed
 
     def only_on_koryta(self, ctx: Context, payloads: list[Person]) -> list[Person]:
         """The payloads for people who already have a page, and only those.
