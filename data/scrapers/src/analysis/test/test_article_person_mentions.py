@@ -1,6 +1,7 @@
 """Tests for the article-person-mentions proof-based confirmation logic."""
 
 import json
+from dataclasses import asdict
 
 import pytest
 
@@ -13,7 +14,7 @@ from analysis.article_person_mentions import (
     _party_match_terms,
     _stem,
 )
-from entities.article import ArticlePersonMentioned
+from entities.article import ArticlePersonMentioned, ProofSignal
 from scrapers.article.pipelines.common import ascii_lower
 
 
@@ -33,8 +34,8 @@ def profiles_and_map():
     kmiec_sedziszow.orgs = {"gospodark", "komunaln"}
 
     index = PersonProfileIndex()
-    index.add("Bogusław Norbert Kmieć", kmiec_sanok)
-    index.add("Bogusław Kmieć", kmiec_sedziszow)
+    index.add("Bogusław Norbert Kmieć", "p1", kmiec_sanok)
+    index.add("Bogusław Kmieć", "p2", kmiec_sedziszow)
 
     return index
 
@@ -89,7 +90,11 @@ def test_region_powiat_confirms(profiles_and_map):
         domain_map,
     )
     assert "Bogusław Norbert Kmieć" in confirmed
-    assert "region:powiat" in confirmed["Bogusław Norbert Kmieć"]
+    assert "p1" in confirmed["Bogusław Norbert Kmieć"]
+    assert any(
+        s.type == "region" and s.value == "powiat"
+        for s in confirmed["Bogusław Norbert Kmieć"]["p1"]
+    )
     assert "Bogusław Kmieć" not in confirmed
 
 
@@ -115,7 +120,9 @@ def test_party_abbreviation_confirms(profiles_and_map):
         profiles_and_map,
         domain_map,
     )
-    assert confirmed["Bogusław Kmieć"] == ["party:pis"]
+    assert confirmed["Bogusław Kmieć"]["p2"] == [
+        ProofSignal(type="party", value="pis")
+    ]
 
 
 def test_party_not_confirmed_by_partial_word(profiles_and_map):
@@ -140,7 +147,9 @@ def test_organization_stems_confirm(profiles_and_map):
         domain_map,
     )
     assert "Bogusław Kmieć" in confirmed
-    assert any(p.startswith("organization:") for p in confirmed["Bogusław Kmieć"])
+    assert any(
+        s.type == "organization" for s in confirmed["Bogusław Kmieć"]["p2"]
+    )
 
 
 def test_no_proof_drops(profiles_and_map):
@@ -155,25 +164,25 @@ def test_no_proof_drops(profiles_and_map):
     assert confirmed == {}
 
 
-def test_entity_has_typed_proof_and_verdict_fields():
+def test_entity_has_structured_proof_and_verdict_fields():
     record = ArticlePersonMentioned(
         url="x",
         person="Jan Kowalski",
+        person_id="123",
         domain="y",
         title="t",
         date="2020-01-01",
         tags=[],
-        proof_region=True,
-        proof_party=True,
-        proof_organization=False,
+        proof=[ProofSignal(type="region", value="powiat"), ProofSignal(type="party", value="pis")],
         verdict="yes",
         justification="kontekst się zgadza",
     )
-    assert record.proof_region is True
-    assert record.proof_party is True
-    assert record.proof_organization is False
+    assert record.proof[0].type == "region"
+    assert record.proof[0].value == "powiat"
+    assert record.proof[0].matched is True
+    assert record.proof[1].type == "party"
     assert record.verdict == "yes"
-    assert json.dumps(record.__dict__)  # serializable
+    assert json.dumps(asdict(record))  # serializable
 
 
 def test_parse_verdict_justification_then_label():
@@ -188,8 +197,52 @@ def test_parse_verdict_justification_then_label():
     assert "krytyka rządzących" in justification
 
 
+def test_parse_verdict_unclosed_think_block():
+    # A response truncated while still inside <think> has no usable verdict.
+    verdict, justification = _parse_verdict(
+        "<think>Porównuję kontekst, sprawdzam partie, regiony, organizacje, "
+        "analizuję szczegółowo wszystko co można przeanalizować w tym artykule"
+    )
+    assert verdict == "unknown"
+    assert "<think>" not in justification
+
+
+def test_context_window_centers_on_name():
+    from analysis.article_person_mentions import _context_window
+
+    content = "początek " + ("x " * 5000) + " Jan Kowalski " + ("y " * 5000) + " koniec"
+    window = _context_window(content, "Jan Kowalski")
+    assert "Jan Kowalski" in window
+    assert "początek" not in window
+    assert "koniec" not in window
+
+    # short content returns whole text
+    short = "Krótki artykuł o Janie Kowalskim."
+    assert _context_window(short, "Jan Kowalski") == short
+
+
 def test_parse_verdict_bare_label_fallback():
     verdict, _ = _parse_verdict("Artykuł wyraźnie opisuje posła PiS z Podlasia. TAK")
     assert verdict == "yes"
     verdict, _ = _parse_verdict("Nie mam pewności, czy to ta sama osoba.")
     assert verdict == "unknown"
+
+
+def test_parse_multi_verdict_picks_candidate():
+    from analysis.article_person_mentions import _parse_multi_verdict
+
+    text = (
+        "<think>Porównuję kandydatów.</think>\n"
+        "Uzasadnienie: Artykuł opisuje posła PiS, pasuje K2.\n"
+        "Werdykt: K2\n"
+    )
+    matched, verdict, just = _parse_multi_verdict(text, 3)
+    assert verdict == "yes"
+    assert matched == "K2"
+    assert "K2" in just or "piS" in just
+
+    matched, verdict, _ = _parse_multi_verdict(
+        "Uzasadnienie: Żadna osoba nie pasuje.\nWerdykt: NIE\n", 3
+    )
+    assert verdict == "no"
+    assert matched == ""

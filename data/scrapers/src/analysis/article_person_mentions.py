@@ -28,7 +28,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from analysis.people import PeopleMerged
-from entities.article import ArticlePersonMentioned
+from entities.article import ArticlePersonMentioned, ProofSignal
 from scrapers.article.parse import date_iso_from_ld_json, title_from_ld_json
 from scrapers.article.pipelines.common import ascii_lower, normalize_text, strip_think_blocks
 from scrapers.article.pipelines.incremental import IncrementalJsonlPipeline
@@ -44,9 +44,18 @@ from scrapers.stores import (
 )
 
 JUDGE_VERSION = 1
-MAX_TOKENS = 2000
+# Generous output budget so thinking models can finish their reasoning AND
+# emit the verdict (they sometimes burn a lot inside <think>). Must stay well
+# below the vLLM total-context cap (32768 tokens) minus the prompt, or the
+# server rejects the request with HTTP 400.
+MAX_TOKENS = 16000
 TEMPERATURE = 0.0
 TEXT_LIMIT = 30000
+# Window of article text sent to the judge around the first name match. Long
+# articles with a single mention make the model reason endlessly (and truncate
+# into `unknown`), so we show a focused excerpt instead of the whole text.
+CONTEXT_BEFORE = 2000
+CONTEXT_AFTER = 3000
 
 # A word is capitalized when it starts with an uppercase Polish letter.
 _CAP = "A-ZĄĆĘŁŃÓŚŹŻ"
@@ -60,12 +69,17 @@ _RUN_RE = re.compile(rf"(?:{_WORD}\s+){{1,{_MAX_RUN_WORDS - 1}}}{_WORD}")
 # entry lists the regions (woj/woj_code/powiat/powiat_code/miasto) the outlet
 # covers. Kept next to the verified domain->selector map.
 _DOMAIN_REGION_FILE = (
-    Path(__file__).resolve().parents[2]
+    Path(__file__).resolve().parents[1]
     / "scrapers"
     / "article"
     / "pipelines"
     / "domain_to_region.json"
 )
+
+# Temporary debug dump: one line per judged (article, person) pair with a
+# truncated article excerpt, so verdicts can be eyeballed later.
+_DEBUG_FILE = Path(VERSIONED_DIR) / "article_person_mentions" / "judge_debug.jsonl"
+_DEBUG_CONTENT_LIMIT = 2000
 
 
 def _name_tuple(name: str) -> tuple[str, ...]:
@@ -280,6 +294,30 @@ def _org_match_terms(org_norm: str) -> set[str]:
     return stems
 
 
+def _generic_org_stems(rows: Iterable[dict[str, Any]], krs_names: dict[str, str]) -> set[str]:
+    """Org stems too common across people to count as disambiguating proof.
+
+    A stem appearing in many DIFFERENT people's organization names (e.g.
+    ``przedsiebiorstwo``, ``komunaln``, ``opiek``) matches nearly any article
+    and cannot confirm a specific person. Only stems that are distinctive to
+    a small set of people are usable as org proof.
+    """
+    from collections import Counter
+
+    stem_people: Counter[str] = Counter()
+    for row in rows:
+        orgs: set[str] = set()
+        for employment in row.get("employment") or []:
+            krs = (employment or {}).get("employed_krs")
+            name = krs_names.get(str(krs)) if krs else None
+            if name:
+                orgs |= _org_match_terms(ascii_lower(name))
+        for stem in orgs:
+            stem_people[stem] += 1
+    # A stem shared by more than 500 distinct people is inherently generic.
+    return {stem for stem, count in stem_people.items() if count > 500}
+
+
 class PersonProfile:
     """Disambiguation evidence for one person: regions, parties, organizations."""
 
@@ -302,31 +340,28 @@ class PersonProfile:
 
 
 class PersonProfileIndex:
-    """Per-display-name disambiguation evidence, merged across name collisions.
+    """Per-person disambiguation evidence, kept separate across name collisions.
 
-    A display name may map to several people (same first+last name). Signals
-    from all of them are merged under the display name, so a mention is kept
-    when the article agrees with *any* of the candidates. The ambiguity is
-    visible in ``proof``: a ``region`` match names the specific region hit, a
-    ``party`` or ``organization`` match names what was found.
+    A display name may map to several people (same first+last name, distinct
+    ``person_id``). Each person keeps its OWN profile - signals are NOT merged
+    across identities, so an article can be attributed to the specific person
+    it actually refers to (the proof filter and the LLM judge both see only
+    that person's signals).
     """
 
     def __init__(self) -> None:
-        self._by_display: dict[str, PersonProfile] = {}
+        self._by_display: dict[str, list[tuple[str, PersonProfile]]] = {}
 
-    def add(self, display: str, profile: PersonProfile) -> None:
+    def add(self, display: str, person_id: str, profile: PersonProfile) -> None:
         key = normalize_text(display)
-        existing = self._by_display.get(key)
-        if existing is None:
-            self._by_display[key] = profile
-        else:
-            existing.merge(profile)
+        self._by_display.setdefault(key, []).append((person_id, profile))
 
-    def profile(self, display: str) -> PersonProfile | None:
-        return self._by_display.get(normalize_text(display))
+    def candidates(self, display: str) -> list[tuple[str, PersonProfile]]:
+        """Return all (person_id, profile) pairs sharing this display name."""
+        return self._by_display.get(normalize_text(display), [])
 
     def __len__(self) -> int:
-        return len(self._by_display)
+        return sum(len(v) for v in self._by_display.values())
 
 
 class DomainRegionMap:
@@ -351,7 +386,7 @@ class DomainRegionMap:
 def _load_index_and_profiles(
     rows: Iterable[dict[str, Any]], krs_names: dict[str, str]
 ) -> tuple[PersonNameIndex, PersonProfileIndex]:
-    """Build the name index and disambiguation profiles in one pass."""
+    """Build the name index and per-person profiles in one pass."""
     index = PersonNameIndex()
     profiles = PersonProfileIndex()
     for row in rows:
@@ -359,6 +394,9 @@ def _load_index_and_profiles(
         last = _name_tuple(str(row.get("base_last_name") or ""))
         display = _display_name(row)
         if not first or not last or not display:
+            continue
+        person_id = _person_id(row)
+        if not person_id:
             continue
         forms: list[tuple[str, ...]] = [(first[0], last[-1])]
         for full in row.get("base_full_name") or []:
@@ -388,8 +426,19 @@ def _load_index_and_profiles(
             name = krs_names.get(str(krs)) if krs else None
             if name:
                 profile.orgs.update(_org_match_terms(ascii_lower(name)))
-        profiles.add(display, profile)
+        profiles.add(display, person_id, profile)
     return index, profiles
+
+
+def _person_id(row: dict[str, Any]) -> str:
+    """Stable identity of the person, from rejestrio_id when present."""
+    ri = row.get("rejestrio_id")
+    if ri is None:
+        return ""
+    if isinstance(ri, list):
+        ids = [str(x) for x in ri if x not in (None, "")]
+        return ",".join(ids) if ids else ""
+    return str(ri)
 
 
 def _display_name(row: dict[str, Any]) -> str:
@@ -432,31 +481,38 @@ def _proof_for(
     domain: str,
     norm_content: str,
     domain_map: DomainRegionMap,
-) -> list[str]:
+    generic_org_stems: set[str] = frozenset(),
+) -> list[ProofSignal]:
     """Signals confirming the person against the article; empty means drop."""
-    proof: list[str] = []
+    proof: list[ProofSignal] = []
 
     powiat_codes = domain_map.powiat_codes(domain)
     if powiat_codes & profile.powiat:
-        proof.append("region:powiat")
+        proof.append(ProofSignal(type="region", value="powiat"))
     elif not profile.powiat and domain_map.woj_codes(domain) & profile.woj:
         # Woj-level only confirms when the person has no powiat to pin them to;
         # with powiat data, a same-woj but different-powiat match is NOT proof
         # (it is exactly the same-name, same-region coincidence case).
-        proof.append("region:wojewodztwo")
+        proof.append(ProofSignal(type="region", value="wojewodztwo"))
 
     if profile.parties:
         for term in sorted(profile.parties):
             if term and re.search(rf"\b{re.escape(term)}\b", norm_content):
-                proof.append(f"party:{term}")
+                proof.append(ProofSignal(type="party", value=term))
                 break
 
     if profile.orgs:
         ascii_content = ascii_lower(norm_content)
         text_words = {_stem(w) for w in re.findall(r"\w+", ascii_content)}
-        matched = [o for o in profile.orgs if o in text_words]
+        # Only distinctive stems count as proof - generic ones (opiek, publiczn,
+        # przedsiebiorstwo...) are shared by thousands of people and match any
+        # article mentioning that topic.
+        distinctive = profile.orgs - generic_org_stems
+        matched = [o for o in distinctive if o in text_words]
         if len(matched) >= 2:
-            proof.append("organization:" + ",".join(sorted(matched)[:3]))
+            proof.append(
+                ProofSignal(type="organization", value=",".join(sorted(matched)[:3]))
+            )
 
     return proof
 
@@ -479,17 +535,25 @@ def _confirm_mentions(
     domain: str,
     profiles: PersonProfileIndex,
     domain_map: DomainRegionMap,
-) -> dict[str, list[str]]:
-    """Keep names with at least one proof signal; map name -> proof list."""
+    generic_org_stems: set[str] = frozenset(),
+) -> dict[str, dict[str, list[ProofSignal]]]:
+    """Keep (display, person) pairs with at least one proof signal.
+
+    Returns ``display -> person_id -> proof signals``. Each same-name person
+    is evaluated against its own profile, so an article gets attributed to the
+    specific person whose signals it matches.
+    """
     norm_content = normalize_text(content)
-    confirmed: dict[str, list[str]] = {}
+    confirmed: dict[str, dict[str, list[ProofSignal]]] = {}
     for name in names:
-        profile = profiles.profile(name)
-        if profile is None or not profile.has_any():
-            continue
-        proof = _proof_for(profile, domain, norm_content, domain_map)
-        if proof:
-            confirmed[name] = proof
+        for person_id, profile in profiles.candidates(name):
+            if profile is None or not profile.has_any():
+                continue
+            proof = _proof_for(
+                profile, domain, norm_content, domain_map, generic_org_stems
+            )
+            if proof:
+                confirmed.setdefault(name, {})[person_id] = proof
     return confirmed
 
 
@@ -498,11 +562,34 @@ _JUDGE_PROMPT = (
     "znana osoba NAPRAWDĘ występuje w danym artykule, czy mamy do czynienia z "
     "przypadkiem, gdy w artykule występuje inna osoba o tym samym lub podobnym "
     "imieniu i nazwisku (tzw. zbieżność nazwisk).\n\n"
+    "KLUCZOWA ZASADA: Pytanie brzmi wyłącznie: CZY TA OSOBA JEST WYMIENIONA W "
+    "ARTYKULE? NIE pytamy o to, czy artykuł JEST O tej osobie, ani kto jest "
+    "głównym bohaterem tekstu. Artykuł o dowolnym temacie może wymienić znaną "
+    "osobę w jednym zdaniu - jeśli podaje jej pełne imię i nazwisko (lub "
+    "jednoznacznie ją identyfikuje), to odpowiedź to TAK.\n\n"
+    "JEDYNY wyjątek - odpowiedź NIE, gdy:\n"
+    "- W tekście NIE występuje ani pełne imię i nazwisko, ani jednoznaczna "
+    "identyfikacja (np. \"prezydent\" bez nazwiska to za mało, jeśli nie da się "
+    "jednoznacznie ustalić, że chodzi o tę osobę).\n"
+    "- Wzmianka występuje WYŁĄCZNIE w elemencie okołotematycznym, a nie w "
+    "artykule: podpis pod zdjęciem, \"Czytaj więcej\", lista powiązanych "
+    "artykułów, stopka, autor biografii, reklama.\n"
+    "- Osoba o tym samym nazwisku jest opisana w sprzecznym kontekście "
+    "(inna partia, inny region, inne stanowisko) - to zbieżność nazwisk.\n\n"
     "Poniżej podajemy: fragment artykułu, dane znanej osoby (partie, regiony, "
     "organizacje, w których jest zarejestrowana) oraz sygnały dopasowania, "
     "które zostały wykryte automatycznie.\n\n"
-    "Oceń, czy osoba opisana w artykule to ta sama znana osoba. Zwróć uwagę na:\n"
-    "- Czy artykuł podaje pełne imię i nazwisko lub jednoznacznie ją identyfikuje.\n"
+    "Oceń, czy osoba wzmiankowana w artykule to ta sama znana osoba. Zwróć uwagę na:\n"
+    "- Czy artykuł podaje pełne imię i nazwisko lub jednoznacznie ją identyfikuje "
+    "W TREŚCI ARTYKUŁU (nie w podpisie/stopce). Jeśli tak - odpowiedź TAK.\n"
+    "- Jeśli znana osoba ma DRUGIE IMIĘ (np. \"Ryszard Henryk Czarnecki\"), a "
+    "artykuł podaje tylko PIERWSZE i NAZWISKO (\"Ryszard Czarnecki\"), to NADAL "
+    "jest to dopasowanie - artykuły niemal zawsze pomijają drugie imię. NIE "
+    "odrzucaj z powodu braku drugiego imienia, jeśli imię + nazwisko i kontekst "
+    "się zgadzają.\n"
+    "- Jeśli artykuł podaje DRUGIE imię INNE niż w danych (np. dane: \"Jan "
+    "Kowalski\", artykuł: \"Jan Marek Kowalski\"), to może być inna osoba - "
+    "sprawdź kontekst.\n"
     "- Czy kontekst (partia, region, organizacja, stanowisko) zgadza się z danymi "
     "znanej osoby. ROZBIEŻNOŚĆ w partii, regionie lub organizacji to mocny sygnał, "
     "że to inna osoba o tym samym nazwisku.\n"
@@ -510,7 +597,18 @@ _JUDGE_PROMPT = (
     "ją jako działającą w innej partii lub przeciw innej partii, to prawdopodobnie "
     "to NIE jest ta znana osoba.\n"
     "- Czy nazwisko jest popularne (Nowak, Kowalski, Kamiński) - wtedy same "
-    "wystąpienia nazwiska NIE wystarczają, potrzebny jest zgodny kontekst.\n\n"
+    "wystąpienia nazwiska NIE wystarczają, potrzebny jest zgodny kontekst.\n"
+    "- Artykuł o innym temacie (np. wywiad z politykiem albo ekspertem) NADAL "
+    "może wzmiankować znaną osobę w swojej treści - jeśli podaje jej pełne imię "
+    "i nazwisko, to TAK.\n"
+    "- Jeśli artykuł identyfikuje osobę przez STANOWISKO lub PARTIĘ (np. \"były "
+    "wiceminister\", \"poseł PiS\"), a te NIE zgadzają się z danymi znanej osoby, "
+    "to to NIE ta osoba - mimo zgodnej zbieżności nazwiska czy regionu.\n"
+    "- Samo dopasowanie REGIONU (region:powiat) jest SŁABE dla portali "
+    "ogólnopolskich (tvn24.pl, rp.pl, onet.pl) oraz portali typu naszemiasto.pl, "
+    "które pokrywają wiele powiatów. Gdy nazwisko jest popularne, sam region "
+    "nie wystarcza - potrzebny jest zgodny kontekst (partia, stanowisko, "
+    "organizacja).\n\n"
     "Artykuł:\n{article}\n\n"
     "Znana osoba: {name}\n"
     "Partie w danych: {parties}\n"
@@ -518,8 +616,8 @@ _JUDGE_PROMPT = (
     "Organizacje w danych: {orgs}\n"
     "Wykryte sygnały dopasowania: {proof}\n\n"
     "Odpowiedz zwięźle, w dwóch częściach:\n"
-    "1. Uzasadnienie (1-2 zdania): co w artykule potwierdza lub zaprzecza, że to "
-    "ta sama osoba.\n"
+    "1. Uzasadnienie (1-2 zdania): czy i w jakiej formie osoba występuje w "
+    "artykule (w treści czy tylko obok artykułu) oraz czy kontekst się zgadza.\n"
     "2. Werdykt: TAK lub NIE (wyłącznie jedno słowo).\n\n"
     "Format odpowiedzi:\n"
     "Uzasadnienie: <twoje uzasadnienie>\n"
@@ -527,25 +625,163 @@ _JUDGE_PROMPT = (
 )
 
 
+# Used when several DIFFERENT people share the article's name and all have
+# some proof signal. The article is judged ONCE against every candidate at
+# once, so the model can pick the one whose profile actually fits (and reject
+# the rest) instead of approving each in isolation.
+_JUDGE_MULTI_PROMPT = (
+    "Jesteś dokładnym weryfikatorem danych. W bazie danych jest "
+    "KILKA RÓŻNYCH OSÓB o tym samym imieniu i nazwisku. W artykule występuje "
+    "osoba o tym nazwisku. Twoim zadaniem jest ustalić, KTÓRA z tych osób "
+    "(jeśli jakakolwiek) faktycznie występuje w artykule.\n\n"
+    "WAŻNE: Pytanie brzmi wyłącznie - CZY KTÓRAŚ Z TYCH OSÓB JEST WYMIENIONA W "
+    "ARTYKULE? Artykuł o dowolnym temacie może wymienić daną osobę jednorazowo. "
+    "Nie oceniamy, o kim jest artykuł - wystarczy, że osoba jest w nim "
+    "wymieniona. Jeśli artykuł podaje pełne imię i nazwisko i kontekst nie "
+    "zaprzecza (brak sprzecznej partii/stanowiska), to ta osoba występuje.\n\n"
+    "Zasady:\n"
+    "- Jeśli artykuł podaje pełne imię i nazwisko, a kontekst (partia, "
+    "stanowisko, region, organizacja) zgadza się z danymi JEDNEJ osoby - "
+    "wybierz TĄ osobę.\n"
+    "- Jeśli pełne imię i nazwisko jest podane, ale żaden kontekst nie pasuje "
+    "do żadnej osoby, a nazwisko jest pospolite - odpowiedź NIE.\n"
+    "- Jeśli artykuł identyfikuje osobę przez STANOWISKO lub PARTIĘ, a dana "
+    "osoba ich NIE ma (albo ma inne) - to NIE ta osoba, nawet jeśli nazwisko "
+    "się zgadza.\n"
+    "- Samo dopasowanie regionu jest słabe dla portali ogólnopolskich; "
+    "decyduje zgodny kontekst (partia, stanowisko, organizacja).\n\n"
+    "Artykuł:\n{article}\n\n"
+    "Kandydaci:\n{candidates}\n\n"
+    "Odpowiedz zwięźle:\n"
+    "1. Uzasadnienie (1-2 zdania): która osoba występuje w artykule i dlaczego "
+    "(albo że żadna nie występuje).\n"
+    "2. Werdykt: wyłącznie identyfikator osoby (np. K1) albo NIE, jeśli żadna "
+    "osoba nie występuje.\n\n"
+    "Format odpowiedzi:\n"
+    "Uzasadnienie: <twoje uzasadnienie>\n"
+    "Werdykt: <K1 | K2 | ... | NIE>\n"
+)
+
+
+def _judge_multi_request(
+    person: str,
+    candidates: list[tuple[str, PersonProfile, list[ProofSignal]]],
+    content: str,
+    model: str,
+) -> LLMRequest:
+    """Judge one article against several same-name people at once."""
+    lines = []
+    for i, (person_id, profile, proof) in enumerate(candidates, 1):
+        parties = sorted(profile.parties) if profile else []
+        regions = sorted(profile.woj | profile.powiat) if profile else []
+        orgs = sorted(profile.orgs) if profile else []
+        proof_text = ", ".join(f"{s.type}:{s.value}" for s in proof) or "brak"
+        lines.append(
+            f"K{i} (id {person_id}): partie={', '.join(parties) or 'brak'}, "
+            f"regiony={', '.join(regions) or 'brak'}, "
+            f"organizacje={', '.join(orgs) or 'brak'}, "
+            f"sygnały={proof_text}"
+        )
+    return LLMRequest(
+        prompt=_JUDGE_MULTI_PROMPT.format(
+            article=_context_window(content, person),
+            candidates="\n".join(lines),
+        ),
+        max_tokens=MAX_TOKENS,
+        temperature=TEMPERATURE,
+        model=model,
+        enable_thinking=True,
+    )
+
+
+def _parse_multi_verdict(
+    text: str, n_candidates: int
+) -> tuple[str, str, str]:
+    """Parse the multi-candidate verdict into (person_id, verdict, justification).
+
+    ``person_id`` is the matched candidate's id or "" when none matched.
+    """
+    text = strip_think_blocks(text)
+    lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
+    justification = ""
+    verdict_raw = ""
+    for line in lines:
+        low = line.lower()
+        if low.startswith("uzasadnienie") or low.startswith("justification"):
+            justification = line.split(":", 1)[1].strip() if ":" in line else line
+        elif "werdykt" in low or "verdict" in low or "wybrana" in low:
+            verdict_raw = line.split(":", 1)[1].strip() if ":" in line else ""
+    if not verdict_raw:
+        verdict_raw = lines[-1].strip() if lines else ""
+    verdict_raw = verdict_raw.upper().replace(" ", "")
+    if verdict_raw in {"NIE", "NONE", "ŻADNA", "BRAK", "-"}:
+        return "", "no", justification
+    m = re.match(r"^(K\d+)", verdict_raw)
+    if m:
+        idx = int(m.group(1)[1:])
+        if 1 <= idx <= n_candidates:
+            return f"K{idx}", "yes", justification
+    return "", "unknown", justification
+
+
+def _context_window(content: str, person: str) -> str:
+    """A focused excerpt of ``content`` around the first match of ``person``.
+
+    Falls back to the whole text (capped at TEXT_LIMIT) when the name cannot
+    be located (e.g. it only appears in declined/capitalized variants).
+    """
+    norm = normalize_text(content)
+    for probe in (
+        normalize_text(person),
+        normalize_text(person).replace(" ", ""),
+    ):
+        idx = norm.find(probe)
+        if idx >= 0:
+            start = max(0, idx - CONTEXT_BEFORE)
+            end = min(len(content), idx + CONTEXT_AFTER)
+            return content[start:end]
+    return content[:TEXT_LIMIT]
+
+
 def _judge_request(
     person: str,
     profile: PersonProfile | None,
-    proof: list[str],
+    proof: list[ProofSignal],
     content: str,
     model: str,
+    same_name_count: int = 1,
 ) -> LLMRequest:
     parties = sorted(profile.parties) if profile else []
     regions = sorted(profile.woj | profile.powiat) if profile else []
     orgs = sorted(profile.orgs) if profile else []
+    proof_text = ", ".join(f"{s.type}:{s.value}" for s in proof) or "brak"
+    ambiguity = (
+        f"\nUWAGA: w naszej bazie jest {same_name_count} RÓŻNYCH OSÓB o tym "
+        "imieniu i nazwisku. Twoim zadaniem jest ocenić, czy artykuł dotyczy "
+        "WŁAŚNIE TEJ osoby (konkretnie tej z podanymi poniżej danymi), a nie "
+        "innej o tym samym nazwisku.\n"
+        "DECYDUJĄCE ZASADY przy zbieżności nazwisk:\n"
+        "- Jeśli artykuł nazywa PARTIĘ lub STANOWISKO tej osoby, a ta osoba "
+        "NIE ma tej partii/stanowiska w danych (albo ma INNĄ partię), to "
+        "odpowiedź to NIE - nawet jeśli nazwisko i region się zgadzają.\n"
+        "- W szczególności: artykuł mówiący, że osoba jest \"posłem/wiceministrem "
+        "PiS\" lub \"członkiem Suwerennej Polski (PiS)\" NIE dotyczy osoby, "
+        "która w danych ma inną partię (np. PSL, PO, KWW) albo żadnej.\n"
+        "- Region sam w sobie nie decyduje: to samo nazwisko może mieć kilka "
+        "osób w tym samym regionie.\n"
+        if same_name_count > 1
+        else ""
+    )
     return LLMRequest(
         prompt=_JUDGE_PROMPT.format(
-            article=content[:TEXT_LIMIT],
+            article=_context_window(content, person),
             name=person,
             parties=", ".join(parties) or "brak",
             regions=", ".join(regions) or "brak",
             orgs=", ".join(orgs) or "brak",
-            proof=", ".join(proof) or "brak",
-        ),
+            proof=proof_text,
+        )
+        + ambiguity,
         max_tokens=MAX_TOKENS,
         temperature=TEMPERATURE,
         model=model,
@@ -583,28 +819,51 @@ def _emit_person(
     ctx: Context,
     row: dict[str, Any],
     person: str,
-    proof: list[str],
+    person_id: str,
+    proof: list[ProofSignal],
     verdict: str,
     justification: str,
 ) -> None:
     """Emit one ``ArticlePersonMentioned`` row for a judged (article, person) pair."""
-    proof_set = set(proof)
     ctx.io.dumper.insert_into(  # type: ignore[attr-defined]
         ArticlePersonMentioned(
             url=row["url"],
             person=person,
+            person_id=person_id,
             domain=row["domain"],
             title=row["title"],
             date=row["date"],
             tags=row["tags"],
-            proof_region=any(s.startswith("region:") for s in proof_set),
-            proof_party=any(s.startswith("party:") for s in proof_set),
-            proof_organization=any(s.startswith("organization:") for s in proof_set),
+            proof=proof,
             verdict=verdict,
             justification=justification,
         ),
         [],
     )
+
+
+def _write_debug(
+    row: dict[str, Any],
+    person: str,
+    person_id: str,
+    proof: list[ProofSignal],
+    verdict: str,
+    justification: str,
+    content: str,
+) -> None:
+    """Append one judged pair with a truncated article excerpt to the debug file."""
+    _DEBUG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "url": row["url"],
+        "person": person,
+        "person_id": person_id,
+        "verdict": verdict,
+        "justification": justification,
+        "proof": [{"type": s.type, "value": s.value} for s in proof],
+        "content": content[: _DEBUG_CONTENT_LIMIT],
+    }
+    with _DEBUG_FILE.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 async def _scan_and_judge(
@@ -613,6 +872,7 @@ async def _scan_and_judge(
     index: PersonNameIndex,
     profiles: PersonProfileIndex,
     domain_map: DomainRegionMap,
+    generic_org_stems: set[str],
     *,
     model: str,
 ) -> None:
@@ -625,19 +885,43 @@ async def _scan_and_judge(
     """
     await LLM.from_context(ctx).check_health()
 
-    inflight: dict[int, tuple[dict[str, Any], str, list[str]]] = {}
+    # request_id -> (row, person, person_id, proof, content, request, retried)
+    inflight: dict[
+        int,
+        tuple[dict[str, Any], str, str, list[ProofSignal], str, LLMRequest, bool],
+    ] = {}
+
     candidates = 0
     dropped = 0
     rows = 0
 
     async def drain(pool: LLMResponsePool) -> None:
         request_id, response = await pool.get_response()
-        row, person, proof = inflight.pop(request_id)
+        row, person, person_id, proof, content, request, retried = inflight.pop(
+            request_id
+        )
         if isinstance(response, Exception):
             verdict, justification = "unknown", str(response)[:200]
         else:
             verdict, justification = _parse_verdict(response.content)
-        _emit_person(ctx, row, person, proof, verdict, justification)
+        if verdict == "unknown" and not retried:
+            # Extremely rare: the model can still burn its whole output budget
+            # inside a <think> block and return no verdict. Re-ask once without
+            # thinking so every pair gets a verdict instead of a silent unknown.
+            retry_req = LLMRequest(
+                prompt=request.prompt,
+                max_tokens=1500,
+                temperature=TEMPERATURE,
+                model=request.model,
+                enable_thinking=False,
+            )
+            while pool.is_full():
+                await drain(pool)
+            rid = await pool.put_request(retry_req)
+            inflight[rid] = (row, person, person_id, proof, content, retry_req, True)
+            return
+        _emit_person(ctx, row, person, person_id, proof, verdict, justification)
+        _write_debug(row, person, person_id, proof, verdict, justification, content)
         bar.update(1)
 
     with tqdm(total=0, desc="Judging mentions", unit="pair") as bar:
@@ -664,23 +948,44 @@ async def _scan_and_judge(
                     if not names:
                         continue
                     confirmed = _confirm_mentions(
-                        names, content, raw.get("domain"), profiles, domain_map
+                        names,
+                        content,
+                        raw.get("domain"),
+                        profiles,
+                        domain_map,
+                        generic_org_stems,
                     )
-                    dropped += len(names) - len(confirmed)
+                    name_pairs = sum(len(by_person) for by_person in confirmed.values())
+                    dropped += len(names) - name_pairs
                     if not confirmed:
                         continue
                     row = _mention_meta(raw)
-                    candidates += len(confirmed)
+                    candidates += name_pairs
                     rows += 1
-                    bar.total += len(confirmed)
-                    for person, proof in confirmed.items():
-                        profile = profiles.profile(person)
-                        while pool.is_full():
-                            await drain(pool)
-                        request_id = await pool.put_request(
-                            _judge_request(person, profile, proof, content, model)
-                        )
-                        inflight[request_id] = (row, person, proof)
+                    bar.total += name_pairs
+                    for person, by_person in confirmed.items():
+                        for person_id, proof in by_person.items():
+                            profile = dict(profiles.candidates(person))[person_id]
+                            request = _judge_request(
+                                person,
+                                profile,
+                                proof,
+                                content,
+                                model,
+                                same_name_count=len(by_person),
+                            )
+                            while pool.is_full():
+                                await drain(pool)
+                            request_id = await pool.put_request(request)
+                            inflight[request_id] = (
+                                row,
+                                person,
+                                person_id,
+                                proof,
+                                content,
+                                request,
+                                False,
+                            )
             while inflight:
                 await drain(pool)
 
@@ -718,8 +1023,12 @@ class ArticlePersonMentions(IncrementalJsonlPipeline[ArticlePersonMentioned]):
 
         people_df = self.people_merged.read_or_process(ctx)
         krs_names = _krs_name_map()
-        index, profiles = _load_index_and_profiles(
-            iterate_pipeline_dict(people_df), krs_names
+        people_rows = list(iterate_pipeline_dict(people_df))
+        index, profiles = _load_index_and_profiles(people_rows, krs_names)
+        generic_org_stems = _generic_org_stems(people_rows, krs_names)
+        print(
+            f"Filtering {len(generic_org_stems):,} generic org stems shared by "
+            "many people"
         )
         self.people_merged._cached_result = None
         if not index.people:
@@ -741,7 +1050,13 @@ class ArticlePersonMentions(IncrementalJsonlPipeline[ArticlePersonMentioned]):
         model = llm_model()
         asyncio.run(
             _scan_and_judge(
-                ctx, parsed_path, index, profiles, domain_map, model=model
+                ctx,
+                parsed_path,
+                index,
+                profiles,
+                domain_map,
+                generic_org_stems,
+                model=model,
             )
         )
         _print_llm_usage(ctx)

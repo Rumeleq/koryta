@@ -154,15 +154,31 @@ class ArticleAnalyzedRecord:
 
 
 @dataclass
+class ProofSignal:
+    """A single rule-based signal confirming a person appears in an article.
+
+    ``type`` is one of ``region``/``party``/``organization``; ``value`` is what
+    matched in the article (the region level, the party term, or the org
+    stems). ``matched`` is always True for emitted signals - the row only
+    lists signals that actually matched.
+    """
+
+    type: str
+    value: str
+    matched: bool = True
+
+
+@dataclass
 class ArticlePersonMentioned:
     """A known person mentioned in one parsed article.
 
     One record per (article, person) pair that passed the proof gate: the
-    article's URL together with the person's display name, which rule-based
-    proof signals matched (``proof_region``/``proof_party``/``proof_organization``),
-    and the LLM judge's ``verdict`` (yes/no/unknown) with its ``justification``.
-    Only pairs with at least one proof signal are sent to the LLM; a ``yes``
-    verdict marks a genuine mention of the known person.
+    article's URL together with the person's display name and stable identity
+    (``person_id``), which rule-based proof signals matched (``proof`` - a list
+    of :class:`ProofSignal`), and the LLM judge's ``verdict`` (yes/no/unknown)
+    with its ``justification``. Only pairs with at least one proof signal are
+    sent to the LLM; a ``yes`` verdict marks a genuine mention of the known
+    person.
     """
 
     __output_path__: ClassVar[Path] = Path(
@@ -171,13 +187,12 @@ class ArticlePersonMentioned:
 
     url: str
     person: str
+    person_id: str
     domain: str
     title: str | None
     date: str | None
     tags: list[str]
-    proof_region: bool = False
-    proof_party: bool = False
-    proof_organization: bool = False
+    proof: list[ProofSignal] = field(default_factory=list)
     verdict: str = "unknown"
     justification: str = ""
 

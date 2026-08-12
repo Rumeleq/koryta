@@ -27,11 +27,14 @@ def ascii_lower(text: str) -> str:
 
 
 _THINK_RE = re.compile(r"<think>.*?</think>", flags=re.DOTALL)
+# Also drop an unclosed <think> block (truncated before </think>).
+_THINK_OPEN_RE = re.compile(r"<think>.*", flags=re.DOTALL)
 
 
 def strip_think_blocks(text: str) -> str:
     """Remove the ``<think>...</think>`` reasoning block Qwen emits."""
-    return _THINK_RE.sub("", text or "")
+    cleaned = _THINK_RE.sub("", text or "")
+    return _THINK_OPEN_RE.sub("", cleaned)
 
 
 def hash_text(text: str) -> str:
