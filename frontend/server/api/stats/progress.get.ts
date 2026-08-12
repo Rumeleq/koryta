@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { getFirestore } from "firebase-admin/firestore";
 import { buildStructuralFilterOps } from "~~/server/utils/nodeFilters";
+import {
+  countProgress,
+  tallyProgress,
+  ZERO_PROGRESS,
+  type ProgressStats,
+} from "~~/server/utils/progressCounts";
 
 const queryValidator = z.object({
   party: z.string().optional(),
@@ -15,29 +21,7 @@ const queryValidator = z.object({
   minVotes: z.coerce.number().optional(),
 });
 
-export type ProgressStats = {
-  /** People matching the structural filters, regardless of status. */
-  total: number;
-  /** Published (approved) people. */
-  approved: number;
-  /** Not published yet, but already looked at: voted on or annotated.
-   *
-   * Deliberately not "or has a revision waiting for approval". Every person
-   * the scrapers ingest arrives as an unapproved revision, so
-   * `revisions.has_unapproved` is set on all 5190 unpublished people and on
-   * none of the published ones - counting it would restate `toCheck` under a
-   * second name. Only 30 of those 5190 have a hand-written latest revision,
-   * and telling them apart costs a read of every one of the revisions. If
-   * that number is ever wanted, /api/admin/summary already computes it as
-   * `unapprovedManual`. */
-  reviewed: number;
-  /** Not published and untouched by the community. */
-  toCheck: number;
-  /** People at least one human voted on. */
-  withVotes: number;
-  /** People with at least one note. */
-  withNotes: number;
-};
+export type { ProgressStats };
 
 /** What the counters below read, on top of whatever the filters ask for. */
 const COUNTER_FIELDS = [
@@ -51,7 +35,8 @@ const COUNTER_FIELDS = [
  * accepted: the response breaks people down by exactly those statuses.
  *
  * The response does not depend on the requesting user, so it is cached
- * briefly and shared.
+ * briefly and shared, under a key built from the parsed query - see
+ * `queryCacheKey`.
  */
 export default defineCachedEventHandler(
   async (event): Promise<ProgressStats> => {
@@ -60,25 +45,22 @@ export default defineCachedEventHandler(
     );
     const db = getFirestore("koryta-pl");
 
-    const zero: ProgressStats = {
-      total: 0,
-      approved: 0,
-      reviewed: 0,
-      toCheck: 0,
-      withVotes: 0,
-      withNotes: 0,
-    };
-
     const { ops, fields, empty } = await buildStructuralFilterOps(
       db,
       { ...query, type: "person" },
       "all",
     );
-    if (empty) return zero;
+    if (empty) return { ...ZERO_PROGRESS };
 
-    // Fetch all people once and filter in memory: the counts need several
-    // overlapping predicates, and the in-memory ops never hit missing-index
-    // or multiple-array-filter limits of Firestore queries.
+    // Eight aggregation queries where Firestore can answer them, which is the
+    // unfiltered case the explore table and the home page ask for. See
+    // countProgress for what it costs and when it declines.
+    const counted = await countProgress(db, ops);
+    if (counted) return counted;
+
+    // Otherwise fetch all people once and filter in memory: the counts need
+    // several overlapping predicates, and the in-memory ops never hit
+    // missing-index or multiple-array-filter limits of Firestore queries.
     //
     // Projected down to the leaf fields actually read, because that scan is
     // the whole cost of this endpoint - 6077 documents as of the July 2026
@@ -99,21 +81,12 @@ export default defineCachedEventHandler(
       nodes = op.applyMem(nodes);
     }
 
-    const stats = { ...zero, total: nodes.length };
-    for (const node of nodes) {
-      const isApproved = node.stats?.isApproved === true;
-      const hasVotes = node.stats?.votes?.humanVoted === true;
-      const hasNotes = (node.stats?.notesCount ?? 0) > 0;
-
-      if (isApproved) stats.approved++;
-      else if (hasVotes || hasNotes) stats.reviewed++;
-      else stats.toCheck++;
-
-      if (hasVotes) stats.withVotes++;
-      if (hasNotes) stats.withNotes++;
-    }
-
-    return stats;
+    return tallyProgress(nodes);
   },
-  { maxAge: 300, swr: true },
+  {
+    maxAge: 300,
+    swr: true,
+    getKey: (event) =>
+      validatedQueryCacheKey(event, (q) => queryValidator.parse(q)),
+  },
 );
