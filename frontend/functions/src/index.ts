@@ -108,9 +108,24 @@ export const getPageMeta = functions.https.onCall<incomingUrl>(
 
 const adminClient = new v1.FirestoreAdminClient();
 
+/**
+ * The nightly dump the scrapers read (`snapshot.py`) and `npm run db:pull`
+ * seeds the emulator from.
+ *
+ * Once a day, not twice, because an export is billed one document read per
+ * document exported - 94,103 of them as of 12 August 2026, and the reads do
+ * not show up in the console's usage figures, so this was a third of the
+ * database's daily cost while being invisible in the place anyone would look
+ * for it. Nothing consumes the second run: `latest_export` and `pull-db.sh`
+ * both take the newest directory, and the pipelines that read it are daily.
+ *
+ * Disaster recovery does not rest on this either: the invoice carries a Cloud
+ * Firestore Zonal Backup Storage line, so the database also has Firestore's own
+ * backup schedule, which is billed by stored size rather than by read.
+ */
 export const scheduledFirestoreExport = onSchedule(
   {
-    schedule: "every 12 hours",
+    schedule: "every day 06:15",
     region: "europe-west1",
   },
   async (_event: unknown) => {
