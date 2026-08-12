@@ -133,9 +133,7 @@ def extract_people(ctx: Context):
     # with its `date=` removed, which is what identifies the thing crawled.
     latest: dict[str, tuple[str, list[KrsPerson]]] = {}
 
-    for blob_name, blob in ctx.io.read_many(
-        CloudStorage(prefix="hostname=rejestr.io")
-    ):
+    for blob_name, blob in ctx.io.read_many(CloudStorage(prefix="hostname=rejestr.io")):
         if "aktualnosc_" not in blob_name:
             continue
         subject, date = split_crawl_date(blob_name)
@@ -196,7 +194,11 @@ def extract_people(ctx: Context):
 
 class CompaniesKRS(Pipeline[KrsCompany]):
     filename = "company_krs"
-    dtype = {"krs": str}
+    # These are written as strings and have to be read back as strings. Without
+    # the pin pandas types the columns as floats, so a REGON of "010053589"
+    # comes back as 10053589.0 -- the leading zero gone, and a ".0" appended to
+    # every identifier downstream of here.
+    dtype = {"krs": str, "nip": str, "regon": str}
     postal_codes: PostalCodes
     hardcoded_companies: CompaniesHardcoded
 
@@ -376,9 +378,7 @@ class CompaniesKRS(Pipeline[KrsCompany]):
                 for src in hc.sources:
                     company_sources.add(Source(source="hardcoded", reason=src))
 
-            output.append(
-                dataclasses.replace(company, sources=list(company_sources))
-            )
+            output.append(dataclasses.replace(company, sources=list(company_sources)))
         return output
 
     def process(self, ctx: Context):

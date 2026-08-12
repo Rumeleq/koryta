@@ -50,6 +50,9 @@ EXPECTED_COMPANIES = {
         name="ZAKŁAD GOSPODARKI KOMUNALNEJ GMINY SŁUPIA KONECKA",
         city="Słupia",
         teryt_code="260506",
+        nip="6581991448",
+        # 14 digits: this REGON identifies a local unit, not the parent entity.
+        regon="38630854600000",
         sources=[
             Source(source="api-krs", source_krs="api-krs.ms.gov.pl", reason=None),
             Source(source="hardcoded", source_krs=None, reason="PUBLIC_COMPANIES_KRS"),
@@ -76,6 +79,9 @@ EXPECTED_COMPANIES = {
         name="C.HARTWIG - TARGI",
         city="Siedlce",
         teryt_code="1464",
+        nip="5260251517",
+        # Leading zero, and the reason `dtype` pins these as strings.
+        regon="010053589",
         sources=[Source("rejestr-io", "rejestr.io")],
         is_public=True,
     ),
@@ -84,6 +90,8 @@ EXPECTED_COMPANIES = {
         name="ODOLANOWSKI ZAKŁAD KOMUNALNY",
         city="Odolanów",
         teryt_code="3017",
+        nip="6222783193",
+        regon="302409617",
         sources=[
             Source(source="api-krs", source_krs="api-krs.ms.gov.pl", reason=None),
             Source(source="hardcoded", source_krs=None, reason="PUBLIC_COMPANIES_KRS"),
@@ -105,6 +113,40 @@ def test_expected_output(companies_map, companies_df, expected_company):
     print(company)
     print(expected_company)
     assert company == expected_company, company
+
+
+def test_nip_and_regon_survive_the_merge(companies_df):
+    """Without these the output cannot be joined to any register keyed on a
+    tax id, which is how public-procurement sources identify a company.
+
+    Only KRS supplies them, and it has a NIP for about 93% of its rows, so the
+    bar is "most of them" rather than "all".
+    """
+    with_krs = companies_df["krs"].notna()
+    populated = companies_df.loc[with_krs, "nip"].notna().mean()
+    assert populated > 0.8, f"only {populated:.1%} of companies carry a NIP"
+
+
+def test_identifiers_are_strings_not_floats(companies_df):
+    """The failure this guards against is silent and destroys data.
+
+    Read back without an explicit dtype, pandas types these columns as floats:
+    a REGON of "010053589" becomes 10053589.0, losing a digit that is part of
+    the identifier, and every value picks up a ".0".
+    """
+    for column in ("nip", "regon"):
+        values = companies_df[column].dropna()
+        assert values.map(lambda v: isinstance(v, str)).all(), (
+            f"{column} is not all strings"
+        )
+        assert not values.str.endswith(".0").any(), (
+            f"{column} contains float-formatted values"
+        )
+
+    regons = companies_df["regon"].dropna()
+    assert regons.str.startswith("0").any(), (
+        "no REGON starts with a zero, which means the leading digit was lost"
+    )
 
 
 EXPECTED_PUBLIC_STATUS = {
@@ -133,7 +175,7 @@ def test_is_public(companies_map, krs, expected_is_public):
 # Companies scraped from both rejestr.io and api-krs.ms.gov.pl must keep the
 # activity codes that only api-krs provides.
 EXPECTED_ACTIVITIES = {
-    "0000184990": "52.23.Z", # Port Lotniczy Warszawa-Modlin
+    "0000184990": "52.23.Z",  # Port Lotniczy Warszawa-Modlin
 }
 
 

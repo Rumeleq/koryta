@@ -22,7 +22,10 @@ class Companies(Pipeline[Company]):
     """
 
     filename = "companies_merged"
-    dtype = {"krs": str, "teryt_code": str}
+    # All identifiers, never numbers. A REGON may start with a zero and a NIP
+    # is a 10-digit string; pandas reads either as an integer without this and
+    # the leading zeros are gone for good.
+    dtype = {"krs": str, "teryt_code": str, "nip": str, "regon": str}
 
     scraped_companies: CompaniesKRS
     hardcoded_companies: CompaniesHardcoded
@@ -88,6 +91,12 @@ class Companies(Pipeline[Company]):
                     sources=merge.sources,
                     activity=krs.activity if krs is not None else [],
                     is_public=krs.is_public if krs is not None else False,
+                    # Only KRS carries these, so there is nothing to reconcile
+                    # -- but without them this output cannot be joined to any
+                    # register that identifies a company by its tax id, which
+                    # is what public-procurement sources do.
+                    nip=krs.nip if krs is not None else None,
+                    regon=krs.regon if krs is not None else None,
                     # TODO add owners=[],
                 )
             )
