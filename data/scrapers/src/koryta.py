@@ -74,10 +74,18 @@ def get_args():
         "Streams from disk. Still disabled by --no-backup/DISABLE_BACKUP.",
     )
     parser.add_argument(
+        "--all-pipelines",
+        action="store_true",
+        help="Run every pipeline except ScrapeRejestrIO, which bills per "
+        "query. Not spelled --all: scrapers.analysis.extract owns that one "
+        "('extract all people') and reads it off the same argv.",
+    )
+    parser.add_argument(
         "--exclude",
         action="append",
         default=[],
-        help="Pipeline name to skip running. Repeatable, and applies to --all.",
+        help="Pipeline name to skip running. Repeatable, and applies to "
+        "--all-pipelines.",
     )
     parser.add_argument(
         "pipeline",
@@ -111,9 +119,18 @@ def select_pipelines(args) -> set[str]:
             f"Available: {' '.join(sorted(pipeline_names))}"
         )
 
+    if args.all_pipelines:
+        if args.pipeline:
+            raise ValueError(
+                "--all-pipelines runs everything, so it takes no pipeline names"
+            )
+        # ScrapeRejestrIO bills per query -- never part of a bulk run.
+        return pipeline_names - {"ScrapeRejestrIO"} - exclude
     if args.pipeline:
         return set(args.pipeline) - exclude
-    raise ValueError("No pipeline specified, use koryta PipelineName or --all")
+    raise ValueError(
+        "No pipeline specified, use koryta PipelineName or --all-pipelines"
+    )
 
 
 def selected_resources(selected: set[str]) -> set[type[ContextResource]]:
