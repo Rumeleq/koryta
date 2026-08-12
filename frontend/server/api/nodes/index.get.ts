@@ -15,7 +15,7 @@ import {
 import { authCachedEventHandler } from "~~/server/utils/handlers";
 import { getUser } from "~~/server/utils/auth";
 import { pageIsPublic } from "~~/shared/model";
-import { defineEventHandler } from "h3";
+import { defineEventHandler, type H3Event } from "h3";
 import { logger } from "firebase-functions/logger";
 
 const queryValidator = z.object({
@@ -46,17 +46,37 @@ export type Query = z.infer<typeof queryValidator>;
 
 // We wrap the original logic in a cached handler to preserve the caching
 // for endpoints that rely on the old behavior (e.g. useEntities).
-const cachedHandler = authCachedEventHandler(async (event) => {
-  const query = await getValidatedQuery(event, (query) =>
-    queryValidator.parse(query),
-  );
+const cachedHandler = authCachedEventHandler(
+  async (event) => {
+    const query = await getValidatedQuery(event, (query) =>
+      queryValidator.parse(query),
+    );
 
-  const opts = { personParties: query.parties || query.party };
+    const opts = { personParties: query.parties || query.party };
 
-  // The typeless caller is rejected before we get here, so there is always a
-  // type to fetch.
-  return { nodes: await fetchNodes(query.type!, opts) };
-});
+    // The typeless caller is rejected before we get here, so there is always a
+    // type to fetch.
+    return { nodes: await fetchNodes(query.type!, opts) };
+  },
+  {
+    // Only `type` and the party filter change the answer, so nothing else may
+    // be allowed to open an entry of its own - see `queryCacheKey`. `latest`
+    // is one of those: `authFetch` appends it to every request an editor
+    // makes, and it made a second copy of the whole place collection, 14,876
+    // reads over 10-11 August 2026, without changing a field of the response.
+    getKey: (event: H3Event) =>
+      validatedQueryCacheKey(
+        event,
+        (q) => queryValidator.parse(q),
+        // Spelled the same way the handler spells it, so that no pair of
+        // queries the handler tells apart can end up under one key.
+        (query) => ({
+          type: query.type,
+          parties: query.parties || query.party,
+        }),
+      ),
+  },
+);
 
 export default defineEventHandler(async (event) => {
   const query = await getValidatedQuery(event, (q) => queryValidator.parse(q));
