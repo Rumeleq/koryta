@@ -155,19 +155,42 @@ def only_digits(value) -> str:
     return re.sub(r"\D", "", str(value or ""))
 
 
-def read_cru(path: Path) -> dict[str, Party]:
-    """Every distinct NIP in the register, with what it did there."""
+def read_cru(path: Path) -> tuple[dict[str, Party], float, float]:
+    """Every distinct NIP in the register, with what it did there.
+
+    Also returns the register's total value and the part of it that could not
+    be attributed to any identified company, so the money in the report adds
+    up to the money in the register rather than to something larger.
+
+    A contract's value is split evenly between its suppliers. Attributing the
+    whole of it to each -- which is the obvious thing to write, and what this
+    did first -- counts a jointly awarded contract once per winner: 1237
+    contracts, 0.8% of the register, but 2.79 bn PLN of double counting, which
+    put the reported total 23% above the register's own.
+    """
     parties: dict[str, Party] = {}
+    total = 0.0
+    unattributed = 0.0
     with path.open(encoding="utf-8") as handle:
         for line in handle:
             record = json.loads(line)
-            # A contract's value belongs to the contract, not to each party, so
-            # it is attributed to the supplier side only -- counting it for the
-            # buyer too would double every złoty in the register.
             value = record.get("wartosc_przedmiotu") or 0.0
+            total += value
+            # The buyer side is skipped entirely: it is the same money seen
+            # from the paying end, and counting it would double the register.
+            suppliers = [s for s in record["strony"] if s["kolejnosc"] != 0]
+            share = value / len(suppliers) if suppliers else 0.0
+            if not suppliers:
+                unattributed += value
+
             for strona in record["strony"]:
                 nip = only_digits(strona.get("nip"))
                 if len(nip) != 10:
+                    if strona["kolejnosc"] != 0:
+                        # A supplier CRU names but does not identify -- most
+                        # often a private individual. Its share is real money
+                        # and simply cannot be filed under a company.
+                        unattributed += share
                     continue
                 party = parties.setdefault(nip, Party(nip=nip))
                 if party.name is None:
@@ -178,8 +201,8 @@ def read_cru(path: Path) -> dict[str, Party]:
                     party.as_buyer += 1
                 else:
                     party.as_supplier += 1
-                    party.value += value
-    return parties
+                    party.value += share
+    return parties, total, unattributed
 
 
 def read_companies(path: Path) -> dict[str, dict]:
@@ -268,7 +291,9 @@ def _overlap_section(
     print(f"  of those, act as buyer             {len(overlap) - suppliers:>10,}")
 
 
-def _kind_section(cru: dict[str, Party], overlap: set) -> None:
+def _kind_section(
+    cru: dict[str, Party], overlap: set, total: float, unattributed: float
+) -> None:
     _heading("WHAT THE COUNTERPARTIES ARE")
     counts: collections.Counter[str] = collections.Counter()
     held: collections.Counter[str] = collections.Counter()
@@ -281,12 +306,26 @@ def _kind_section(cru: dict[str, Party], overlap: set) -> None:
         if nip in overlap:
             held[kind] += 1
 
+    print("  bn PLN is the contract value the register declares, in billions of")
+    print("  złoty, split evenly between a contract's suppliers.")
+    print()
     print(f"  {'kind':<46}{'NIPs':>7}{'held':>7}{'bn PLN':>9}")
     for kind, n in counts.most_common():
         print(f"  {LABELS[kind]:<46}{n:>7,}{held[kind]:>7,}{value[kind] / 1e9:>9.2f}")
+    attributed = sum(value.values())
     print(
         f"  {'TOTAL':<46}{sum(counts.values()):>7,}{sum(held.values()):>7,}"
-        f"{sum(value.values()) / 1e9:>9.2f}"
+        f"{attributed / 1e9:>9.2f}"
+    )
+    # Printed so the table reconciles against the register rather than being
+    # taken on trust: these three lines have to add up.
+    print(
+        f"  {'not attributable to an identified company':<46}{'':>7}{'':>7}"
+        f"{unattributed / 1e9:>9.2f}"
+    )
+    print(
+        f"  {'value of every contract in the register':<46}{'':>7}{'':>7}"
+        f"{total / 1e9:>9.2f}"
     )
 
 
@@ -326,7 +365,13 @@ def _lookup_section(cru: dict[str, Party], overlap: set, validate: bool) -> None
             print(f"    {name[:64]}")
 
 
-def report(cru: dict[str, Party], known: dict[str, dict], validate: bool) -> None:
+def report(
+    cru: dict[str, Party],
+    known: dict[str, dict],
+    validate: bool,
+    total: float = 0.0,
+    unattributed: float = 0.0,
+) -> None:
     overlap = set(cru) & set(known)
     for nip in overlap:
         cru[nip].activity = known[nip].get("activity") or []
@@ -334,7 +379,7 @@ def report(cru: dict[str, Party], known: dict[str, dict], validate: bool) -> Non
 
     _overlap_section(cru, known, overlap)
     print()
-    _kind_section(cru, overlap)
+    _kind_section(cru, overlap, total, unattributed)
     print()
     _lookup_section(cru, overlap, validate)
 
@@ -368,7 +413,8 @@ def main() -> None:
                 f"(koryta CruUmowy / koryta Companies)."
             )
 
-    report(read_cru(args.umowy), read_companies(args.companies), args.validate)
+    cru, total, unattributed = read_cru(args.umowy)
+    report(cru, read_companies(args.companies), args.validate, total, unattributed)
 
 
 if __name__ == "__main__":
