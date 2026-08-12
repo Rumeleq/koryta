@@ -17,6 +17,7 @@ have a KRS, so whatever the name rule says about them is a recall estimate.
 
     uv run python src/scripts/cru_company_overlap.py
     uv run python src/scripts/cru_company_overlap.py --validate
+    uv run python src/scripts/cru_company_overlap.py --list komunalne > out.csv
 """
 
 import argparse
@@ -365,6 +366,29 @@ def _lookup_section(cru: dict[str, Party], overlap: set, validate: bool) -> None
             print(f"    {name[:64]}")
 
 
+def list_kind(cru: dict[str, Party], overlap: set, kind: str) -> None:
+    """The counterparties of one kind we do not hold, as CSV on stdout.
+
+    `in_krs` is a column and not a filter. Most of what is missing from a
+    sector is budget units -- of the 337 municipal utilities we do not hold,
+    227 only ever appear as a buyer and have no legal form in their name,
+    because they are gminne zakłady budżetowe rather than companies. There is
+    nothing to look them up in. Reporting that is more use than hiding it.
+    """
+    missing = [
+        p for nip, p in cru.items() if nip not in overlap and classify(p) == kind
+    ]
+    missing.sort(key=lambda p: (-p.value, -p.contracts, p.nip))
+
+    print("nip,contracts,as_supplier,as_buyer,value_pln,in_krs,name")
+    for party in missing:
+        name = (party.name or "").replace('"', "'")
+        print(
+            f"{party.nip},{party.contracts},{party.as_supplier},{party.as_buyer},"
+            f'{party.value:.2f},{int(in_krs(party.name))},"{name}"'
+        )
+
+
 def report(
     cru: dict[str, Party],
     known: dict[str, dict],
@@ -399,6 +423,13 @@ def main() -> None:
         help="Companies output to compare against.",
     )
     parser.add_argument(
+        "--list",
+        dest="list_kind",
+        choices=sorted(LABELS),
+        help="Instead of the report, print the counterparties of this kind "
+        "that we do not hold, as CSV.",
+    )
+    parser.add_argument(
         "--validate",
         action="store_true",
         help="Measure the name classifier against the companies whose KRS we "
@@ -414,7 +445,14 @@ def main() -> None:
             )
 
     cru, total, unattributed = read_cru(args.umowy)
-    report(cru, read_companies(args.companies), args.validate, total, unattributed)
+    known = read_companies(args.companies)
+    if args.list_kind:
+        overlap = set(cru) & set(known)
+        for nip in overlap:
+            cru[nip].activity = known[nip].get("activity") or []
+        list_kind(cru, overlap, args.list_kind)
+        return
+    report(cru, known, args.validate, total, unattributed)
 
 
 if __name__ == "__main__":
