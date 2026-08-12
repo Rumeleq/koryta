@@ -92,6 +92,20 @@ EXPECTED_COMPANIES = {
         teryt_code="3017",
         nip="6222783193",
         regon="302409617",
+        activity=[
+            "37.00.Z",
+            "36.00.Z",
+            "33.14.Z",
+            "38.11.Z",
+            "39.00.Z",
+            "41.20.Z",
+            "42.21.Z",
+            "43.22.Z",
+            "43.29.Z",
+            "81.30.Z",
+        ],
+        # The hardcoded PUBLIC_COMPANIES_KRS source below is what sets this.
+        is_public=True,
         sources=[
             Source(source="api-krs", source_krs="api-krs.ms.gov.pl", reason=None),
             Source(source="hardcoded", source_krs=None, reason="PUBLIC_COMPANIES_KRS"),
