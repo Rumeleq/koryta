@@ -121,7 +121,7 @@ is fine: the slice tier's pipelines do not need any.
 To reproduce a CI run locally:
 
 ```bash
-uv run koryta --all --exclude ProcessWikiNer \
+uv run koryta --all-pipelines --exclude ProcessWikiNer \
   --refresh all --no-backup --assume-yes \
   --wiki-dump-url https://dumps.wikimedia.org/plwiki/20260701/plwiki-20260701-pages-articles-multistream1.xml-p1p187037.bz2 \
   --wiki-dump-file plwiki-20260701-shard1.bz2

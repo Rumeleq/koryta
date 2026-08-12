@@ -173,7 +173,7 @@ jobs:
           # run for a dataset nothing serves yet. Excluding the top-level one
           # takes the dependency with it.
           if [ "$TIER" = "full" ]; then
-            selection="--all --exclude ProcessWikiNer"
+            selection="--all-pipelines --exclude ProcessWikiNer"
           else
             # Wiki only: the rest reads GCS or Firestore, which a fork PR has
             # no credentials for. ProcessWiki needs none.
