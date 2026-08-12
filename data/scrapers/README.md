@@ -47,6 +47,38 @@ You can run each script with `uv run scripts-name`.
 
 Refer to `pyproject.toml` for the most up-to-date list of the scripts available there.
 
+## Centralny Rejestr Umów (CRU)
+
+`CruDump` fetches the public contracts register from a postgres mirror of the
+[rejestrumow.gov.pl](https://rejestrumow.gov.pl) API and leaves a compressed
+dump at `downloaded/rejestrumow_dump.sql.gz`; `CruUmowy` turns that into one
+JSONL line per contract, with the contract's parties nested.
+
+```bash
+uv run koryta CruDump  --refresh CruDump --output formatted   # ~14s
+uv run koryta CruUmowy --refresh CruUmowy                     # ~16s, 149k lines
+```
+
+Only `CruDump` needs credentials, and it takes them from `~/.pgpass` -- never
+from a flag or the repo:
+
+```
+2a09:8280:1::5b:776c:5432:rejestr_umow:koryta_ro_user:<password>
+```
+
+It also needs a `pg_dump` at least as new as the server (15.10 today; Ubuntu
+24.04's `postgresql-client-16` is fine).
+
+Without those, `CruDump` falls back to `downloaded/` and then to the artifact
+in the shared cache, so `CruUmowy` still runs on a checkout with no database
+access at all. That last rung needs `USERNAME` set in `.env` like every other
+shared-cache read does -- `get_username()` otherwise prompts, which is an
+`EOFError` rather than a fallback on a headless run. `--cru-no-redump` skips
+the mirror outright, and
+`--cru-dump-file <path>` adopts a dump you already have. The artifact is
+published to the shared cache only when it was freshly dumped *and* its sha256
+changed, because that bucket partitions by timestamp and is never pruned.
+
 ## The compressed mirror
 
 Pipelines that read a whole hostname prefix -- the KRS ones, off
