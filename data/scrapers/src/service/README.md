@@ -88,6 +88,28 @@ millions crawled, so the per-page cost that makes a 235B model impossible
 nightly is a rounding error on a single capture — and a capture is the one path
 where the reader is waiting for the answer and can see it be wrong.
 
+## The prompt is the batch one, minus the quoting rule
+
+The nightly run makes every fact stand or fall on a verbatim span of the
+article, because that span is the whole of the evidence: a reviewer at
+`/ekstrakcje` sees the fact and the quote, nothing else. A capture is read in a
+panel beside the article the reader still has open, so the span is a
+convenience there rather than the evidence, and insisting on it costs real
+pairings — a name in the lead and the office six paragraphs down cannot be
+covered by one contiguous fragment.
+
+So `oneshot` swaps two blocks of `facts_pipeline`'s prompt (`build_prompt`) for
+capture versions: a fact that cannot be quoted is returned with an empty
+`justification` instead of being dropped. Everything else — what counts as a
+fact, how `organization` and `role` must be written — is the same text, and
+`test_oneshot.py` fails if that stops being true. The judge follows: a fact with
+no span is judged against the article rather than being marked `insufficient`
+for the span it was never going to have.
+
+The relaxation is only about the quote. The person still has to be named in the
+article, every field still has to be something the article says, and world
+knowledge is still not evidence.
+
 ## Deploying
 
 Nothing here deploys itself — these are the commands to run once, by hand.

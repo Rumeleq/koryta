@@ -102,18 +102,55 @@ def test_prompt_versions_are_the_pipelines_own():
     """The whole point of oneshot is that there is one copy of each prompt.
 
     If this drifts, the fast path and the nightly run are asking the model
-    different questions while stamping their answers with the same tag.
+    different questions while stamping their answers with the same tag. The
+    facts prompt is the exception, and it counts its own revisions — see
+    `test_the_capture_prompt_only_differs_about_quoting` for what may differ.
     """
     analyzed = oneshot.AnalyzedArticle(
         parsed=oneshot.parse_page(ARTICLE_HTML, "https://x.pl/a", "x.pl", {}),
         score=None,
     )
-    assert analyzed.facts_prompt_version == facts_pipeline.PROMPT_VERSION
+    assert analyzed.facts_prompt_version == oneshot.CAPTURE_PROMPT_VERSION
     assert analyzed.verify_version == verify_pipeline.VERIFY_VERSION
     assert (
         oneshot.ArticleScore(None, "", False, "").prompt_version
         == scores_pipeline.PROMPT_VERSION
     )
+
+
+def test_the_capture_prompt_only_differs_about_quoting():
+    """Everything but the two justification blocks is the batch prompt's text.
+
+    A rule about what counts as a fact, or about how organization and role are
+    written, must reach both runs. Only the blocks that make a fact stand or
+    fall on a verbatim span are allowed to be capture-specific.
+    """
+    capture = oneshot._CAPTURE_PROMPT
+
+    for shared in (
+        facts_pipeline._EXTRACTION_RULES,
+        facts_pipeline._STANDARDIZATION_RULES,
+        facts_pipeline._FORMAT_AND_EXAMPLES,
+    ):
+        assert shared in capture
+
+    assert facts_pipeline._GROUNDING_RULES not in capture
+    assert facts_pipeline._QUOTE_DERIVATION_RULES not in capture
+    assert oneshot._CAPTURE_GROUNDING_RULES in capture
+    # The article still has exactly one place to go.
+    assert capture.count("{text}") == 1
+
+
+def test_the_batch_prompt_is_what_it_always_was():
+    """`build_prompt()` with no arguments is the nightly run's prompt.
+
+    The blocks exist so a capture can substitute two of them; splitting the
+    string must not have changed what the batch pipeline asks, which is what
+    PROMPT_VERSION staying at its value claims.
+    """
+    assert facts_pipeline._PROMPT == facts_pipeline.build_prompt()
+    assert facts_pipeline._GROUNDING_RULES in facts_pipeline._PROMPT
+    assert oneshot._CAPTURE_GROUNDING_RULES not in facts_pipeline._PROMPT
 
 
 def test_parse_page_prefers_a_verified_selector():
@@ -221,6 +258,55 @@ def test_analyze_returns_scored_and_verified_facts():
     assert fact["justification_in_text"]
     assert fact["justification_in_text"] in analyzed.parsed.article_content
     assert analyzed.usage.requests == 2  # facts + one judgement; score is separate
+
+
+QUOTELESS_FACTS_REPLY = (
+    "<think>- Jan Kowalski, prezes MPW; nazwisko i funkcja w osobnych zdaniach"
+    "</think>\n"
+    "facts:\n"
+    "- justification= | employment | person=Jan Kowalski | organization="
+    "Miejskie Przedsiebiorstwo Wodociagow | role=prezes\n"
+)
+
+
+def test_analyze_submits_a_fact_the_model_could_not_quote():
+    """The capture path's reason for existing after this change.
+
+    The batch run drops a fact with no verbatim span, because a span is all a
+    reviewer at /ekstrakcje gets. Beside the article the reader has the text
+    already, so the fact is kept — judged against that text instead.
+    """
+    llm = FakeLLM(facts_reply=QUOTELESS_FACTS_REPLY, score_reply=SCORE_REPLY)
+
+    analyzed = _analyze(llm)
+    payload = oneshot.submission_payload(analyzed, "capture_test")
+
+    fact = analyzed.facts[0]
+    assert fact["justification_in_text"] is None
+    assert fact["verified"] is True
+    assert len(payload["extracted_facts"]) == 1
+
+    judge_prompt = next(p for p in llm.prompts if p.startswith("You label"))
+    assert "ARTICLE:" in judge_prompt
+    assert "Jan Kowalski jest radnym miasta" in judge_prompt
+    # No empty span is handed to the judge to reject the fact on.
+    assert '"justification"' not in judge_prompt.split("FACT (JSON):")[-1]
+
+
+def test_a_quoted_fact_is_still_judged_on_its_span_alone():
+    """The article is substituted only where there is no span to judge.
+
+    A fact that does have one must keep being judged the way the batch run
+    judges it — the rulebook's whole first principle is that the span, and
+    nothing around it, decides.
+    """
+    llm = FakeLLM(facts_reply=FACTS_REPLY, score_reply=SCORE_REPLY)
+
+    _analyze(llm)
+
+    judge_prompt = next(p for p in llm.prompts if p.startswith("You label"))
+    assert "ARTICLE:" not in judge_prompt
+    assert '"justification"' in judge_prompt
 
 
 def test_analyze_keeps_rejected_facts_out_of_what_is_submitted():

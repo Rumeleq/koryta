@@ -48,7 +48,15 @@ _THINK_BLOCK_RE = re.compile(r"<think>(.*?)</think>", flags=re.DOTALL)
 _RUN_RESPONSE_THINK_CHARS = 0
 _RUN_RESPONSE_THINK_BLOCKS = 0
 
-_PROMPT = (
+# The prompt is assembled from named blocks rather than written as one string,
+# so a caller can swap the parts that are specifically about quoting without
+# copying the other 150 lines — see `build_prompt`. Joined in order the blocks
+# are byte-identical to the single string this used to be, which is why
+# PROMPT_VERSION does not move for the batch run.
+#
+# What counts as a fact, and how to copy a justification out of the text. Shared
+# by every caller: a verbatim span is still what you want whenever one exists.
+_EXTRACTION_RULES = (
     "Jesteś profesjonalnym, obiektywnym dziennikarzem analizującym tekst źródłowy. "
     "Wyciągnij tylko fakty bezpośrednio poparte główną treścią artykułu. "
     "Interesują nas wyłącznie trzy typy faktów:\n"
@@ -97,6 +105,12 @@ _PROMPT = (
     "fakt. Jeśli nie potrafisz skopiować dosłownego, ciągłego fragmentu, ustaw "
     "justification= — NIGDY nie parafrazuj, nie streszczaj i nie sklejaj słów "
     "(lepiej pusty justification niż przepisany własnymi słowami).\n"
+)
+
+# Swappable. This is the block that makes a fact stand or fall on one span: it
+# is what tells the model to drop a fact it cannot quote in a single contiguous
+# fragment naming the person and confirming every field.
+_GROUNDING_RULES = (
     "GRUNTOWANIE (najważniejsza zasada): sam cytat justification — bez reszty "
     "artykułu i bez wiedzy ogólnej — musi (a) zawierać PEŁNE imię i nazwisko "
     "osoby (dla personal_relation imiona i nazwiska OBU osób) oraz (b) "
@@ -114,6 +128,11 @@ _PROMPT = (
     "Cytat justification musi potwierdzać STANOWISKO i INSTYTUCJĘ właśnie tej "
     "osoby, a nie tylko ją wymieniać. Jeśli w tekście nie ma dosłownego fragmentu "
     "wiążącego osobę z jej stanowiskiem i instytucją, nie zwracaj tego faktu.\n"
+)
+
+# Shared: how organization and role must be written, whatever they are grounded
+# in. Nothing here depends on there being a quote.
+_STANDARDIZATION_RULES = (
     "STANDARYZACJA (WAŻNE — pola muszą się później łączyć w encje): organization "
     "i role zapisuj ZAWSZE w formie standardowej, a nie dosłownie tak, jak są "
     "odmienione w zdaniu.\n"
@@ -139,11 +158,20 @@ _PROMPT = (
     "- role to RZECZOWNIK nazywający stanowisko, nigdy czasownik ani fraza "
     "opisowa ('pracował', 'kierował', 'stojący na czele' to NIE jest role; jeśli "
     "brak nazwy stanowiska, zostaw role puste).\n"
+)
+
+# Swappable, and the tail of the grounding rule: it names the quote, rather than
+# the article, as the only thing organization and role may be read out of.
+_QUOTE_DERIVATION_RULES = (
     "organization i role muszą wynikać z cytatu (nazwane wprost lub jednoznacznie "
     "wskazane przez stanowisko) — zapisz je tylko w formie standardowej, nie "
     "zgaduj z wiedzy ogólnej: nie dodawaj kraju ani nazwy, której cytat nie "
     "wskazuje ('Sąd Najwyższy' to nie 'Sąd Najwyższy Ukrainy'; 'poseł' to nie "
     "'Izba Poselska').\n"
+)
+
+# Shared: how to answer, and the worked examples.
+_FORMAT_AND_EXAMPLES = (
     "Do żadnego pola nie wpisuj komentarzy, uzasadnień ani placeholderów typu "
     "'(nie podano)' czy '→ odrzucam'. Jeśli danych brak, pomiń pole albo cały "
     "fakt.\n"
@@ -211,9 +239,44 @@ _PROMPT = (
     "- justification=Były burmistrz Paczkowa Bogdan W. usłyszał zarzuty "
     "| employment | person=Bogdan W. | organization=Urząd Miejski w Paczkowie "
     "| role=burmistrz\n\n"
-    "Teraz przeanalizuj poniższy artykuł w ten sam sposób.\n"
-    "Artykuł:\n{text}"
 )
+
+# Always last: `{text}` is what the caller formats the article into.
+_ARTICLE_SUFFIX = (
+    "Teraz przeanalizuj poniższy artykuł w ten sam sposób.\nArtykuł:\n{text}"
+)
+
+
+def build_prompt(
+    *,
+    grounding: str = _GROUNDING_RULES,
+    quote_derivation: str = _QUOTE_DERIVATION_RULES,
+    extra_examples: str = "",
+) -> str:
+    """The fact-extraction prompt, with the quoting rules open to substitution.
+
+    Called with no arguments this is the prompt the nightly run has always used.
+    `scrapers.article.oneshot` passes its own `grounding` and `quote_derivation`
+    for a captured page, where a fact that cannot be quoted is worth returning
+    anyway — see the reasoning there. Everything else, notably what counts as a
+    fact at all and how organization and role must be written, stays shared, so
+    the two runs cannot drift on the questions that are not about quoting.
+
+    `extra_examples` is appended after the shared worked examples and must end
+    in a blank line, since the article suffix follows it directly.
+    """
+    return (
+        _EXTRACTION_RULES
+        + grounding
+        + _STANDARDIZATION_RULES
+        + quote_derivation
+        + _FORMAT_AND_EXAMPLES
+        + extra_examples
+        + _ARTICLE_SUFFIX
+    )
+
+
+_PROMPT = build_prompt()
 
 
 class ArticleExtractedFacts(IncrementalJsonlPipeline[ArticleFacts]):
@@ -410,9 +473,7 @@ def _filter_uncached_fact_records(
     if min_score is None:
         return records
     filtered = [
-        record
-        for record in records
-        if _record_meets_min_score(record, min_score)
+        record for record in records if _record_meets_min_score(record, min_score)
     ]
     skipped = len(records) - len(filtered)
     if skipped:
@@ -463,12 +524,8 @@ def _emit_fact_response(
 
 
 def _fact_request(record: dict[str, Any], model: str, ctx=None) -> LLMRequest:
-    text_limit = (
-        article_facts_text_limit() or TEXT_LIMIT
-    )
-    max_tokens = (
-        article_facts_max_tokens() or MAX_TOKENS
-    )
+    text_limit = article_facts_text_limit() or TEXT_LIMIT
+    max_tokens = article_facts_max_tokens() or MAX_TOKENS
     return LLMRequest(
         prompt=_PROMPT.format(
             text=str(record.get("article_content") or "")[:text_limit]
@@ -731,7 +788,6 @@ def _coerce_fact(
             url=url,
             justification=justification,
             justification_in_text=justification_in_text,
-
             person=person,
             organization=organization,
             role=role_text or None,
@@ -748,7 +804,6 @@ def _coerce_fact(
             url=url,
             justification=justification,
             justification_in_text=justification_in_text,
-
             person=person,
             party=party,
         )
@@ -777,7 +832,6 @@ def _coerce_fact(
             url=url,
             justification=justification,
             justification_in_text=justification_in_text,
-
             subject=subject,
             object=object_,
             relation=relation_text or None,

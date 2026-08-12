@@ -15,6 +15,18 @@ reach-through in one file makes that seam greppable, and
 ``test_oneshot.py`` pins the prompt versions so a change on either side fails a
 test instead of going unnoticed.
 
+The one place the two runs are meant to disagree is quoting, and it is
+substituted rather than copied — `facts_pipeline.build_prompt` takes the two
+blocks about justifications, everything else stays the shared text. A batch
+fact is only ever read as a row in `/ekstrakcje`, far from its article, so its
+verbatim span is the whole of the evidence and a fact without one is worth
+nothing. A captured fact is drawn in a panel beside the article the reader
+already has open, where the span is a convenience; requiring it there costs
+real pairings — a name in the lead and the office six paragraphs down cannot be
+covered by one contiguous fragment. So a capture returns those facts with an
+empty justification, and `verify_facts` judges them against the article text
+instead of against a span that is not there.
+
 Nothing here touches the network, GCS or Firestore — it takes html bytes and an
 :class:`~scrapers.stores.LLM`, and returns data. That keeps it inside the
 ``scrapers`` layer the import contract allows, and makes it testable with a
@@ -73,6 +85,93 @@ _FALLBACK_SELECTORS: tuple[str, ...] = (
 # trying.
 _MIN_FALLBACK_CHARS = 400
 
+# Revisions of the capture prompt below, counted on their own rather than
+# continuing `facts_pipeline.PROMPT_VERSION`: the two prompts change for
+# different reasons and neither number would mean anything applied to the other.
+# Which of the two produced a fact is what `EXTRACTION_TAG` records.
+CAPTURE_PROMPT_VERSION = 1
+
+# Replaces the batch prompt's grounding block, which is what tells the model to
+# drop a fact it cannot cover with one contiguous quote. Here the quote is
+# demoted to a preference; what may not be relaxed — the person named in the
+# article, every field said by the article, nothing from world knowledge — is
+# restated so the relaxation cannot be read as a general one.
+_CAPTURE_GROUNDING_RULES = (
+    "GRUNTOWANIE (najważniejsza zasada): fakt musi wynikać z treści artykułu, "
+    "a nie z Twojej wiedzy ogólnej. Cytat justification jest pomocą, a nie "
+    "warunkiem: jeśli nie ma jednego ciągłego fragmentu, który jednocześnie "
+    "nazywa osobę i potwierdza fakt, ZWRÓĆ TEN FAKT MIMO TO i zostaw "
+    "justification puste.\n"
+    "- Osoba musi być gdzieś w artykule nazwana pełnym imieniem i nazwiskiem "
+    "(albo imieniem i inicjałem nazwiska). Wolno połączyć zdanie, które ją "
+    "nazywa, ze zdaniem, które opisuje fakt, nawet jeśli dzieli je kilka "
+    "akapitów — ale tylko wtedy, gdy z artykułu jednoznacznie wynika, że chodzi "
+    "o tę samą osobę. Jeśli to domysł, pomiń fakt.\n"
+    "- Każde pole, które podajesz (organization, role, party, object, "
+    "relation), musi być powiedziane w artykule. Pola, którego artykuł nie "
+    "podaje, nie dopisuj.\n"
+    "- Jeśli potrafisz skopiować dosłowny, ciągły cytat (w razie potrzeby "
+    "z [...]), zrób to — cytat jest lepszy niż jego brak. Pusty justification "
+    "jest dopuszczalny; wymyślony albo sparafrazowany nigdy.\n"
+)
+
+# Replaces the sentence that names the quote as the only thing organization and
+# role may be read out of. Same rule, read out of the article instead.
+_CAPTURE_QUOTE_DERIVATION_RULES = (
+    "organization i role muszą wynikać z artykułu (nazwane wprost lub "
+    "jednoznacznie wskazane przez stanowisko) — zapisz je tylko w formie "
+    "standardowej, nie zgaduj z wiedzy ogólnej: nie dodawaj kraju ani nazwy, "
+    "której artykuł nie wskazuje ('Sąd Najwyższy' to nie 'Sąd Najwyższy "
+    "Ukrainy'; 'poseł' to nie 'Izba Poselska').\n"
+)
+
+# The batch prompt's worked examples all carry a quote, so on their own they
+# still read as "a fact has a justification". This one is the case the whole
+# change is for: the pairing is certain, the span is not available.
+_CAPTURE_EXAMPLE = (
+    "Artykuł: Halina Mazur od trzech lat walczy o remont ulicy Polnej.\n"
+    "[kilkanaście akapitów o kosztach remontu i sporze z wykonawcą]\n"
+    "Nasza rozmówczyni zasiada w Radzie Miasta Chełm od 2019 roku.\n"
+    "<think>\n"
+    "- Halina Mazur — radna Rady Miasta Chełm (employment); nazwisko na "
+    "początku, funkcja kilkanaście akapitów dalej, pod 'nasza rozmówczyni'\n"
+    "- to jedyna nazwana osoba i cały artykuł jest o niej → ta sama osoba, "
+    "nie domysł\n"
+    "- cytat musiałby przeskoczyć kilkanaście akapitów, więc nie da się go "
+    "skopiować dosłownie → zwracam fakt z pustym justification\n"
+    "</think>\n"
+    "facts:\n"
+    "- justification= | employment | person=Halina Mazur | organization=Rada "
+    "Miasta Chełm | role=radna\n\n"
+)
+
+_CAPTURE_PROMPT = facts_pipeline.build_prompt(
+    grounding=_CAPTURE_GROUNDING_RULES,
+    quote_derivation=_CAPTURE_QUOTE_DERIVATION_RULES,
+    extra_examples=_CAPTURE_EXAMPLE,
+)
+
+# The judge's rulebook is written around the span: §2 makes a fact whose span
+# does not name the subject `insufficient`, which is every quote-less fact by
+# construction. Rather than fork the rulebook — the other twenty rules are the
+# labeling policy and must not diverge — the article is substituted for the
+# span, and only the two rules that are about the span's size are lifted.
+_CAPTURE_JUDGE_PROMPT = (
+    "You label an extracted fact using this rulebook. The extractor found no "
+    "verbatim span for this one, so the ARTICLE below takes the span's place: "
+    'wherever the rulebook says "the justification span", read "the article". '
+    "Everything else holds unchanged — never use world knowledge or anything "
+    "outside the article, and a field the article neither states nor entails is "
+    "still incorrect. Exactly two rules relax: the subject's name may be "
+    "anywhere in the article rather than beside the claim, and a fact is not "
+    "insufficient merely for having no span. Reply with a single compact JSON "
+    "object and nothing else: "
+    '{{"label": "correct|incorrect|insufficient", "reason": "..."}}.\n\n'
+    "RULEBOOK:\n{rules}\n\n"
+    "ARTICLE:\n{article}\n\n"
+    "FACT (JSON):\n{fact}"
+)
+
 
 @dataclass(frozen=True)
 class ParsedPage:
@@ -126,7 +225,7 @@ class AnalyzedArticle:
     score: ArticleScore | None
     facts: list[dict[str, Any]] = field(default_factory=list)
     model: str = ""
-    facts_prompt_version: int = facts_pipeline.PROMPT_VERSION
+    facts_prompt_version: int = CAPTURE_PROMPT_VERSION
     verify_version: int = verify_pipeline.VERIFY_VERSION
     usage: Usage = field(default_factory=Usage)
     error: str | None = None
@@ -254,6 +353,16 @@ async def _complete(
     return [results[index] for index in range(len(ordered))]
 
 
+def _text_limit() -> int:
+    """How much of the article the extractor is shown — and the judge with it.
+
+    The judge has to see exactly the text the extractor read: judging a fact
+    against a shorter view would reject it for a sentence the extractor was
+    entitled to use.
+    """
+    return facts_pipeline.article_facts_text_limit() or facts_pipeline.TEXT_LIMIT
+
+
 async def score_page(llm: LLM, text: str, model: str) -> ArticleScore:
     """The 0-5 koryciarski score, from the scoring pipeline's own prompt."""
     request = LLMRequest(
@@ -282,17 +391,17 @@ async def extract_facts(
     model: str,
     usage: Usage | None = None,
 ) -> list[dict[str, Any]]:
-    """Facts grounded in the article text, via the facts pipeline's prompt.
+    """Facts grounded in the article text, via the capture prompt.
 
     The response goes through the pipeline's own `_normalize_markdown_response`,
     which is where the `justification_in_text` span is resolved back to a
-    verbatim slice of the article — the thing the verifier then judges, and the
-    thing a reviewer can search the page for.
+    verbatim slice of the article — the thing a reviewer can search the page
+    for. Under the capture prompt a fact may arrive without one; that is
+    deliberate, and `verify_facts` is what then judges it against the article.
     """
-    text_limit = facts_pipeline.article_facts_text_limit() or facts_pipeline.TEXT_LIMIT
     max_tokens = facts_pipeline.article_facts_max_tokens() or facts_pipeline.MAX_TOKENS
     request = LLMRequest(
-        prompt=facts_pipeline._PROMPT.format(text=text[:text_limit]),
+        prompt=_CAPTURE_PROMPT.format(text=text[: _text_limit()]),
         max_tokens=max_tokens,
         temperature=facts_pipeline.TEMPERATURE,
         model=model,
@@ -308,24 +417,60 @@ async def extract_facts(
     return [fact_to_dict(fact) for fact in extracted]
 
 
+def _judge_request(
+    fact: dict[str, Any],
+    model: str,
+    article_text: str,
+) -> LLMRequest:
+    """The pipeline's own judge request, unless the fact has no span to judge.
+
+    A quote-less fact handed to the pipeline's request is `insufficient` before
+    the model reads it, since the rulebook's first question is whether the span
+    names the subject and the span is empty. Those are the ones the article
+    stands in for.
+    """
+    span = str(fact.get("justification_in_text") or "").strip()
+    if span or not article_text:
+        return verify_pipeline._judge_request(fact, model)
+
+    view = verify_pipeline._fact_view(fact)
+    view.pop("justification", None)
+    return LLMRequest(
+        prompt=_CAPTURE_JUDGE_PROMPT.format(
+            rules=verify_pipeline._RULES,
+            article=article_text,
+            fact=json.dumps(view, ensure_ascii=False),
+        ),
+        max_tokens=verify_pipeline.MAX_TOKENS,
+        temperature=verify_pipeline.TEMPERATURE,
+        model=model,
+        enable_thinking=True,
+    )
+
+
 async def verify_facts(
     llm: LLM,
     candidates: list[dict[str, Any]],
     model: str,
     usage: Usage | None = None,
+    article_text: str = "",
 ) -> list[dict[str, Any]]:
     """Each fact judged against the rulebook, annotated in place.
 
     Returns every candidate with the verifier's verdict attached rather than
     dropping the rejected ones — same contract as `ArticleFactsVerified`, so the
     caller decides what to submit and a reviewer can still be shown a near miss.
+
+    `article_text` is what a fact with no verbatim span is judged against.
+    Without it those facts are judged as the batch run judges them, which is to
+    say rejected for the missing span.
     """
     if not candidates:
         return []
 
     responses = await _complete(
         llm,
-        [verify_pipeline._judge_request(fact, model) for fact in candidates],
+        [_judge_request(fact, model, article_text) for fact in candidates],
     )
 
     annotated: list[dict[str, Any]] = []
@@ -389,7 +534,17 @@ async def analyze(
             error=f"fact extraction failed: {extracted}",
         )
 
-    verified = await verify_facts(llm, extracted, model, usage) if verify else extracted
+    verified = (
+        await verify_facts(
+            llm,
+            extracted,
+            model,
+            usage,
+            article_text=parsed.article_content[: _text_limit()],
+        )
+        if verify
+        else extracted
+    )
 
     return AnalyzedArticle(
         parsed=parsed,
