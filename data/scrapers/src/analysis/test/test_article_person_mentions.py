@@ -9,8 +9,10 @@ from analysis.article_person_mentions import (
     PersonProfile,
     PersonProfileIndex,
     _confirm_mentions,
+    _context_window,
     _employed_krs,
     _org_match_terms,
+    _parse_multi_verdict,
     _parse_verdict,
     _party_match_terms,
     _rejestr_io_id,
@@ -18,6 +20,7 @@ from analysis.article_person_mentions import (
 )
 from entities.article import ArticlePersonMentioned, ProofSignal
 from scrapers.article.pipelines.common import ascii_lower
+from scrapers.koryta.download import _teryt_from_edges
 
 
 @pytest.fixture
@@ -47,8 +50,6 @@ def test_ascii_lower_maps_l():
 
 
 def test_teryt_from_edges_splits_woj_powiat_gmina():
-    from scrapers.koryta.download import _teryt_from_edges
-
     data = {
         "stats": {
             "edges": {
@@ -69,8 +70,6 @@ def test_teryt_from_edges_splits_woj_powiat_gmina():
 
 
 def test_teryt_from_edges_missing_edges():
-    from scrapers.koryta.download import _teryt_from_edges
-
     assert _teryt_from_edges({}) == ([], [])
     assert _teryt_from_edges({"stats": {}}) == ([], [])
     assert _teryt_from_edges({"stats": {"edges": {}}}) == ([], [])
@@ -123,7 +122,10 @@ def test_employed_krs_resolves_via_rejestrio():
         {"rejestrIo": "https://rejestr.io/osoby/2786228"}, person_krs
     ) == {"0000084967", "0000123456"}
     assert _employed_krs({"rejestrIo": None}, person_krs) == set()
-    assert _employed_krs({"rejestrIo": "https://rejestr.io/osoby/999"}, person_krs) == set()
+    assert (
+        _employed_krs({"rejestrIo": "https://rejestr.io/osoby/999"}, person_krs)
+        == set()
+    )
 
 
 class FakeDomainMap:
@@ -231,7 +233,10 @@ def test_entity_has_structured_proof_and_verdict_fields():
         title="t",
         date="2020-01-01",
         tags=[],
-        proof=[ProofSignal(type="region", value="powiat"), ProofSignal(type="party", value="pis")],
+        proof=[
+            ProofSignal(type="region", value="powiat"),
+            ProofSignal(type="party", value="pis"),
+        ],
         verdict="yes",
         justification="kontekst się zgadza",
     )
@@ -266,8 +271,6 @@ def test_parse_verdict_unclosed_think_block():
 
 
 def test_context_window_centers_on_name():
-    from analysis.article_person_mentions import _context_window
-
     content = "początek " + ("x " * 5000) + " Jan Kowalski " + ("y " * 5000) + " koniec"
     window = _context_window(content, "Jan Kowalski")
     assert "Jan Kowalski" in window
@@ -287,8 +290,6 @@ def test_parse_verdict_bare_label_fallback():
 
 
 def test_parse_multi_verdict_picks_candidate():
-    from analysis.article_person_mentions import _parse_multi_verdict
-
     text = (
         "<think>Porównuję kandydatów.</think>\n"
         "Uzasadnienie: Artykuł opisuje posła PiS, pasuje K2.\n"

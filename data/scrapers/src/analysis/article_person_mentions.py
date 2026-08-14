@@ -20,6 +20,7 @@ did. People are keyed by their koryta ``id``, not by register ids.
 import asyncio
 import json
 import re
+from collections import Counter
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
@@ -29,17 +30,21 @@ from tqdm import tqdm
 
 from entities.article import ArticlePersonMentioned, ProofSignal
 from scrapers.article.parse import date_iso_from_ld_json, title_from_ld_json
-from scrapers.article.pipelines.common import ascii_lower, normalize_text, strip_think_blocks
+from scrapers.article.pipelines.common import (
+    ascii_lower,
+    normalize_text,
+    strip_think_blocks,
+)
 from scrapers.article.pipelines.incremental import IncrementalJsonlPipeline
 from scrapers.article.pipelines.parsed_pipeline import ArticleParsed
 from scrapers.article.pipelines.pipeline_utils import llm_model
 from scrapers.koryta.download import KorytaPeople
 from scrapers.stores import (
     LLM,
-    LLMResponsePool,
     VERSIONED_DIR,
     Context,
     LLMRequest,
+    LLMResponsePool,
     iterate_pipeline_dict,
 )
 
@@ -317,7 +322,7 @@ def _generic_org_stems(
     rows: Iterable[dict[str, Any]],
     krs_names: dict[str, str],
     person_krs: dict[str, set[str]],
-) -> set[str]:
+) -> frozenset[str]:
     """Org stems too common across people to count as disambiguating proof.
 
     A stem appearing in many DIFFERENT people's organization names (e.g.
@@ -325,8 +330,6 @@ def _generic_org_stems(
     and cannot confirm a specific person. Only stems that are distinctive to
     a small set of people are usable as org proof.
     """
-    from collections import Counter
-
     stem_people: Counter[str] = Counter()
     for row in rows:
         orgs: set[str] = set()
@@ -337,7 +340,7 @@ def _generic_org_stems(
         for stem in orgs:
             stem_people[stem] += 1
     # A stem shared by more than 500 distinct people is inherently generic.
-    return {stem for stem, count in stem_people.items() if count > 500}
+    return frozenset(stem for stem, count in stem_people.items() if count > 500)
 
 
 class PersonProfile:
@@ -389,7 +392,7 @@ class PersonProfileIndex:
 class DomainRegionMap:
     """domain -> list of {woj, woj_code, powiat, powiat_code, miasto} regions."""
 
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: str | Path) -> None:
         try:
             with open(path, encoding="utf-8") as handle:
                 self._data = json.load(handle)
@@ -530,7 +533,7 @@ def _proof_for(
     domain: str,
     norm_content: str,
     domain_map: DomainRegionMap,
-    generic_org_stems: set[str] = frozenset(),
+    generic_org_stems: frozenset[str] = frozenset(),
 ) -> list[ProofSignal]:
     """Signals confirming the person against the article; empty means drop."""
     proof: list[ProofSignal] = []
@@ -584,7 +587,7 @@ def _confirm_mentions(
     domain: str,
     profiles: PersonProfileIndex,
     domain_map: DomainRegionMap,
-    generic_org_stems: set[str] = frozenset(),
+    generic_org_stems: frozenset[str] = frozenset(),
 ) -> dict[str, dict[str, list[ProofSignal]]]:
     """Keep (display, person) pairs with at least one proof signal.
 
@@ -915,13 +918,94 @@ def _write_debug(
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
+def _build_requests(
+    raw: dict[str, Any],
+    content: str,
+    index: PersonNameIndex,
+    profiles: PersonProfileIndex,
+    domain_map: DomainRegionMap,
+    generic_org_stems: frozenset[str],
+    model: str,
+) -> (
+    tuple[
+        dict[str, Any],
+        list[tuple[str, str, list[ProofSignal], LLMRequest]],
+        int,
+    ]
+    | None
+):
+    """Judge requests for one article, or None when nothing passes the proof gate.
+
+    Returns ``(row, requests, dropped)`` where ``requests`` holds one
+    ``(person, person_id, proof, request)`` per confirmed (article, person)
+    pair and ``dropped`` counts the names that had no proof.
+    """
+    names = index.find_in_text(content)
+    if not names:
+        return None
+    confirmed = _confirm_mentions(
+        names,
+        content,
+        str(raw.get("domain") or ""),
+        profiles,
+        domain_map,
+        generic_org_stems,
+    )
+    name_pairs = sum(len(by_person) for by_person in confirmed.values())
+    dropped = len(names) - name_pairs
+    if not confirmed:
+        return None
+    row = _mention_meta(raw)
+    requests: list[tuple[str, str, list[ProofSignal], LLMRequest]] = []
+    for person, by_person in confirmed.items():
+        for person_id, proof in by_person.items():
+            profile = dict(profiles.candidates(person))[person_id]
+            request = _judge_request(
+                person,
+                profile,
+                proof,
+                content,
+                model,
+                same_name_count=len(by_person),
+            )
+            requests.append((person, person_id, proof, request))
+    return row, requests, dropped
+
+
+async def _submit_requests(
+    pool: LLMResponsePool,
+    inflight: dict[
+        int,
+        tuple[dict[str, Any], str, str, list[ProofSignal], str, LLMRequest, bool],
+    ],
+    drain: Any,
+    row: dict[str, Any],
+    content: str,
+    requests: list[tuple[str, str, list[ProofSignal], LLMRequest]],
+) -> None:
+    """Queue one article's judged pairs on the LLM response pool."""
+    for person, person_id, proof, request in requests:
+        while pool.is_full():
+            await drain(pool)
+        request_id = await pool.put_request(request)
+        inflight[request_id] = (
+            row,
+            person,
+            person_id,
+            proof,
+            content,
+            request,
+            False,
+        )
+
+
 async def _scan_and_judge(
     ctx: Context,
     parsed_path: Path,
     index: PersonNameIndex,
     profiles: PersonProfileIndex,
     domain_map: DomainRegionMap,
-    generic_org_stems: set[str],
+    generic_org_stems: frozenset[str],
     *,
     model: str,
 ) -> None:
@@ -993,48 +1077,25 @@ async def _scan_and_judge(
                     )
                     if not content.strip():
                         continue
-                    names = index.find_in_text(content)
-                    if not names:
-                        continue
-                    confirmed = _confirm_mentions(
-                        names,
+                    built = _build_requests(
+                        raw,
                         content,
-                        raw.get("domain"),
+                        index,
                         profiles,
                         domain_map,
                         generic_org_stems,
+                        model,
                     )
-                    name_pairs = sum(len(by_person) for by_person in confirmed.values())
-                    dropped += len(names) - name_pairs
-                    if not confirmed:
+                    if built is None:
                         continue
-                    row = _mention_meta(raw)
-                    candidates += name_pairs
+                    row, requests, dropped_in_article = built
+                    dropped += dropped_in_article
+                    candidates += len(requests)
                     rows += 1
-                    bar.total += name_pairs
-                    for person, by_person in confirmed.items():
-                        for person_id, proof in by_person.items():
-                            profile = dict(profiles.candidates(person))[person_id]
-                            request = _judge_request(
-                                person,
-                                profile,
-                                proof,
-                                content,
-                                model,
-                                same_name_count=len(by_person),
-                            )
-                            while pool.is_full():
-                                await drain(pool)
-                            request_id = await pool.put_request(request)
-                            inflight[request_id] = (
-                                row,
-                                person,
-                                person_id,
-                                proof,
-                                content,
-                                request,
-                                False,
-                            )
+                    bar.total += len(requests)
+                    await _submit_requests(
+                        pool, inflight, drain, row, content, requests
+                    )
             while inflight:
                 await drain(pool)
 
