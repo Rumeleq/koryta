@@ -1,20 +1,20 @@
 """Find mentions of known people in parsed articles.
 
-Cross-references the merged people dataset (``people_merged``) with the parsed
+Cross-references the koryta people dataset (``person_koryta``) with the parsed
 article corpus (``article_parsed``). Each article's text is scanned for
 capitalized name sequences that match a known person and one record is emitted
-per article, carrying the URL, the title, date and tags recovered from the
-article's ld+json metadata, and the list of people matched in its text.
+per (article, person) pair, carrying the URL, the title, date and tags
+recovered from the article's ld+json metadata.
 
 Matching is nominative-only and diacritics-insensitive (e.g. "Jana
 Kowalskiego" is not caught), so the output is a lower bound on true mentions.
 
 A name match alone is not enough: a common name can be a coincidence, so every
 matched person must also be confirmed by independent evidence (``proof``). The
-article's region (from its domain, via the domain->region map) is compared to
-the person's teryt codes; the person's parties and organizations (KRS) are
-looked up in the article text. A person is kept only when at least one signal
-matches, and the ``proof`` dict records which ones did.
+person's parties and organizations (resolved from its ``rejestrIo`` id through
+the KRS register) are looked up in the article text; a person is kept only
+when at least one signal matches, and the ``proof`` dict records which ones
+did. People are keyed by their koryta ``id``, not by register ids.
 """
 
 import asyncio
@@ -27,13 +27,13 @@ from typing import Any
 import pandas as pd
 from tqdm import tqdm
 
-from analysis.people import PeopleMerged
 from entities.article import ArticlePersonMentioned, ProofSignal
 from scrapers.article.parse import date_iso_from_ld_json, title_from_ld_json
 from scrapers.article.pipelines.common import ascii_lower, normalize_text, strip_think_blocks
 from scrapers.article.pipelines.incremental import IncrementalJsonlPipeline
 from scrapers.article.pipelines.parsed_pipeline import ArticleParsed
 from scrapers.article.pipelines.pipeline_utils import llm_model
+from scrapers.koryta.download import KorytaPeople
 from scrapers.stores import (
     LLM,
     LLMResponsePool,
@@ -135,8 +135,8 @@ class PersonNameIndex:
         """Register every spelling variant of one person's name.
 
         Display names that normalize to the same string (e.g. "Zieliński" and
-        "Zielinski") are treated as one person; people_merged is ordered by
-        confidence, so the first spelling seen wins.
+        "Zielinski") are treated as one person; koryta names are unique, so the
+        first spelling seen wins.
         """
         norm_display = normalize_text(display)
         if norm_display not in self._seen_people:
@@ -166,7 +166,7 @@ class PersonNameIndex:
 
 
 # National party abbreviations / names an article is likely to use, mapped
-# from the long committee names stored in people_merged. The article text is
+# from the long committee names stored in the data. The article text is
 # searched for these short forms instead of the full committee name. Keys that
 # are also ordinary Polish words (po, lewica, wiosna, razem, ko) are left out:
 # they would match far too often to count as proof.
@@ -188,13 +188,32 @@ _PARTY_KEYS = (
 )
 
 
-def _party_match_terms(party_norm: str) -> set[str]:
-    """Terms to look for in article text for a stored committee name.
+# Koryta people carry short party labels (PiS, PO, PSL...). Map them to the
+# terms to search for in article text. "PO" is deliberately NOT a search term
+# on its own (it is an ordinary Polish word); its people are matched through
+# the coalition name instead. Kept separate from _PARTY_KEYS so the full
+# committee names still resolve through the generic loop below.
+_KORYTA_PARTY_TERMS: dict[str, set[str]] = {
+    "pis": {"pis", "prawo i sprawiedliwosc"},
+    "po": {"koalicja obywatelska"},
+    "psl": {"psl", "polskie stronnictwo ludowe"},
+    "polska 2050": {"polska 2050", "pl2050"},
+    "nowa lewica": {"nowa lewica"},
+    "konfederacja": {"konfederacja"},
+}
 
-    Returns the short key and the bare party name (e.g. ``pis`` and
-    ``prawo i sprawiedliwosc``) so an article saying either ``PiS`` or
-    ``Prawo i Sprawiedliwość`` counts as a match.
+
+def _party_match_terms(party_norm: str) -> set[str]:
+    """Terms to look for in article text for a stored party label.
+
+    Short koryta labels resolve through ``_KORYTA_PARTY_TERMS``; anything else
+    is treated as a committee name and matched against ``_PARTY_KEYS``, which
+    adds the short key and the bare name (e.g. ``pis`` and ``prawo i
+    sprawiedliwosc``) so an article saying either ``PiS`` or ``Prawo i
+    Sprawiedliwość`` counts as a match.
     """
+    if party_norm in _KORYTA_PARTY_TERMS:
+        return set(_KORYTA_PARTY_TERMS[party_norm])
     terms: set[str] = set()
     for key, needle in _PARTY_KEYS:
         if needle in party_norm:
@@ -294,7 +313,11 @@ def _org_match_terms(org_norm: str) -> set[str]:
     return stems
 
 
-def _generic_org_stems(rows: Iterable[dict[str, Any]], krs_names: dict[str, str]) -> set[str]:
+def _generic_org_stems(
+    rows: Iterable[dict[str, Any]],
+    krs_names: dict[str, str],
+    person_krs: dict[str, set[str]],
+) -> set[str]:
     """Org stems too common across people to count as disambiguating proof.
 
     A stem appearing in many DIFFERENT people's organization names (e.g.
@@ -307,8 +330,7 @@ def _generic_org_stems(rows: Iterable[dict[str, Any]], krs_names: dict[str, str]
     stem_people: Counter[str] = Counter()
     for row in rows:
         orgs: set[str] = set()
-        for employment in row.get("employment") or []:
-            krs = (employment or {}).get("employed_krs")
+        for krs in _employed_krs(row, person_krs):
             name = krs_names.get(str(krs)) if krs else None
             if name:
                 orgs |= _org_match_terms(ascii_lower(name))
@@ -383,26 +405,74 @@ class DomainRegionMap:
         return {r["woj_code"] for r in regions if r.get("woj_code")}
 
 
+def _rejestr_io_id(rejestr_io_url: Any) -> str:
+    """Extract the numeric rejestr.io person id from a URL like .../osoby/2786228.
+
+    Returns "" when the value is missing or carries no trailing number.
+    """
+    if not rejestr_io_url:
+        return ""
+    m = re.search(r"/(\d+)/?$", str(rejestr_io_url).strip())
+    return m.group(1) if m else ""
+
+
+def _person_krs_map() -> dict[str, set[str]]:
+    """rejestr.io person id -> set of ``employed_krs`` company numbers.
+
+    Loads ``person_krs.jsonl`` (the rejestr.io person -> KRS employment mapping)
+    once, keyed by the numeric rejestr.io person id so a koryta ``rejestrIo``
+    URL can be resolved to the company numbers its owner works at.
+    """
+    mapping: dict[str, set[str]] = {}
+    path = Path(VERSIONED_DIR) / "person_krs" / "person_krs.jsonl"
+    try:
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                raw = line.strip()
+                if not raw:
+                    continue
+                try:
+                    row = json.loads(raw)
+                except Exception:
+                    continue
+                pid = row.get("id")
+                krs = row.get("employed_krs")
+                if pid is not None and krs:
+                    mapping.setdefault(str(pid), set()).add(str(krs))
+    except FileNotFoundError:
+        pass
+    return mapping
+
+
+def _employed_krs(row: dict[str, Any], person_krs: dict[str, set[str]]) -> set[str]:
+    """Company KRS numbers a koryta person works at, via their ``rejestrIo``.
+
+    The rejestrIo URL sits at the top level of fresh outputs; older cached
+    outputs keep it nested inside the ``data`` dict, so both are checked.
+    """
+    rejestr_io = row.get("rejestrIo") or (row.get("data") or {}).get("rejestrIo")
+    ri_id = _rejestr_io_id(rejestr_io)
+    if not ri_id:
+        return set()
+    return person_krs.get(ri_id, set())
+
+
 def _load_index_and_profiles(
-    rows: Iterable[dict[str, Any]], krs_names: dict[str, str]
+    rows: Iterable[dict[str, Any]],
+    krs_names: dict[str, str],
+    person_krs: dict[str, set[str]],
 ) -> tuple[PersonNameIndex, PersonProfileIndex]:
     """Build the name index and per-person profiles in one pass."""
     index = PersonNameIndex()
     profiles = PersonProfileIndex()
     for row in rows:
-        first = _name_tuple(str(row.get("base_first_name") or ""))
-        last = _name_tuple(str(row.get("base_last_name") or ""))
         display = _display_name(row)
-        if not first or not last or not display:
+        if not display:
             continue
         person_id = _person_id(row)
         if not person_id:
             continue
-        forms: list[tuple[str, ...]] = [(first[0], last[-1])]
-        for full in row.get("base_full_name") or []:
-            if isinstance(full, str) and full.strip():
-                forms.append(_name_tuple(full))
-        index.add(display, forms)
+        index.add(display, [_name_tuple(display)])
 
         profile = PersonProfile()
         profile.woj = {
@@ -411,19 +481,11 @@ def _load_index_and_profiles(
         profile.powiat = {
             str(t) for t in (row.get("teryt_powiat") or []) if t not in (None, "")
         }
-        for election in row.get("elections") or []:
-            party = (election or {}).get("party")
+        for party in row.get("parties") or []:
             if party:
                 profile.parties.update(_party_match_terms(normalize_text(str(party))))
-            for t in (election or {}).get("teryt_wojewodztwo") or []:
-                if t not in (None, ""):
-                    profile.woj.add(str(t))
-            for t in (election or {}).get("teryt_powiat") or []:
-                if t not in (None, ""):
-                    profile.powiat.add(str(t))
-        for employment in row.get("employment") or []:
-            krs = (employment or {}).get("employed_krs")
-            name = krs_names.get(str(krs)) if krs else None
+        for krs in _employed_krs(row, person_krs):
+            name = krs_names.get(str(krs))
             if name:
                 profile.orgs.update(_org_match_terms(ascii_lower(name)))
         profiles.add(display, person_id, profile)
@@ -431,25 +493,12 @@ def _load_index_and_profiles(
 
 
 def _person_id(row: dict[str, Any]) -> str:
-    """Stable identity of the person, from rejestrio_id when present."""
-    ri = row.get("rejestrio_id")
-    if ri is None:
-        return ""
-    if isinstance(ri, list):
-        ids = [str(x) for x in ri if x not in (None, "")]
-        return ",".join(ids) if ids else ""
-    return str(ri)
+    """Stable identity of the person: their koryta id."""
+    return str(row.get("id") or "")
 
 
 def _display_name(row: dict[str, Any]) -> str:
-    full = row.get("base_full_name")
-    if isinstance(full, list) and full and isinstance(full[0], str) and full[0].strip():
-        return full[0].strip()
-    first = str(row.get("base_first_name") or "").strip()
-    last = str(row.get("base_last_name") or "").strip()
-    if first and last:
-        return f"{first.title()} {last.title()}"
-    return str(row.get("krs_name") or "").strip()
+    return str(row.get("full_name") or "").strip()
 
 
 def _krs_name_map() -> dict[str, str]:
@@ -1005,12 +1054,12 @@ def _print_llm_usage(ctx: Context) -> None:
 
 
 class ArticlePersonMentions(IncrementalJsonlPipeline[ArticlePersonMentioned]):
-    """Cross-reference people_merged with article_parsed to find mentions."""
+    """Cross-reference koryta people with article_parsed to find mentions."""
 
     filename = "article_person_mentions"
     backup_to_shared_cache = False  # derived from the ~21GB parse corpus, local-only
 
-    people_merged: PeopleMerged
+    koryta_people: KorytaPeople
     parsed: ArticleParsed
     llm: LLM
 
@@ -1021,18 +1070,19 @@ class ArticlePersonMentions(IncrementalJsonlPipeline[ArticlePersonMentioned]):
     def process(self, ctx: Context) -> pd.DataFrame:
         self.prepare_temp_output()
 
-        people_df = self.people_merged.read_or_process(ctx)
+        people_df = self.koryta_people.read_or_process(ctx)
         krs_names = _krs_name_map()
+        person_krs = _person_krs_map()
         people_rows = list(iterate_pipeline_dict(people_df))
-        index, profiles = _load_index_and_profiles(people_rows, krs_names)
-        generic_org_stems = _generic_org_stems(people_rows, krs_names)
+        index, profiles = _load_index_and_profiles(people_rows, krs_names, person_krs)
+        generic_org_stems = _generic_org_stems(people_rows, krs_names, person_krs)
         print(
             f"Filtering {len(generic_org_stems):,} generic org stems shared by "
             "many people"
         )
-        self.people_merged._cached_result = None
+        self.koryta_people._cached_result = None
         if not index.people:
-            print("No people found in people_merged, nothing to emit")
+            print("No people found in koryta people, nothing to emit")
             return pd.DataFrame()
         print(
             f"Indexed {index.people:,} people ({index.forms:,} name forms, "
