@@ -28,7 +28,7 @@ from scrapers.article.pipelines.incremental import IncrementalJsonlPipeline
 from scrapers.article.pipelines.pipeline_utils import llm_model
 from scrapers.stores import LLM, VERSIONED_DIR, Context, LLMRequest
 
-VERIFY_VERSION = 8
+VERIFY_VERSION = 9
 MAX_TOKENS = 4000
 TEMPERATURE = 0.0
 
@@ -45,7 +45,7 @@ _JSON_ANY_RE = re.compile(r"\{.*\}", flags=re.DOTALL)
 # The labeling rulebook is embedded here so the pipeline is self-contained (no
 # external file dependency). Keep it in sync with any labeling-policy changes.
 _RULES = """\
-# Facts Extraction — Labeling Rulebook (v8)
+# Facts Extraction — Labeling Rulebook (v9)
 
 Rules for labeling extracted facts (employment / party_membership /
 personal_relation / affair_involvement) as **correct / incorrect /
@@ -172,10 +172,13 @@ span. Judge form as well as grounding:
 - `person` must be a valid full name (§2), and the **name must appear in the
   justification span**; pronoun-only or implied → **insufficient**.
 - `role` and `affair` are **required** — a fact missing either is
-  **incorrect**. `role` is the person's descriptive role *in the affair* (a
-  phrase like `kierujący zorganizowaną grupą przestępczą`, `szef fundacji`,
-  `pośrednik`), not an official position — judge it as a descriptive phrase,
-  not by the employment `role` rules in §3.1.
+  **incorrect**. `role` must be one of the extractor's fixed, short
+  categories — `kierujący` (headed the affair/group), `uczestnik` (took part),
+  `pośrednik` (brokered bribes/sped things up), `naciskający` (pressured
+  officials), `beneficjent` (profited) — and the category must be supported by
+  the span. A verbose descriptive phrase instead of a category, or a category
+  the span does not entail, is **incorrect**. Do not judge it by the
+  employment `role` rules in §3.1.
 - `affair` must be the affair's **named proper name** (`Fundusz
   Sprawiedliwości`, `afera podkarpacka`), not a bare noun like `afera`.
 - `role` and `affair` must be **stated or directly entailed** by the span;

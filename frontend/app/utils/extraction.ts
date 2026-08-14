@@ -4,7 +4,7 @@ const FACT_TYPE_LABELS: Record<ExtractionFactType, string> = {
   employment: "Zatrudnienie",
   party_membership: "Członkostwo partyjne",
   personal_relation: "Relacja osobista",
-  affair_involvement: "Zamieszany w aferę",
+  affair_involvement: "Rola w aferze",
 };
 
 const FACT_TYPE_COLORS: Record<ExtractionFactType, string> = {
@@ -45,7 +45,7 @@ export function factConnector(fact: ExtractionFact): string {
   if (fact.fact_type === "employment") return fact.role || "zatrudnienie";
   if (fact.fact_type === "party_membership") return "członek";
   if (fact.fact_type === "affair_involvement")
-    return fact.role || "zamieszany w aferę";
+    return fact.role || "rola w aferze";
   return fact.relation || "relacja"; // personal_relation
 }
 

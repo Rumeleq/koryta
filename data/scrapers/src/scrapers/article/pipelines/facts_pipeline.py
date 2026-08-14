@@ -32,7 +32,7 @@ from scrapers.article.pipelines.pipeline_utils import (
 )
 from scrapers.stores import LLM, VERSIONED_DIR, Context, LLMRequest
 
-PROMPT_VERSION = 22
+PROMPT_VERSION = 24
 TEXT_LIMIT = 100000
 MAX_TOKENS = 20000
 TEMPERATURE = 0.1
@@ -65,19 +65,26 @@ _PROMPT = (
     "z kimś w jednoznacznie opisanej bliskiej relacji osobistej\n"
     "4. affair_involvement — ktoś jest zamieszany w aferę lub postępowanie: "
     "podaj osobę (person), rolę, jaką pełniła w tej aferze (role) oraz nazwę "
-    "afery (affair). Rola to konkretne, opisowe określenie udziału w aferze "
-    "(np. 'kierujący zorganizowaną grupą przestępczą', 'szef fundacji', "
-    "'pośrednik'), a nie stanowisko urzędowe.\n"
+    "afery (affair).\n"
+    "role MUSI być jedną z ustalonych, krótkich kategorii (bez opisów, bez "
+    "stanowisk urzędowych):\n"
+    "- kierujący — stał na czele afery albo zorganizowanej grupy przestępczej\n"
+    "- uczestnik — brał udział w procederze lub grupie\n"
+    "- pośrednik — pośredniczył w łapówkach lub załatwianiu spraw\n"
+    "- naciskający — wywierał nielegalny nacisk na urzędników\n"
+    "- beneficjent — czerpał korzyści majątkowe z afery\n"
+    "Jeśli artykuł nie pozwala przypisać żadnej z tych kategorii, NIE zwracaj "
+    "faktu affair_involvement.\n"
     "affair MUSI być NAZWANĄ aferą: nazwą własną (np. 'afera Qatargate', "
     "'Fundusz Sprawiedliwości', 'afera respiratorowa') albo wyrażeniem, którym "
     "artykuł jednoznacznie nazywa całą sprawę. NIE pisz opisu zamiast nazwy: "
     "'skandal korupcyjny w Parlamencie Europejskim', 'korupcja w szpitalu', "
     "'zmowa przetargowa' i 'aféra korupcyjna w X' to NIE są nazwy afer. Jeśli "
     "artykuł nie nadaje sprawie nazwy, NIE zwracaj faktu affair_involvement.\n"
-    "Nie używaj jako role słów ogólnych 'zamieszany', 'oskarżony', 'podejrzany' "
-    "— podaj, w czym dana osoba uczestniczyła (np. 'pośrednik w łapówce', "
-    "'prezes spółki prowadzącej aferę', 'kierujący grupą'). Jeśli artykuł nie "
-    "opisuje roli osoby w aferze, NIE zwracaj tego faktu.\n\n"
+    "Nazwę afery pisz z wielkiej litery każdego słowa, jak nazwę własną "
+    "(np. 'Afera Wizowa', 'Afera Respiratorowa', 'Fundusz Sprawiedliwości'), "
+    "chyba że oryginalny zapis w artykule wyraźnie tego nie robi — wtedy "
+    "zachowaj zapis z artykułu.\n\n"
     "Jeśli w tekście nie ma takich faktów, zwróć pustą listę.\n\n"
     "Ignoruj komentarze czytelników, podpisy zdjęć, stopki, wezwania do głosowania, "
     "listy kandydatów, listy uczestników, listy radnych, listy sygnatariuszy, "
