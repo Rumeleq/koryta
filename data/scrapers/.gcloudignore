@@ -30,8 +30,18 @@ docker-compose.yml
 *.ipynb
 .ipynb_checkpoints/
 
+# Tool caches. Worth naming individually rather than trusting `.gitignore`,
+# which does not list the first two at all: a checkout someone has run mypy in
+# carries ~9,000 files and several hundred MB of `.mypy_cache` alone, so whether
+# the upload is 2 MB or 460 MB comes down to whether that person type-checks.
+.mypy_cache/
+.dmypy.json
+.ruff_cache/
 .pytest_cache/
 .pytest-runtimes
+.hypothesis/
+htmlcov/
+*.egg-info/
 **/__pycache__/
 *.pyc
 .coverage
