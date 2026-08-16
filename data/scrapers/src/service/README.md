@@ -110,14 +110,22 @@ gcloud projects add-iam-policy-binding $PROJECT \
 gcloud iam service-accounts add-iam-policy-binding $SA \
   --member=serviceAccount:$SA --role=roles/iam.serviceAccountTokenCreator
 
-# Read the secrets the revision mounts. Checked when the revision is created, so
-# without this the deploy fails rather than the first capture — and a secret
-# that does not exist at all reports the same "Permission denied on secret",
-# because Cloud Run will not say which of the two it is.
-for SECRET in openrouter-api-key url-store-api-key; do
-  gcloud secrets add-iam-policy-binding $SECRET --project=$PROJECT \
-    --member=serviceAccount:$SA --role=roles/secretmanager.secretAccessor
-done
+# The LLM key, as a secret rather than an env var, and read by the account the
+# revision runs as. `printf` rather than `echo`: a trailing newline becomes part
+# of the secret, and OpenRouter then answers 401 exactly as it would to a wrong
+# key. `read -rs` keeps it out of the shell history.
+gcloud secrets create openrouter-api-key --project=$PROJECT \
+  --replication-policy=automatic
+read -rs -p "OpenRouter key: " KEY
+printf '%s' "$KEY" | gcloud secrets versions add openrouter-api-key \
+  --project=$PROJECT --data-file=-
+unset KEY
+
+# Checked when the revision is created, so a missing grant fails the deploy
+# rather than the first capture. A secret that does not exist reports the same
+# "Permission denied on secret" — Cloud Run will not distinguish the two.
+gcloud secrets add-iam-policy-binding openrouter-api-key --project=$PROJECT \
+  --member=serviceAccount:$SA --role=roles/secretmanager.secretAccessor
 
 # The registry the image is pushed to. `builds submit --tag` will not create it,
 # and a missing one is only reported after the whole image has been built — as
@@ -133,17 +141,38 @@ gcloud run deploy capture-extractor \
   --region=$REGION --service-account=$SA --no-allow-unauthenticated \
   --memory=2Gi --cpu=1 --timeout=1800 --max-instances=4 \
   --set-env-vars=KORYTA_API_URL=https://koryta.pl,FIREBASE_WEB_API_KEY=AIzaSyD54RK-k0TIcJtVbZerx2947XiduteqvaM \
-  --set-secrets=LLM_API_KEY=openrouter-api-key:latest,URL_STORE_API_KEY=url-store-api-key:latest
+  --set-secrets=LLM_API_KEY=openrouter-api-key:latest
 
+gcloud services enable cloudtasks.googleapis.com --project=$PROJECT
 gcloud tasks queues create article-extraction --location=$REGION
 ```
 
-`URL_STORE_API_KEY` above is mounted without a `URL_STORE_URL` beside it, and
-`url_store_enabled` wants both — so as written the key is inert and captures are
-never registered as fetched. Everything else works; what is lost is the nightly
-re-parse, because `ArticleDoneUrls` reads that registration. Add
-`URL_STORE_URL=…` to `--set-env-vars` to close the loop, or drop the secret from
-`--set-secrets` and accept the fast path as the only one that reads a capture.
+## Letting the nightly run see a capture
+
+The deploy above leaves `url_store` off, which costs the second pass: a capture
+is extracted once by this service and never re-parsed by the batch pipeline,
+because `ArticleDoneUrls` finds it by the registration that is not being written.
+The facts still land in `/ekstrakcje`; they are just the fast model's only word
+on the page.
+
+`url_store_enabled` wants a url *and* a key, so turning it on is both halves —
+mounting the key alone does nothing, silently:
+
+```bash
+gcloud secrets create url-store-api-key --project=$PROJECT \
+  --replication-policy=automatic
+read -rs -p "url_store key: " KEY
+printf '%s' "$KEY" | gcloud secrets versions add url-store-api-key \
+  --project=$PROJECT --data-file=-
+unset KEY
+
+gcloud secrets add-iam-policy-binding url-store-api-key --project=$PROJECT \
+  --member=serviceAccount:$SA --role=roles/secretmanager.secretAccessor
+
+gcloud run services update capture-extractor --region=$REGION \
+  --update-env-vars=URL_STORE_URL=https://… \
+  --update-secrets=URL_STORE_API_KEY=url-store-api-key:latest
+```
 
 Then let the frontend reach it. The App Hosting backend runs as its own service
 account (`APP=…`); it needs to write the archive, enqueue the task, and act as
