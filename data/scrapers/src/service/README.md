@@ -110,6 +110,12 @@ gcloud projects add-iam-policy-binding $PROJECT \
 gcloud iam service-accounts add-iam-policy-binding $SA \
   --member=serviceAccount:$SA --role=roles/iam.serviceAccountTokenCreator
 
+# The registry the image is pushed to. `builds submit --tag` will not create it,
+# and a missing one is only reported after the whole image has been built — as
+# `name unknown: Repository "koryta" not found` from the push step.
+gcloud artifacts repositories create koryta --repository-format=docker \
+  --location=$REGION --project=$PROJECT
+
 gcloud builds submit data/scrapers \
   --tag=$REGION-docker.pkg.dev/$PROJECT/koryta/capture-extractor
 
