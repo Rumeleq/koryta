@@ -35,11 +35,38 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // A score written by a scoring model rather than cast by a person: stored
+    // under the model's own uid, which is what `isPipelineUid` on both the
+    // frontend and the scrapers reads as non-human. Requiring the document id
+    // to spell out the same nodeId and uid is what stops this branch from being
+    // used to vote in somebody else's name.
+    function isPipelineVote(voteId, data) {
+      return data.nodeId is string
+          && data.userUid is string
+          && data.userUid.matches('.*pipeline.*')
+          && voteId == data.nodeId + '_' + data.userUid;
+    }
+
     match /votes/{voteId} {
       allow read: if true;
-      allow create, update, delete: if request.auth != null 
+      allow create, update, delete: if request.auth != null
           && voteId.matches('.*_' + request.auth.uid)
           && request.resource.data.userUid == request.auth.uid;
+
+      // Nobody signs in as a scoring model, so the check above can never cover
+      // the pipeline's own scores - they are uploaded by whoever runs
+      // `koryta_uploader --type score`, writing under the model's uid. Limited
+      // to the datascience group, the same gate the extractions they are
+      // computed from sit behind.
+      allow create, update: if request.auth != null
+          && request.auth.token.datascience == true
+          && isPipelineVote(voteId, request.resource.data);
+      // A model that no longer rates somebody retracts the score, so the
+      // reconciliation is a delete rather than a zero; `resource` is the
+      // document as stored, since a delete carries no payload.
+      allow delete: if request.auth != null
+          && request.auth.token.datascience == true
+          && isPipelineVote(voteId, resource.data);
       }
     }
   }

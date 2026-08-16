@@ -12,6 +12,11 @@ set -e
 # reconciles a whole model at once, writing only what changed and retracting
 # what the model no longer stands behind, and it can only do that for one model
 # per run.
+#
+# A prod run asks you to log in through the browser, once per model, and the
+# account has to be in the datascience group - that is what `firestore.rules`
+# lets write a pipeline's votes. Set KORYTA_ID_TOKEN to reuse one id token
+# instead of logging in for every model.
 
 if [[ $1 == prod ]]; then
 	SUFFIX="--prod --endpoint https://autopush.koryta.pl"
