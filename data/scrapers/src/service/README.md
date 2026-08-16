@@ -110,6 +110,15 @@ gcloud projects add-iam-policy-binding $PROJECT \
 gcloud iam service-accounts add-iam-policy-binding $SA \
   --member=serviceAccount:$SA --role=roles/iam.serviceAccountTokenCreator
 
+# Read the secrets the revision mounts. Checked when the revision is created, so
+# without this the deploy fails rather than the first capture — and a secret
+# that does not exist at all reports the same "Permission denied on secret",
+# because Cloud Run will not say which of the two it is.
+for SECRET in openrouter-api-key url-store-api-key; do
+  gcloud secrets add-iam-policy-binding $SECRET --project=$PROJECT \
+    --member=serviceAccount:$SA --role=roles/secretmanager.secretAccessor
+done
+
 # The registry the image is pushed to. `builds submit --tag` will not create it,
 # and a missing one is only reported after the whole image has been built — as
 # `name unknown: Repository "koryta" not found` from the push step.
@@ -128,6 +137,13 @@ gcloud run deploy capture-extractor \
 
 gcloud tasks queues create article-extraction --location=$REGION
 ```
+
+`URL_STORE_API_KEY` above is mounted without a `URL_STORE_URL` beside it, and
+`url_store_enabled` wants both — so as written the key is inert and captures are
+never registered as fetched. Everything else works; what is lost is the nightly
+re-parse, because `ArticleDoneUrls` reads that registration. Add
+`URL_STORE_URL=…` to `--set-env-vars` to close the loop, or drop the secret from
+`--set-secrets` and accept the fast path as the only one that reads a capture.
 
 Then let the frontend reach it. The App Hosting backend runs as its own service
 account (`APP=…`); it needs to write the archive, enqueue the task, and act as
