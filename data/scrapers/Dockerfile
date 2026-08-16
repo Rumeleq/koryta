@@ -5,7 +5,7 @@
 # their imports, and a trimmed list would break the next time one of them grew
 # an import. The `ml` group — torch, spacy and the nvidia runtimes, 4.5 GB of
 # the tree — is left out, which is where nearly all of the weight was.
-FROM ghcr.io/astral-sh/uv:0.11.33-python3.13-bookworm-slim
+FROM ghcr.io/astral-sh/uv:0.11.33-python3.13-trixie-slim
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
