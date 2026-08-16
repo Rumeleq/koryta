@@ -9,91 +9,53 @@ import pytest
 
 from entities.composite import PersonScore
 from uploader import Args, ScoreUploader
-from util.firestore import Firestore
+from util.firestore import (
+    BATCH_LIMIT,
+    Firestore,
+    RestVotes,
+    vote_document,
+    vote_id,
+)
 
 
-class FakeDoc:
-    def __init__(self, doc_id: str, data: dict):
-        self.id = doc_id
-        self._data = data
+class FakeVotes:
+    """Stands in for the store, whichever way in it was opened.
 
-    def to_dict(self):
-        return self._data
+    `Firestore` decides what to write and what to take back; both the Admin SDK
+    and the REST backend only carry that out, so the decisions are what these
+    tests hold onto.
+    """
 
-
-class FakeQuery:
-    def __init__(self, docs: list[FakeDoc]):
-        self._docs = docs
-
-    def stream(self):
-        return iter(self._docs)
-
-
-class FakeCollection:
     def __init__(self, documents: dict[str, dict]):
         self.documents = documents
+        self.log: list[tuple[str, str]] = []
 
-    def where(self, filter=None):  # noqa: A002 - matches the firestore signature
-        _, _, value = filter.field_path, filter.op_string, filter.value
-        return FakeQuery(
-            [
-                FakeDoc(doc_id, data)
-                for doc_id, data in self.documents.items()
-                if data.get("userUid") == value
-            ]
-        )
+    def scores(self, model: str) -> dict[str, int]:
+        return {
+            data["nodeId"]: data["categoryVotes"]["interesting"]
+            for data in self.documents.values()
+            if data["userUid"] == model
+        }
 
-    def document(self, doc_id: str) -> str:
-        return doc_id
-
-
-class FakeBatch:
-    def __init__(self, collection: FakeCollection, log: list[tuple]):
-        self.collection = collection
-        self.log = log
-        self.pending: list[tuple] = []
-
-    def set(self, ref, data, merge=False):
-        self.pending.append(("set", ref, data))
-
-    def delete(self, ref):
-        self.pending.append(("delete", ref, None))
-
-    def commit(self):
-        for operation, ref, data in self.pending:
-            if operation == "set":
-                self.collection.documents[ref] = data
-            else:
-                self.collection.documents.pop(ref, None)
-            self.log.append((operation, ref))
-        self.pending = []
-
-
-class FakeDb:
-    def __init__(self, documents: dict[str, dict]):
-        self.votes = FakeCollection(documents)
-        self.log: list[tuple] = []
-
-    def collection(self, name: str) -> FakeCollection:
-        assert name == "votes"
-        return self.votes
-
-    def batch(self) -> FakeBatch:
-        return FakeBatch(self.votes, self.log)
+    def apply(self, model, changed, stale):
+        for score in changed:
+            document_id = vote_id(score.node_id, model)
+            self.documents[document_id] = vote_document(
+                score.node_id, model, score.score
+            )
+            self.log.append(("set", document_id))
+        for node_id in stale:
+            document_id = vote_id(node_id, model)
+            self.documents.pop(document_id, None)
+            self.log.append(("delete", document_id))
 
 
 def stored(node_id: str, model: str, score: int) -> tuple[str, dict]:
-    return (
-        f"{node_id}_{model}",
-        {"nodeId": node_id, "userUid": model, "categoryVotes": {"interesting": score}},
-    )
+    return (vote_id(node_id, model), vote_document(node_id, model, score))
 
 
 def firestore_with(*documents: tuple[str, dict]) -> Firestore:
-    client = Firestore.__new__(Firestore)
-    client.db = FakeDb(dict(documents))  # type: ignore[assignment]
-    client.user_id = "pipeline"
-    return client
+    return Firestore(None, FakeVotes(dict(documents)))
 
 
 def score(node_id: str, value: int, model: str) -> PersonScore:
@@ -116,7 +78,7 @@ class TestReplaceScores:
         )
 
         assert (written, retracted) == (1, 0)
-        assert client.db.log == [("set", "n2_pipeline-pagerank")]  # type: ignore[attr-defined]
+        assert client.votes.log == [("set", "n2_pipeline-pagerank")]
 
     def test_a_person_the_model_dropped_loses_the_score(self):
         client = firestore_with(stored("gone", "pipeline-turnover", 3))
@@ -126,7 +88,7 @@ class TestReplaceScores:
         )
 
         assert (written, retracted) == (1, 1)
-        assert "gone_pipeline-turnover" not in client.db.votes.documents  # type: ignore[attr-defined]
+        assert "gone_pipeline-turnover" not in client.votes.documents
 
     def test_another_models_scores_are_not_touched(self):
         client = firestore_with(
@@ -137,7 +99,7 @@ class TestReplaceScores:
 
         client.replace_scores("pipeline-pagerank", [])
 
-        documents = client.db.votes.documents  # type: ignore[attr-defined]
+        documents = client.votes.documents
         assert "n1_pipeline-pagerank" not in documents
         assert documents["n1_pipeline-capture"]["categoryVotes"]["interesting"] == 1
         assert documents["n1_aB3xYz"]["categoryVotes"]["interesting"] == 4
@@ -150,7 +112,126 @@ class TestReplaceScores:
         )
 
         assert (written, retracted) == (1, 0)
-        assert "n1_pipeline" in client.db.votes.documents  # type: ignore[attr-defined]
+        assert "n1_pipeline" in client.votes.documents
+
+
+class FakeResponse:
+    def __init__(self, payload, status_code: int = 200):
+        self.payload = payload
+        self.status_code = status_code
+        self.ok = status_code < 400
+        self.text = str(payload)
+
+    def json(self):
+        return self.payload
+
+
+class FakeSession:
+    """Records what the REST backend puts on the wire."""
+
+    def __init__(self, *responses: FakeResponse):
+        self.headers: dict[str, str] = {}
+        self.responses = list(responses)
+        self.calls: list[tuple[str, dict]] = []
+
+    def post(self, url, json=None, timeout=None):
+        self.calls.append((url, json))
+        return self.responses.pop(0) if self.responses else FakeResponse({})
+
+
+def rest_with(session: FakeSession) -> RestVotes:
+    votes = RestVotes.__new__(RestVotes)
+    votes.collection = "projects/p/databases/d/documents"
+    votes.documents = f"https://firestore.example/v1/{votes.collection}"
+    votes.session = session  # type: ignore[assignment]
+    return votes
+
+
+class TestRestVotes:
+    """The wire format, which is the part `firestore.rules` is judging."""
+
+    def test_reads_a_models_stored_scores(self):
+        session = FakeSession(
+            FakeResponse(
+                [
+                    # The stream opens with a result that carries no document.
+                    {"readTime": "2026-08-16T00:00:00Z"},
+                    {
+                        "document": {
+                            "name": ".../votes/n1_pipeline-pagerank",
+                            "fields": {
+                                "nodeId": {"stringValue": "n1"},
+                                "userUid": {"stringValue": "pipeline-pagerank"},
+                                "categoryVotes": {
+                                    "mapValue": {
+                                        "fields": {"interesting": {"integerValue": "5"}}
+                                    }
+                                },
+                            },
+                        }
+                    },
+                ]
+            )
+        )
+
+        scores = rest_with(session).scores("pipeline-pagerank")
+
+        assert scores == {"n1": 5}
+        url, query = session.calls[0]
+        assert url.endswith(":runQuery")
+        condition = query["structuredQuery"]["where"]["fieldFilter"]
+        assert condition["field"]["fieldPath"] == "userUid"
+        assert condition["value"]["stringValue"] == "pipeline-pagerank"
+
+    def test_writes_a_score_under_the_models_uid(self):
+        session = FakeSession()
+
+        rest_with(session).apply(
+            "pipeline-capture", [score("n1", 4, "pipeline-capture")], []
+        )
+
+        url, body = session.calls[0]
+        assert url.endswith(":commit")
+        (write,) = body["writes"]
+        assert write["update"]["name"].endswith("/votes/n1_pipeline-capture")
+        assert write["update"]["fields"] == {
+            "nodeId": {"stringValue": "n1"},
+            "userUid": {"stringValue": "pipeline-capture"},
+            "categoryVotes": {
+                "mapValue": {"fields": {"interesting": {"integerValue": "4"}}}
+            },
+        }
+        # Naming the leaf is what `merge=True` does: a vote this person cast in
+        # another category on the same document survives the write.
+        assert write["updateMask"]["fieldPaths"] == [
+            "nodeId",
+            "userUid",
+            "categoryVotes.interesting",
+        ]
+
+    def test_retracts_by_deleting(self):
+        session = FakeSession()
+
+        rest_with(session).apply("pipeline", [], ["gone"])
+
+        _, body = session.calls[0]
+        assert body["writes"] == [
+            {"delete": "projects/p/databases/d/documents/votes/gone_pipeline"}
+        ]
+
+    def test_commits_in_batches_firestore_will_accept(self):
+        session = FakeSession()
+        scores = [score(f"n{i}", 3, "pipeline") for i in range(BATCH_LIMIT + 1)]
+
+        rest_with(session).apply("pipeline", scores, [])
+
+        assert [len(body["writes"]) for _, body in session.calls] == [BATCH_LIMIT, 1]
+
+    def test_a_refusal_names_the_claim_the_upload_needs(self):
+        session = FakeSession(FakeResponse({"error": "denied"}, status_code=403))
+
+        with pytest.raises(PermissionError, match="datascience"):
+            rest_with(session).scores("pipeline")
 
 
 def uploader_with(**overrides) -> ScoreUploader:

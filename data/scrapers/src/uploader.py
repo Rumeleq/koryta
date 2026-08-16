@@ -88,7 +88,12 @@ class Uploader:
         self.args = args
 
         if args.type in ["score"]:
-            self.firestore = Firestore(args)
+            # Same browser login as every other type, only the token goes to
+            # Firestore rather than to an ingest endpoint. A local stack asks
+            # for none of it, so the login is passed rather than performed.
+            self.firestore = Firestore(
+                args, login=lambda: authenticate_user(args.endpoint)
+            )
         else:
             token = authenticate_user(args.endpoint)
             self.headers = {
@@ -264,7 +269,9 @@ class ScoreUploader(Uploader):
     pipeline's own opinion rather than a fact about a person, and they are
     stored as votes so that the site's existing aggregate does the combining.
     Each model votes under its own uid, so uploading one model never touches
-    another's scores.
+    another's scores. Against a deployed site that write is judged by
+    `firestore.rules`, which want the uploader in the datascience group - see
+    `util.firestore`.
 
     Unlike the per-entity uploaders this writes the whole run at once, because
     what to write can only be decided against what the model wrote last time -
