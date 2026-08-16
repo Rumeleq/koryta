@@ -10,7 +10,10 @@
 
           <div class="d-flex flex-wrap align-center ga-4 text-body-2">
             <span v-for="identifier in identifiers" :key="identifier.register">
-              <strong>{{ identifier.register }}:</strong>
+              <!-- The gap belongs to the label: Vue drops the whitespace
+                   between two tags, and "REGON:123456785" reads as one number.
+                   Non-breaking, so a register never wraps off its own value. -->
+              <strong>{{ identifier.register }}:&nbsp;</strong>
               <a
                 v-if="identifier.url"
                 :href="identifier.url"
