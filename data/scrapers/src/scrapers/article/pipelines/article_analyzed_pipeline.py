@@ -27,6 +27,11 @@ _FACTS_FILE = (
     / "article_facts_verified"
     / "article_facts_verified.jsonl"
 )
+_MENTIONS_FILE = (
+    Path(VERSIONED_DIR)
+    / "article_person_mentions"
+    / "article_person_mentions.jsonl"
+)
 
 # Verifier bookkeeping fields kept in article_facts_verified but stripped from
 # the analyzed output.
@@ -67,6 +72,11 @@ class ArticleAnalyzed(IncrementalJsonlPipeline[ArticleAnalyzedRecord]):
         print("Streaming parsed articles...")
         parsed = _load_jsonl_filtered(_PARSED_FILE, facts)
         print(f"  {len(parsed):,} matching parsed records")
+
+        # People confirmed in each article (koryta ids) — a small extra file.
+        print("Loading person mentions...")
+        koryta_ids_by_url = _koryta_ids_by_url(_MENTIONS_FILE)
+        print(f"  {len(koryta_ids_by_url):,} articles with confirmed mentions")
 
         emitted = 0
         for url, fact_rows in tqdm(facts.items(), desc="Emitting", unit="article"):
@@ -114,6 +124,7 @@ class ArticleAnalyzed(IncrementalJsonlPipeline[ArticleAnalyzedRecord]):
                     score_row.get("koryciarski_llm_reason", "") if score_row else ""
                 ),
                 extracted_facts=verified_facts,
+                koryta_ids=koryta_ids_by_url.get(url, []),
                 tag=tag,
             )
             ctx.io.dumper.insert_into(record, [])  # type: ignore[attr-defined]
@@ -166,4 +177,40 @@ def _load_jsonl_filtered(
                     result[url] = row
             except Exception:
                 continue
+    return result
+
+
+def _koryta_ids_by_url(path: Path) -> dict[str, list[str]]:
+    """koryta ids of the people confirmed in each article.
+
+    Reads ArticlePersonMentions (one row per (article, person) pair) and keeps
+    only pairs the LLM judge confirmed (``verdict == 'yes'``), deduplicated in
+    file order per article.
+    """
+    result: dict[str, list[str]] = {}
+    if not path.exists():
+        return result
+    with path.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row: dict[str, Any] = json.loads(line)
+            except Exception:
+                continue
+            if row.get("verdict") != "yes":
+                continue
+            url = row.get("url")
+            person_id = row.get("person_id")
+            if (
+                not isinstance(url, str)
+                or not url
+                or not isinstance(person_id, str)
+                or not person_id
+            ):
+                continue
+            ids = result.setdefault(url, [])
+            if person_id not in ids:
+                ids.append(person_id)
     return result

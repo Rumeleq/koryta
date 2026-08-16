@@ -150,6 +150,7 @@ class ArticleAnalyzedRecord:
     koryciarski_llm_score: int | None
     koryciarski_llm_reason: str
     extracted_facts: list[dict[str, Any]]
+    koryta_ids: list[str] = field(default_factory=list)
     tag: str | None = None
 
 
