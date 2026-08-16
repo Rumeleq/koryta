@@ -8,14 +8,59 @@ runConfig:
   memoryMiB: 1024
 
 # Environment variables and secrets.
-# env:
-# Configure environment variables.
 # See https://firebase.google.com/docs/app-hosting/configure#user-defined-environment
-# - variable: MESSAGE
-#   value: Hello world!
-#   availability:
-#     - BUILD
-#     - RUNTIME
+#
+# Everything below is BUILD as well as RUNTIME, and the BUILD half is the one
+# that matters: nuxt.config.ts reads these through `process.env` while it is
+# building, and at runtime nitro only overrides runtimeConfig from `NUXT_`-
+# prefixed names. A RUNTIME-only entry here would be read by nobody, and every
+# capture would go on reporting "extractor not configured" with the variable
+# plainly set in the console.
+#
+# Shared by both backends on purpose. `prod` serves koryta.pl, which is the
+# extension's default origin; `autopush` gets the same wiring so the flow can be
+# exercised there. Note the extractor's own KORYTA_API_URL is https://koryta.pl,
+# so facts from either backend's captures are submitted to production.
+env:
+  # Cloud Tasks rather than a direct call: the extraction is tens of seconds and
+  # Cloud Run throttles the cpu once a response is written. "direct" is for a
+  # laptop, where there is no metadata server to mint a token with.
+  - variable: EXTRACTOR_DISPATCH
+    value: tasks
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: EXTRACTOR_URL
+    value: https://capture-extractor-735903577811.europe-central2.run.app
+    availability:
+      - BUILD
+      - RUNTIME
+
+  # The account Cloud Tasks mints the request's OIDC token as, and so the one
+  # holding run.invoker on the service above — not the account this backend runs
+  # as, which only needs serviceAccountUser on it.
+  - variable: EXTRACTOR_SERVICE_ACCOUNT
+    value: capture-extractor@koryta-pl.iam.gserviceaccount.com
+    availability:
+      - BUILD
+      - RUNTIME
+
+  # These two restate what nuxt.config.ts already defaults to. Spelled out anyway
+  # so the deployed wiring reads in one place: the queue is a thing that exists
+  # in gcloud, and someone moving it should not have to know that the only
+  # record of its name is a fallback in a build config.
+  - variable: EXTRACTOR_LOCATION
+    value: europe-central2
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: EXTRACTOR_QUEUE
+    value: article-extraction
+    availability:
+      - BUILD
+      - RUNTIME
 
 # Grant access to secrets in Cloud Secret Manager.
 # See https://firebase.google.com/docs/app-hosting/configure#secret-parameters
