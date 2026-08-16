@@ -15,6 +15,18 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /app
 
+# `leveldb-export` is the one dependency resolved from a git url rather than a
+# wheel, and the uv images are too slim to carry a git. Nothing the service
+# imports reaches it — that is `scrapers.koryta.download`, reading the nightly
+# Firestore export — but it is a base dependency of `scrapers`, and taking those
+# wholesale is what this image does on purpose.
+#
+# Its own layer, ahead of the copy, so editing pyproject.toml does not reinstall
+# it.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
 # Dependencies first, so a change to the source does not refetch them.
 COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-default-groups --group service --no-install-project
