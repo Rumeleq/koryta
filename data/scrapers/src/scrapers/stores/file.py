@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 import pandas as pd
 
-type Formats = Literal["jsonl", "csv", "parquet"]
+type Formats = Literal["jsonl", "csv", "parquet", "json"]
 
 
 class File(metaclass=ABCMeta):

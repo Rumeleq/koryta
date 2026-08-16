@@ -35,6 +35,7 @@ from scrapers.article.pipelines.common import (
     normalize_text,
     strip_think_blocks,
 )
+from scrapers.article.pipelines.domain_to_region_pipeline import DomainToRegion
 from scrapers.article.pipelines.incremental import IncrementalJsonlPipeline
 from scrapers.article.pipelines.parsed_pipeline import ArticleParsed
 from scrapers.article.pipelines.pipeline_utils import llm_model
@@ -70,17 +71,9 @@ _WORD = rf"[{_CAP}][{_LOW}]+(?:['-][{_CAP}{_LOW}]+)*"
 _MAX_RUN_WORDS = 6
 _RUN_RE = re.compile(rf"(?:{_WORD}\s+){{1,{_MAX_RUN_WORDS - 1}}}{_WORD}")
 
-# Domain -> region mapping, generated from files/seed.csv + TERYT codes. Each
-# entry lists the regions (woj/woj_code/powiat/powiat_code/miasto) the outlet
-# covers. Kept next to the verified domain->selector map.
-_DOMAIN_REGION_FILE = (
-    Path(__file__).resolve().parents[1]
-    / "scrapers"
-    / "article"
-    / "pipelines"
-    / "domain_to_region.json"
-)
-
+# Domain -> region mapping (kept as an input file in files/, published to the
+# shared cache by the DomainToRegion pipeline). Each entry lists the regions
+# (woj/woj_code/powiat/powiat_code/miasto) the outlet covers.
 # Temporary debug dump: one line per judged (article, person) pair with a
 # truncated article excerpt, so verdicts can be eyeballed later.
 _DEBUG_FILE = Path(VERSIONED_DIR) / "article_person_mentions" / "judge_debug.jsonl"
@@ -1122,6 +1115,7 @@ class ArticlePersonMentions(IncrementalJsonlPipeline[ArticlePersonMentioned]):
 
     koryta_people: KorytaPeople
     parsed: ArticleParsed
+    domain_regions: DomainToRegion
     llm: LLM
 
     @property
@@ -1150,7 +1144,8 @@ class ArticlePersonMentions(IncrementalJsonlPipeline[ArticlePersonMentioned]):
             f"{len(profiles):,} with disambiguation profiles)"
         )
 
-        domain_map = DomainRegionMap(_DOMAIN_REGION_FILE)
+        self.domain_regions.read_or_process(ctx)
+        domain_map = DomainRegionMap(self.domain_regions.final_output_path)
         print(f"Loaded region map for {len(domain_map._data):,} domains")
 
         parsed_path = self.parsed.final_output_path
