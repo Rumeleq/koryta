@@ -1,0 +1,43 @@
+# What `gcloud builds submit data/scrapers` may upload.
+#
+# Needed because `.dockerignore` is too late: it is applied by the docker build
+# running inside Cloud Build, long after gcloud has tarred this directory up and
+# pushed it to the staging bucket. Without this file that upload is 1.6 GB — the
+# `downloaded` symlink into the shared crawl mirror, plus whatever venv the
+# checkout happens to have — for an image whose context is 5 MB.
+#
+# gcloud would otherwise derive its own from `.gitignore`, but only for a git
+# repository root, and this is `data/scrapers` inside one.
+
+.gcloudignore
+.git
+.gitignore
+
+# The two big ones. `downloaded` is a symlink to ~/.cache/koryta/downloaded, a
+# mirror of gs://koryta-pl-crawled; `versioned` is pipeline output. The trailing
+# glob matches the way `.gitignore` spells them.
+downloaded*
+versioned*
+.venv/
+models/
+
+# Not copied by the Dockerfile, which installs with `--no-default-groups
+# --group service` and takes only pyproject.toml, uv.lock, README.md and src/.
+tests/
+src/tests/
+.agent/
+docker-compose.yml
+*.ipynb
+.ipynb_checkpoints/
+
+.pytest_cache/
+.pytest-runtimes
+**/__pycache__/
+*.pyc
+.coverage
+logs/
+crawler_output/
+
+# Credentials, on the same reasoning as `.gitignore`: never in a build context.
+.env
+koryta-pl*.json
