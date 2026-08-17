@@ -127,7 +127,10 @@ import { parseEntityUrlSlug, generateEntityUrl } from "~/composables/slugs";
 import { entityDescription, SOCIAL_CARD } from "~/composables/entitySeo";
 import type { TopicArticle, TopicDetail } from "~~/server/api/topics/[id].get";
 
-definePageMeta({ fullWidth: true });
+// No `fullWidth`: that is for /graf, which is a canvas edge to edge. A story is
+// a page with a graph on it - a heading, a description, an article list - and
+// reads like the article page it is reached from, in the same centred column.
+definePageMeta({ title: "Temat" });
 
 const route = useRoute();
 const user = useCurrentUser();
