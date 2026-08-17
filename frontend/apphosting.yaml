@@ -72,6 +72,18 @@ env:
       - BUILD
       - RUNTIME
 
+  # Who /rozszerzenie hands a Firebase id token to. Pinned by the `key` field in
+  # extension/manifest.json rather than assigned by Chrome from the unpacked
+  # folder's path, so it is the same id on every machine and can be written down
+  # here at all. Without it the page falls back to postMessage and waits on a
+  # content script that only runs on localhost, which reads as "Nie znaleziono
+  # rozszerzenia" on any deployed origin.
+  - variable: NUXT_PUBLIC_EXTENSION_ID
+    value: ppgedfpjafcklogippkoheikkalkehbb
+    availability:
+      - BUILD
+      - RUNTIME
+
 # Grant access to secrets in Cloud Secret Manager.
 # See https://firebase.google.com/docs/app-hosting/configure#secret-parameters
 # - variable: MY_SECRET

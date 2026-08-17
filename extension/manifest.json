@@ -3,10 +3,12 @@
   "name": "Koryta — zapisz artykuł",
   "version": "0.1.0",
   "description": "Zapisuje czytany artykuł w archiwum koryta.pl i wyciąga z niego fakty — także zza paywalla.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlQT3fr77Ex610Lpfe+hv8PHCwrExFiboGEBZAEr0hiD5Ad2Ss8W79LWmVRln5Bh4n8IqIPcm0tWerIqFUrtJOnqwp69oHjV1M4Pt/3e1Hi3mEUlSYGsjO++sctgOJCvia4AbHnlT5usFwwC4GMzP68oe7X6JMCc1PMZvbwdckEQBBZtbfvro4nYwI5G/266UQ5/jEQkx0QFPS9nLhqt7WtXaVheScDTs0hILgGbBpfWHjmkUttlQv0SB+t0uPbZkM7GhfGeaJ4FHE031W2fJnqozwKgrryEdsh4kh/SOiBW/hXukBw5YgCEMds6jM3H/S2e7A77tFEYNdGOB7ausOwIDAQAB",
   "permissions": ["activeTab", "scripting", "sidePanel", "storage"],
   "minimum_chrome_version": "114",
   "host_permissions": [
     "https://koryta.pl/*",
+    "https://*.koryta.pl/*",
     "http://localhost/*",
     "http://127.0.0.1/*"
   ],
