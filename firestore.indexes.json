@@ -15,6 +15,20 @@
       ]
     },
     {
+      "collectionGroup": "articlePages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "normalizedUrl",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "capturedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "extractions",
       "queryScope": "COLLECTION",
       "fields": [
