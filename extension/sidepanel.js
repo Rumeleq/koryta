@@ -85,16 +85,28 @@ async function showQuote(quote) {
   }
 }
 
-async function renderFacts({ capture, facts }) {
+/** What the panel says when the lookup came back with nothing.
+ *
+ * A lookup that failed is not a page nobody has read, and saying "nie jest
+ * jeszcze zapisany" about a 500 is how a broken query stayed invisible: the
+ * panel looked exactly the way it looks over a fresh article, so the answer read
+ * as true and the invitation was to capture a page already in the archive.
+ */
+function emptyMessage({ capture, error }) {
+  if (error) return `Nie udało się sprawdzić tej strony: ${error}`;
+  return capture
+    ? "Z tego artykułu nie wyciągnięto jeszcze żadnych faktów."
+    : "Ten artykuł nie jest jeszcze zapisany.";
+}
+
+async function renderFacts({ capture, facts, error }) {
   const section = el("facts-section");
   const empty = el("empty");
 
   if (!facts?.length) {
     section.hidden = true;
     empty.hidden = false;
-    empty.textContent = capture
-      ? "Z tego artykułu nie wyciągnięto jeszcze żadnych faktów."
-      : "Ten artykuł nie jest jeszcze zapisany.";
+    empty.textContent = emptyMessage({ capture, error });
     el("capture").hidden = false;
     return;
   }
