@@ -107,10 +107,37 @@ that selection too, on the same reasoning. Below 80 characters nothing is sent
 either way: that is not enough for the facts prompt to ground a claim in, and
 the run costs what a real one costs.
 
+## Its id, and why the manifest carries a key
+
+`/rozszerzenie` has to name the extension it hands a token to, and Chrome
+normally derives an unpacked extension's id from the absolute path it was loaded
+from — a different id on every machine, which is not something a deployed
+frontend can be told in advance.
+
+So `manifest.json` carries a `key`: the public half of an RSA keypair, from
+which Chrome computes the id instead. That id is
+`ppgedfpjafcklogippkoheikkalkehbb`, it is the same everywhere, and it is what
+`NUXT_PUBLIC_EXTENSION_ID` is set to in `frontend/apphosting.yaml`.
+
+The private half lives at `~/.config/koryta/extension-key.pem` and is not in the
+repo. Nothing needs it today — it is only for signing a `.crx` if these are ever
+self-hosted rather than listed.
+
 ## Publishing
 
 Before packing for the store, drop the two localhost entries from
 `host_permissions` and the `content_scripts` block from `manifest.json` — they
 exist for development and will otherwise widen what reviewers see the extension
-asking for. Then set `NUXT_PUBLIC_EXTENSION_ID` on the frontend to the published
-id so `/rozszerzenie` knows who to hand tokens to.
+asking for.
+
+The store assigns an id from a key of its own, which will not be the one above.
+So after the first upload, replace `key` with the public key from the listing and
+update `NUXT_PUBLIC_EXTENSION_ID` to match — that is what keeps a locally loaded
+copy and the published one sharing an id, and what the field is conventionally
+for. Until then the self-generated key is what makes the deployed origins work
+at all.
+
+`https://*.koryta.pl/*` is in `host_permissions` for `autopush.koryta.pl`, the
+staging backend. It stays after publishing: `externally_connectable` already
+matches the same pattern, so removing one without the other would leave the
+token handoff working on a subdomain the capture upload could not reach.
