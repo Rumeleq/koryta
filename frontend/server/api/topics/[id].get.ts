@@ -1,6 +1,9 @@
 import { getFirestore } from "firebase-admin/firestore";
 import { getApp } from "firebase-admin/app";
-import { authCachedEventHandler } from "~~/server/utils/handlers";
+import {
+  editorFreshCachedEventHandler,
+  wantsLatest,
+} from "~~/server/utils/handlers";
 import { articleIdsForTopic } from "~~/server/utils/topics";
 import { pageIsPublic } from "~~/shared/model";
 import type { Topic } from "~~/shared/model";
@@ -21,12 +24,12 @@ export type TopicDetail = {
 };
 
 /** One story: what it is called, and what is in it. */
-export default authCachedEventHandler(async (event) => {
+export default editorFreshCachedEventHandler(async (event) => {
   const id = getRouterParam(event, "id");
   if (!id) {
     throw createError({ statusCode: 400, message: "Brak identyfikatora." });
   }
-  const includeDrafts = getQuery(event).latest !== undefined;
+  const includeDrafts = wantsLatest(event);
 
   const db = getFirestore(getApp(), "koryta-pl");
   const topicSnap = await db.collection("nodes").doc(id).get();

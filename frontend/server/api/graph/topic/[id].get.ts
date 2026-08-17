@@ -8,7 +8,10 @@ import {
   getNodesNoStats,
   type GraphLayout,
 } from "~~/shared/graph/util";
-import { authCachedEventHandler } from "~~/server/utils/handlers";
+import {
+  editorFreshCachedEventHandler,
+  wantsLatest,
+} from "~~/server/utils/handlers";
 import { fetchNodesByIds } from "~~/server/utils/fetch";
 import {
   articleIdsForTopic,
@@ -77,19 +80,6 @@ async function topicGraph(event: H3Event): Promise<GraphLayout> {
   return { edges, nodes: getNodes(nodeGroups, nodesNoStats), nodeGroups };
 }
 
-/** Whether the caller asked to be shown what is not approved yet. `authFetch`
- * sets it on every signed in request, so it doubles as "this is an editor". */
-function wantsLatest(event: H3Event): boolean {
-  const latest = getQuery(event).latest;
-  return latest !== undefined && latest !== "false";
-}
-
-const cachedTopicGraph = authCachedEventHandler(topicGraph);
-
-export default defineEventHandler(async (event) => {
-  // Same trade as the local graph: whoever is signed in is the one who may have
-  // just tagged the article they are looking for, and the cache holds a
-  // response for six hours.
-  if (wantsLatest(event)) return topicGraph(event);
-  return cachedTopicGraph(event);
-});
+// Whoever is signed in is the one who may have just tagged the article they are
+// looking for, so they read through the six hour cache. See the helper.
+export default editorFreshCachedEventHandler(topicGraph);
