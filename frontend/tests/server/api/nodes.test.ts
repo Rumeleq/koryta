@@ -155,6 +155,10 @@ describe("createNode", () => {
 
 vi.mock("../../../server/utils/handlers", () => ({
   authCachedEventHandler: (fn: any) => fn,
+  editorFreshCachedEventHandler: (fn: any) => fn,
+  // Whether the caller asked for drafts. False here so the assertions below
+  // read the ordinary cached path; the read-through is covered where it lives.
+  wantsLatest: () => false,
 }));
 
 describe("index.get.ts handler", () => {
