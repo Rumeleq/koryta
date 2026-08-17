@@ -95,6 +95,14 @@ export default defineEventHandler(async (event) => {
     batch.set(nodeRef, {
       ...(revision.data as Record<string, unknown>),
       published: false,
+      // `stats` for the same reason, and it is not cosmetic: /api/search sorts
+      // on `stats.nodeGroupSize`, and Firestore's orderBy drops any document
+      // that does not carry the field at all. A person somebody had just
+      // created was therefore invisible to the very picker that created them -
+      // they could be added once and never found again, for good, since nothing
+      // writes the field until /api/stats/computeNodes next runs. Zero is the
+      // honest value: nobody is connected to them yet.
+      stats: { isApproved: false, nodeGroupSize: 0 },
     });
   }
   await batch.commit();

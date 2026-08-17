@@ -43,6 +43,12 @@ function writtenRevision() {
   return mockSet.mock.calls[0]![1];
 }
 
+/** The node document the handler wrote, when it created one. The revision is
+ * written first, so the node is the second `set`. */
+function writtenNode() {
+  return mockSet.mock.calls[1]?.[1];
+}
+
 describe("api/revisions/create, place edits", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -204,6 +210,25 @@ describe("api/revisions/create, proposing a new entry", () => {
       krsNumber: "0000999888",
       isPublic: true,
       isPublicSource: "manual",
+    });
+  });
+
+  it("gives a new entry the stats that make it findable", async () => {
+    // Not cosmetic. /api/search sorts on `stats.nodeGroupSize`, and Firestore's
+    // orderBy drops a document that does not carry the field at all - so a
+    // person somebody had just created was invisible to the very picker that
+    // created them, and stayed invisible until /api/stats/computeNodes next
+    // ran. Verified against the emulator: adding the field, even as 0, is what
+    // makes them come back.
+    mockReadBody.mockResolvedValue({ type: "person", name: "Zenon Nowy" });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await handler({} as any);
+
+    expect(writtenNode()).toMatchObject({
+      name: "Zenon Nowy",
+      published: false,
+      stats: { isApproved: false, nodeGroupSize: 0 },
     });
   });
 

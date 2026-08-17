@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { parseNodeDoc } from "~~/server/utils/fetch";
 import { getFirestore } from "firebase-admin/firestore";
-import { authCachedEventHandler } from "~~/server/utils/handlers";
+import { editorFreshCachedEventHandler } from "~~/server/utils/handlers";
 import { getValidatedQuery } from "h3";
 
 const queryValidator = z.object({
@@ -17,7 +17,10 @@ type node = {
   visibility: boolean;
 };
 
-export default authCachedEventHandler(async (event) => {
+// Whoever is signed in is the one who may have just created the person they
+// are searching for, and the picker searches before it offers to create - so
+// the miss is already in the cache by the time they look again.
+export default editorFreshCachedEventHandler(async (event) => {
   const query = await getValidatedQuery(event, (q) => queryValidator.parse(q));
   const db = getFirestore("koryta-pl");
 
