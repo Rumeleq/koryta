@@ -292,7 +292,10 @@ async def extract_facts(
     text_limit = facts_pipeline.article_facts_text_limit() or facts_pipeline.TEXT_LIMIT
     max_tokens = facts_pipeline.article_facts_max_tokens() or facts_pipeline.MAX_TOKENS
     request = LLMRequest(
-        prompt=facts_pipeline._PROMPT.format(text=text[:text_limit]),
+        prompt=facts_pipeline._PROMPT.format(
+            people="",
+            text=text[:text_limit],
+        ),
         max_tokens=max_tokens,
         temperature=facts_pipeline.TEMPERATURE,
         model=model,
