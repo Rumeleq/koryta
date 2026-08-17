@@ -8,10 +8,16 @@ export type GraphOptions = {
   maxDepth?: number;
   filtered?: string[];
   expandedNodes?: Ref<Set<string>>;
+  /** Where to get the layout, for a graph that is not one node's neighbourhood.
+   * The topic view passes `/api/graph/topic/<id>`, whose response is the same
+   * `GraphLayout` and needs no focus node: the relations it returns are already
+   * the whole answer, so there is nothing to centre on or expand from. */
+  source?: string;
 };
 
 export function useGraph(opts: GraphOptions) {
   const url = computed(() => {
+    if (opts.source) return opts.source;
     let u = `/api/graph/local/${opts.focusNodeId}?distance=${opts.maxDepth ?? 1}`;
     if (opts.expandedNodes?.value && opts.expandedNodes.value.size > 0) {
       const expand = Array.from(opts.expandedNodes.value)
@@ -59,8 +65,16 @@ export function useGraph(opts: GraphOptions) {
     );
   });
 
+  /** Whether the response is already the whole graph to draw.
+   *
+   * True for a focused neighbourhood, and for anything fetched from an explicit
+   * `source` - the topic layout is the relations a story rests on, and there is
+   * no shorter list to narrow it to. Only the caller that passes neither is
+   * asking to be cut down to `filtered`. */
+  const wholeLayout = computed(() => !!opts.source || !!opts.focusNodeId);
+
   const nodesFiltered = computed(() => {
-    if (opts.focusNodeId) {
+    if (wholeLayout.value) {
       return interestingNodes.value;
     }
 
@@ -72,7 +86,7 @@ export function useGraph(opts: GraphOptions) {
   });
 
   const edgesFilteredDuplicates = computed(() => {
-    if (opts.focusNodeId && graph.value) {
+    if (wholeLayout.value && graph.value) {
       return graph.value.edges;
     }
     return edges.value;

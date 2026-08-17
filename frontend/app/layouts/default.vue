@@ -27,6 +27,7 @@
     <v-spacer />
 
     <template #append>
+      <v-btn v-if="mdAndUp" text to="/tematy">Tematy</v-btn>
       <v-btn v-if="mdAndUp" text to="/o-nas">O nas</v-btn>
       <v-btn v-if="mdAndUp" text to="/pomoc">Działaj z nami</v-btn>
       <ClientOnly>
