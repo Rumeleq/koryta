@@ -72,9 +72,11 @@
         <ArticleTopicChips
           :topics="topics"
           :can-edit="!!user"
+          :can-approve="!!isAdmin"
           :saving="savingTopics"
           @add="addTopic"
           @remove="removeTopic"
+          @approve="approveTopic"
         />
         <v-alert
           v-if="topicError"
@@ -209,8 +211,7 @@
  */
 import { computed, ref } from "vue";
 import { mdiOpenInNew, mdiPlus, mdiRefresh } from "@mdi/js";
-import { useCurrentUser } from "vuefire";
-import { authFetch, authRequest } from "~/composables/auth";
+import { authFetch, authRequest, useAuthState } from "~/composables/auth";
 import { useDomainIcon } from "~/composables/useDomainIcon";
 import { useExtractions } from "~/composables/extractions";
 import { useCanCapture } from "~/composables/captures";
@@ -229,7 +230,7 @@ import CommentsSection from "@/components/comment/CommentsSection.vue";
 const props = defineProps<{ nodeId: string }>();
 
 const nodeId = props.nodeId;
-const user = useCurrentUser();
+const { user, isAdmin } = useAuthState();
 const route = useRoute();
 const router = useRouter();
 const { getDomainIcon } = useDomainIcon();
@@ -376,6 +377,32 @@ async function changeTopics(body: { add?: string[]; remove?: string[] }) {
 const addTopic = (topic: Link<NodeType>) => changeTopics({ add: [topic.id] });
 const removeTopic = (topic: ArticleRelation) =>
   changeTopics({ remove: [topic.nodeId] });
+
+/** Puts the story live along with this tag.
+ *
+ * Both in one call: a tag is an edge, and no edge may be published while an end
+ * of it is a draft - so a tag whose topic nobody has approved never reaches
+ * /admin/krawedzie at all, and this is the only place it is visible to act on.
+ */
+async function approveTopic(topic: ArticleRelation) {
+  savingTopics.value = true;
+  topicError.value = null;
+  try {
+    await authRequest(`/api/topics/${topic.nodeId}/approve`, {
+      method: "POST",
+      body: { edgeIds: [topic.edgeId] },
+    });
+    await refreshRelations();
+  } catch (e: unknown) {
+    const data = (e as { data?: { message?: string } } | null)?.data;
+    topicError.value =
+      data?.message ||
+      (e instanceof Error ? e.message : "") ||
+      "Nie udało się zatwierdzić tematu.";
+  } finally {
+    savingTopics.value = false;
+  }
+}
 
 const addEdgeOpen = ref(false);
 function openAddEdge() {
