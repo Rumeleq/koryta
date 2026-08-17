@@ -1,28 +1,7 @@
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import * as logger from "firebase-functions/logger";
 import { pageIsPublic } from "../../shared/model";
-
-const generateChunksLower = (name: string): string[] => {
-  const chunks: string[] = [""];
-  const lowerName = name.toLowerCase();
-
-  for (let i = 1; i <= lowerName.length; i++) {
-    chunks.push(lowerName.substring(0, i));
-  }
-
-  const words = lowerName.split(" ");
-  if (words.length > 1) {
-    for (const word of words) {
-      if (word.length > 0) {
-        for (let i = 1; i <= word.length; i++) {
-          chunks.push(word.substring(0, i));
-        }
-      }
-    }
-  }
-
-  return Array.from(new Set(chunks));
-};
+import { generateChunksLower } from "../../shared/search";
 
 export const onNodeWritten = onDocumentWritten(
   {

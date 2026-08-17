@@ -5,19 +5,6 @@
     "content": "Politician from PO",
     "parties": ["PO"],
     "revision_id": "rev1",
-    "nameChunksLower": [
-      "alski",
-      "an",
-      "i",
-      "jan",
-      "ki",
-      "kowalski",
-      "lski",
-      "n",
-      "owalski",
-      "ski",
-      "walski"
-    ],
     "stats": {
       "nodeGroupSize": 1
     }
@@ -27,7 +14,6 @@
     "type": "place",
     "content": "State oil company",
     "revision_id": "rev2",
-    "nameChunksLower": ["en", "len", "n", "orlen", "rlen"],
     "krsNumber": "0000357114",
     "stats": {
       "nodeGroupSize": 1
@@ -39,17 +25,6 @@
     "content": "Politician from PiS",
     "parties": ["PiS"],
     "revision_id": "rev3",
-    "nameChunksLower": [
-      "a",
-      "ak",
-      "anna",
-      "k",
-      "na",
-      "nna",
-      "nowak",
-      "owak",
-      "wak"
-    ],
     "stats": {
       "nodeGroupSize": 1
     }
@@ -60,23 +35,6 @@
     "content": "Politician from Lewica",
     "parties": ["Nowa Lewica"],
     "revision_id": "rev4",
-    "nameChunksLower": [
-      "ewski",
-      "i",
-      "iewski",
-      "iotr",
-      "iśniewski",
-      "ki",
-      "niewski",
-      "otr",
-      "piotr",
-      "r",
-      "ski",
-      "tr",
-      "wiśniewski",
-      "wski",
-      "śniewski"
-    ],
     "stats": {
       "nodeGroupSize": 1
     }
@@ -87,23 +45,6 @@
     "content": "Politician from Konfederacja",
     "parties": ["Konfederacja"],
     "revision_id": "rev5",
-    "nameChunksLower": [
-      "cik",
-      "f",
-      "ik",
-      "jcik",
-      "k",
-      "krzysztof",
-      "of",
-      "rzysztof",
-      "sztof",
-      "tof",
-      "wójcik",
-      "ysztof",
-      "ztof",
-      "zysztof",
-      "ójcik"
-    ],
     "stats": {
       "nodeGroupSize": 1
     }
@@ -111,25 +52,6 @@
   "h1": {
     "name": "Not approved person",
     "type": "person",
-    "nameChunksLower": [
-      "approved",
-      "d",
-      "ed",
-      "erson",
-      "n",
-      "not",
-      "on",
-      "ot",
-      "oved",
-      "person",
-      "pproved",
-      "proved",
-      "roved",
-      "rson",
-      "son",
-      "t",
-      "ved"
-    ],
     "stats": {
       "nodeGroupSize": 1
     }
@@ -219,28 +141,6 @@
     "type": "region",
     "teryt": "22",
     "revision_id": "teryt22",
-    "nameChunksLower": [
-      "dztwo",
-      "e",
-      "ewództwo",
-      "ie",
-      "jewództwo",
-      "kie",
-      "morskie",
-      "o",
-      "ojewództwo",
-      "omorskie",
-      "orskie",
-      "pomorskie",
-      "rskie",
-      "skie",
-      "two",
-      "wo",
-      "województwo",
-      "wództwo",
-      "ztwo",
-      "ództwo"
-    ],
     "stats": {
       "nodeGroupSize": 1,
       "edges": {
@@ -264,26 +164,6 @@
     "type": "region",
     "teryt": "10",
     "revision_id": "teryt10",
-    "nameChunksLower": [
-      "dzkie",
-      "dztwo",
-      "e",
-      "ewództwo",
-      "ie",
-      "jewództwo",
-      "kie",
-      "o",
-      "ojewództwo",
-      "two",
-      "wo",
-      "województwo",
-      "wództwo",
-      "zkie",
-      "ztwo",
-      "ódzkie",
-      "ództwo",
-      "łódzkie"
-    ],
     "stats": {
       "nodeGroupSize": 1
     }
@@ -292,24 +172,6 @@
     "name": "Województwo Puste",
     "type": "region",
     "revision_id": "rev-region-empty",
-    "nameChunksLower": [
-      "dztwo",
-      "e",
-      "ewództwo",
-      "jewództwo",
-      "o",
-      "ojewództwo",
-      "puste",
-      "ste",
-      "te",
-      "two",
-      "uste",
-      "wo",
-      "województwo",
-      "wództwo",
-      "ztwo",
-      "ództwo"
-    ],
     "stats": {
       "nodeGroupSize": 1
     }
@@ -318,17 +180,6 @@
     "name": "Firma Pusta",
     "type": "place",
     "revision_id": "rev-company-empty",
-    "nameChunksLower": [
-      "a",
-      "firma",
-      "irma",
-      "ma",
-      "pusta",
-      "rma",
-      "sta",
-      "ta",
-      "usta"
-    ],
     "stats": {
       "nodeGroupSize": 1
     }
@@ -337,19 +188,6 @@
     "name": "Osoba Testowa",
     "type": "person",
     "revision_id": "rev-chain-person",
-    "nameChunksLower": [
-      "a",
-      "ba",
-      "estowa",
-      "oba",
-      "osoba",
-      "owa",
-      "soba",
-      "stowa",
-      "testowa",
-      "towa",
-      "wa"
-    ],
     "stats": {
       "nodeGroupSize": 1
     }
@@ -360,19 +198,6 @@
     "regonNumber": "123456785",
     "nipNumber": "5260250274",
     "revision_id": "rev-chain-company",
-    "nameChunksLower": [
-      "a",
-      "estowa",
-      "firma",
-      "irma",
-      "ma",
-      "owa",
-      "rma",
-      "stowa",
-      "testowa",
-      "towa",
-      "wa"
-    ],
     "stats": {
       "nodeGroupSize": 1
     }
@@ -381,21 +206,6 @@
     "name": "Powiat Testowy",
     "type": "region",
     "revision_id": "rev-chain-powiat",
-    "nameChunksLower": [
-      "at",
-      "estowy",
-      "iat",
-      "owiat",
-      "owy",
-      "powiat",
-      "stowy",
-      "t",
-      "testowy",
-      "towy",
-      "wiat",
-      "wy",
-      "y"
-    ],
     "stats": {
       "nodeGroupSize": 1
     }
@@ -404,26 +214,6 @@
     "name": "Województwo Testowe",
     "type": "region",
     "revision_id": "rev-chain-wojewodztwo",
-    "nameChunksLower": [
-      "dztwo",
-      "e",
-      "estowe",
-      "ewództwo",
-      "jewództwo",
-      "o",
-      "ojewództwo",
-      "owe",
-      "stowe",
-      "testowe",
-      "towe",
-      "two",
-      "we",
-      "wo",
-      "województwo",
-      "wództwo",
-      "ztwo",
-      "ództwo"
-    ],
     "stats": {
       "nodeGroupSize": 1
     }
@@ -433,7 +223,6 @@
     "type": "region",
     "teryt": "1661",
     "revision_id": "opole-powiat",
-    "nameChunksLower": ["e", "le", "ole", "opole", "pole"],
     "stats": {
       "isApproved": true,
       "nodeGroupSize": 10
@@ -442,20 +231,6 @@
   "andrzej-grzyb": {
     "name": "Andrzej Grzyb",
     "type": "person",
-    "nameChunksLower": [
-      "andrzej",
-      "b",
-      "drzej",
-      "ej",
-      "grzyb",
-      "j",
-      "ndrzej",
-      "rzej",
-      "rzyb",
-      "yb",
-      "zej",
-      "zyb"
-    ],
     "stats": {
       "isApproved": true,
       "nodeGroupSize": 5
@@ -466,20 +241,6 @@
   "nowe-person-1": {
     "name": "Nowa Osoba Testowa",
     "type": "person",
-    "nameChunksLower": [
-      "a",
-      "ba",
-      "estowa",
-      "nowa",
-      "oba",
-      "osoba",
-      "owa",
-      "soba",
-      "stowa",
-      "testowa",
-      "towa",
-      "wa"
-    ],
     "stats": {
       "isApproved": false,
       "nodeGroupSize": 1,
