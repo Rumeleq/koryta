@@ -1,7 +1,7 @@
-import type { Person, Company, Article, Region } from "~~/shared/model";
+import type { Person, Company, Article, Region, Topic } from "~~/shared/model";
 import { relationsPlural } from "~/composables/edges";
 
-export type EntityNode = Person | Company | Article | Region;
+export type EntityNode = Person | Company | Article | Region | Topic;
 
 /** Where a link preview and a search result both stop reading. Going over does
  * not break anything, it just gets cut - and cut by them lands mid-word. */
@@ -67,6 +67,13 @@ export function entityDescription(
         relations
           ? `Osoby i instytucje wymienione w tym artykule - ${relations} w bazie Koryta.pl.`
           : `Artykuł w bazie Koryta.pl. Sprawdź, kogo wymienia i jak te osoby łączą się ze spółkami publicznymi.`,
+      );
+    case "topic":
+      // The topic's own words when it has any: a story is the one kind of page
+      // here whose description is written rather than derived.
+      return truncateDescription(
+        entity.description ||
+          `${entity.name} - kto jest w tej sprawie i jak te osoby są ze sobą powiązane, na podstawie artykułów w bazie Koryta.pl.`,
       );
   }
 }

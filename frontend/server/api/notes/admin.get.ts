@@ -3,6 +3,7 @@ import { getFirestore } from "firebase-admin/firestore";
 import { defineEventHandler, getValidatedQuery } from "h3";
 import { getUser } from "~~/server/utils/auth";
 import { getNoteRows } from "~~/server/utils/notes";
+import { nodeTypes } from "~~/shared/model";
 import type { NoteRow } from "~~/shared/model";
 
 const queryValidator = z.object({
@@ -19,7 +20,7 @@ const queryValidator = z.object({
    * they did not ("false"). The phone queue asks for the latter so an entry it
    * could not classify does not come round again. */
   deferred: z.enum(["true", "false"]).optional(),
-  nodeType: z.enum(["person", "place", "article", "region"]).optional(),
+  nodeType: z.enum(nodeTypes).optional(),
   /** Free text over the note, its url and the name of the node it is on. */
   q: z.string().min(1).optional(),
   /** One entry, addressed by its row key - `<noteId>:<sourceIndex>`. A

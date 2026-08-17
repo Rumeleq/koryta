@@ -5,6 +5,7 @@ import {
   type Company,
   type Article,
   type Region,
+  type Topic,
   pageIsPublic,
 } from "~~/shared/model";
 import { getFirestore, Filter } from "firebase-admin/firestore";
@@ -35,6 +36,7 @@ interface nodeData {
   place: Company;
   article: Article;
   region: Region;
+  topic: Topic;
 }
 
 export type NodeDataUnion = nodeData[keyof nodeData];

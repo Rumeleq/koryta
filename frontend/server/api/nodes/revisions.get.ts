@@ -2,12 +2,12 @@ import { z } from "zod";
 import { getFirestore } from "firebase-admin/firestore";
 import { fetchOptionsValidator, paginate } from "~~/server/utils/fetch";
 import { defineEventHandler } from "h3";
-import { pageIsPublic } from "~~/shared/model";
+import { nodeTypes, pageIsPublic } from "~~/shared/model";
 import { normalizeUpdateTime } from "~~/shared/revisions";
 
 const queryValidator = z.object({
   ...fetchOptionsValidator.shape,
-  type: z.enum(["person", "place", "article", "region"]).optional(),
+  type: z.enum(nodeTypes).optional(),
   sortBy: z.string().optional(),
   sortDesc: z.enum(["true", "false"]).optional(),
 });

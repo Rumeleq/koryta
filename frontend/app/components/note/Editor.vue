@@ -105,6 +105,7 @@ const noteSubject: Record<NodeType, string> = {
   place: "tej spółki",
   article: "tego artykułu",
   region: "tego regionu",
+  topic: "tego tematu",
 };
 
 const subject = computed(() => noteSubject[props.nodeType]);

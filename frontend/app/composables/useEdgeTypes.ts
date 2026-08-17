@@ -7,6 +7,7 @@ import {
   mdiDomainPlus,
   mdiMapMarkerRadiusOutline,
   mdiNewspaperPlus,
+  mdiTagPlusOutline,
   mdiVoteOutline,
 } from "@mdi/js";
 import type { NodeType, EdgeType } from "~~/shared/model";
@@ -19,7 +20,8 @@ export type edgeTypeExt =
   | "mentioned_person"
   | "mentioned_company"
   | "owns_region"
-  | "election";
+  | "election"
+  | "tagged";
 
 export type ButtonConfig = {
   label: (name: string) => string;
@@ -167,6 +169,26 @@ export const edgeTypeOptions: Record<edgeTypeExt, edgeTypeOption> = {
       incoming: {
         label: (_name) => "Dodaj osobę, która pracuje w tej firmie", // New button
         icon: mdiAccountPlus,
+      },
+    },
+  },
+  tagged: {
+    value: "tagged",
+    verbs: { outgoing: "dotyczy tematu", incoming: "obejmuje artykuł" },
+    label: "Temat",
+    sourceType: "article",
+    targetType: "topic",
+    sourceLabel: "Artykuł",
+    targetLabel: "Temat",
+    realType: "tagged",
+    buttons: {
+      outgoing: {
+        label: (_name) => "Przypisz do tematu",
+        icon: mdiTagPlusOutline,
+      },
+      incoming: {
+        label: (_name) => "Dodaj artykuł do tematu",
+        icon: mdiNewspaperPlus,
       },
     },
   },

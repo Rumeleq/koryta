@@ -136,14 +136,24 @@ export function pageIsPublic(node: { published?: unknown; deleted?: unknown }) {
   return node.published === true;
 }
 
-export type NodeType = "person" | "place" | "article" | "region";
-
-export const nodeTypes: readonly NodeType[] = [
+/** Every kind of node, in one place.
+ *
+ * The tuple is the source of truth and `NodeType` is derived from it, so that
+ * the handlers validating a `type` query parameter can say `z.enum(nodeTypes)`
+ * rather than writing the list out again. Four of them used to, and none of the
+ * four was found by the compiler when `topic` was added - a zod enum is a
+ * runtime value, so the first sign would have been /api/nodes/[id] throwing on
+ * a topic it had been asked for.
+ */
+export const nodeTypes = [
   "person",
   "place",
   "region",
   "article",
+  "topic",
 ] as const;
+
+export type NodeType = (typeof nodeTypes)[number];
 
 export function nodeIcon(type: NodeType) {
   switch (type) {
@@ -153,19 +163,28 @@ export function nodeIcon(type: NodeType) {
       return "mdi-office-building-outline";
     case "article":
       return "mdi-file-document-outline";
+    case "topic":
+      return "mdi-tag-outline";
     default:
       return "mdi-comment-arrow-right-outline";
   }
 }
 
 export type EdgeType =
-  "employed" | "connection" | "mentions" | "owns" | "comment" | "election";
+  | "employed"
+  | "connection"
+  | "mentions"
+  | "owns"
+  | "comment"
+  | "election"
+  | "tagged";
 
 export const nodeTypeIcon: Record<NodeType, string> = {
   person: "mdi-account-outline",
   place: "mdi-office-building-outline",
   article: "mdi-file-document-outline",
   region: "mdi-map-marker-radius-outline",
+  topic: "mdi-tag-outline",
 };
 
 export const destinationAddText: Record<NodeType, string> = {
@@ -173,6 +192,7 @@ export const destinationAddText: Record<NodeType, string> = {
   place: "Dodaj firmę",
   article: "Dodaj artykuł",
   region: "Dodaj region",
+  topic: "Dodaj temat",
 };
 
 export interface Person extends Omit<Node, "type"> {
@@ -282,12 +302,31 @@ export interface Region extends Omit<Node, "type"> {
   teryt: string;
 }
 
+/** A story several articles belong to — "powodzianie KRR", say.
+ *
+ * Nothing to do with `ExtractionFact.tag` or `ArticleCapture.extraction.tag`,
+ * which name the model that produced a fact. This is editorial: which affair an
+ * article is about.
+ *
+ * A topic is a node, and an article is joined to it by a `tagged` edge, so that
+ * tagging inherits the review flow every other relation has - one document per
+ * tag, approved on its own, live but `published: false` until then. Holding the
+ * same thing in a `tags` array on the article would have put every tag inside
+ * the article's whole-document revision, where approving one reverts whatever
+ * else was proposed in a competing snapshot.
+ */
+export interface Topic extends Omit<Node, "type"> {
+  type: "topic";
+  description?: string;
+}
+
 export interface NodeTypeMap {
   person: Person;
   place: Company;
   article: Article;
   record: never;
   region: Region;
+  topic: Topic;
 }
 
 /** Where a revision stands with whoever reviews it.

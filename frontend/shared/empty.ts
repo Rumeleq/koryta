@@ -1,10 +1,13 @@
-import type { Edge, Person, Company, Article, Region } from "./model";
+import type { Edge, Person, Company, Article, Region, Topic } from "./model";
 
 // We take an intersection of these with a special handling of type field, to avoid setting it to never.
 type EditableNode = Omit<Person, "type"> &
   Omit<Company, "type"> &
   Omit<Article, "type"> &
-  Omit<Region, "type"> & { type: "person" | "place" | "article" | "region" };
+  Omit<Region, "type"> &
+  Omit<Topic, "type"> & {
+    type: "person" | "place" | "article" | "region" | "topic";
+  };
 
 export function anyNode(node: Partial<EditableNode>): EditableNode {
   if (!node.type) {
@@ -26,6 +29,7 @@ export function anyNode(node: Partial<EditableNode>): EditableNode {
     rejestrIo: node.rejestrIo || "",
     ktomaco: node.ktomaco || "",
     teryt: node.teryt || "",
+    description: node.description || "",
   };
 }
 

@@ -29,6 +29,20 @@
       ]
     },
     {
+      "collectionGroup": "edges",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "target",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "type",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "extractions",
       "queryScope": "COLLECTION",
       "fields": [

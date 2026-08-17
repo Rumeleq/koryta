@@ -1,6 +1,6 @@
 import { getFirestore } from "firebase-admin/firestore";
 import { getApp } from "firebase-admin/app";
-import { pageIsPublic } from "~~/shared/model";
+import { nodeTypes, pageIsPublic } from "~~/shared/model";
 import { authCachedEventHandler } from "~~/server/utils/handlers";
 import { z } from "zod";
 import type { Node } from "~~/shared/model";
@@ -11,7 +11,7 @@ const queryValidator = z.object({
 
 const responseValidator = z.object({
   name: z.string(),
-  type: z.enum(["person", "place", "article", "region"]),
+  type: z.enum(nodeTypes),
   // TODO revision elements are either string or complex object
   revision_id: z.union([z.string(), z.object({ path: z.string() })]).optional(),
   published: z.boolean().optional(),

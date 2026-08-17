@@ -3,7 +3,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /nodes/{nodeId} {
-      allow read: if resource.data.type == "article" || resource.data.type == "person" || resource.data.type == "place";
+      allow read: if resource.data.type == "article" || resource.data.type == "person" || resource.data.type == "place" || resource.data.type == "topic";
       allow create: if request.auth != null && resource.data.revision_id == null;
     }
 
