@@ -136,24 +136,38 @@ const configs = reactive(
   }),
 );
 
-watch(
-  () => props.nodes,
-  () => {
-    if (!configs.view) return;
-    // Use simple layout if we show many nodes (typical for global view)
-    if (Object.keys(props.nodes).length > 200 && !props.focusNodeId) {
-      configs.view.layoutHandler = new SimpleLayout();
-    } else {
-      configs.view.layoutHandler = simulationStore.newForceLayout();
-    }
-  },
-);
-
-watch(
-  () => props.focusNodeId,
-  () => {
-    if (!configs.view) return;
+function applyLayoutHandler() {
+  if (!configs.view) return;
+  // Use simple layout if we show many nodes (typical for global view)
+  //
+  // `?? {}` despite `nodes` being declared required: this now runs immediately,
+  // which is before a lazily rendered parent has anything to pass, and the spec
+  // for this component mounts it with no props at all. eslint reads the
+  // declared type and calls the guard unnecessary; the runtime disagrees.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  if (Object.keys(props.nodes ?? {}).length > 200 && !props.focusNodeId) {
+    configs.view.layoutHandler = new SimpleLayout();
+  } else {
     configs.view.layoutHandler = simulationStore.newForceLayout();
-  },
-);
+  }
+}
+
+/** `immediate`, and this is the whole bug it fixes.
+ *
+ * Both of these used to wait for a change. A page that already had its graph in
+ * hand when it first rendered - a reload, where the server sends the data with
+ * the markup - therefore changed neither: the nodes arrived with the first
+ * render and the focus node is pinned by a `key`, so it never moves either.
+ * Nothing installed a layout handler, v-network-graph fell back to its default,
+ * and every node without an explicit position was drawn at the same spot, one
+ * circle on top of another.
+ *
+ * It looked like the force simulation pulling nodes together. It was the
+ * simulation never being asked to run. The giveaway was that it only happened
+ * on a refresh, and never on the topic page - which fetches its layout lazily,
+ * so its data always arrives after mount and always trips the watcher.
+ */
+watch([() => props.nodes, () => props.focusNodeId], applyLayoutHandler, {
+  immediate: true,
+});
 </script>

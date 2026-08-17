@@ -7,17 +7,49 @@ import { logIn, USERS } from "./helpers/auth";
 const label = (page: Page, name: string) =>
   page.locator("svg text").filter({ hasText: name });
 
+/** A node is 32px across (`Canvas.vue` sizes it), so two centres closer than
+ * that are one circle drawn on top of another. */
+const NODE_WIDTH = 32;
+
+/** How far apart the two people are drawn, centre to centre.
+ *
+ * Measured on the labels rather than the circles: `svg circle` also matches the
+ * simulation's progress spinner, and each label is drawn with its own node, so
+ * the gap between the labels is the gap between the nodes.
+ */
+async function nodeGap(page: Page) {
+  await page.waitForTimeout(4_000); // the layout animates into place
+
+  const gap = await page.evaluate(() => {
+    const centre = (name: string) => {
+      const el = [...document.querySelectorAll("svg text")].find((t) =>
+        (t.textContent || "").includes(name),
+      );
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    };
+    const a = centre("Anna Nowak");
+    const b = centre("Krzysztof Wójcik");
+    if (!a || !b) return null;
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  });
+
+  if (gap === null) throw new Error("both people should be drawn");
+  return gap;
+}
+
 /** Types into an entity picker and picks the option that comes back.
  *
  * Retried as a whole because the suite runs against the dev server: until the
  * field has hydrated a `fill` writes the DOM value without it reaching the
  * component, so no search is issued and no option ever appears.
  *
- * `term` is one word on purpose, and is not the whole name. /api/search matches
- * `array-contains` against the string as typed, and the chunks the seed writes
- * are single words and their suffixes - "anna", "nowak", "owak" - with no entry
- * holding both words. Typing a full name therefore finds nobody. Restore that
- * and the test goes red for a reason that has nothing to do with the feature.
+ * `term` is a single word and `name` is the whole label, because /api/search
+ * matches `array-contains` against the string exactly as typed. The index holds
+ * every prefix of the name and of each word in it, so either would work now -
+ * one word is simply the shorter thing to type and does not depend on the
+ * spelling of the rest.
  */
 async function pick(page: Page, field: Locator, term: string, name: string) {
   const input = field.locator("input");
@@ -122,6 +154,13 @@ test.describe("Topic graph", () => {
     });
     await expect(page.locator("body")).toContainText("Krzysztof Wójcik");
 
+    // Still on the reloaded page, because the reload is the point: the graph
+    // arrives with the markup, so nothing about it ever *changes*, and the
+    // watcher that installs the force layout used to wait for a change. Without
+    // one the nodes were all drawn at the same spot - which is what "the two
+    // people overlap" turned out to be.
+    await expect(nodeGap(page)).resolves.toBeGreaterThan(NODE_WIDTH);
+
     // 4. The topic page, reached the way a reader would - from the chip.
     await page
       .getByTestId("article-topic-chip")
@@ -150,6 +189,11 @@ test.describe("Topic graph", () => {
     // The article itself is not a node in the story - what a reader wants from
     // an affair is who is in it.
     await expect(label(page, "Artykuł bez krawędzi")).toHaveCount(0);
+
+    // The same check here, where the graph is fetched lazily rather than
+    // delivered with the page. It has always been fine, and that difference is
+    // what identified the bug on the article page.
+    await expect(nodeGap(page)).resolves.toBeGreaterThan(NODE_WIDTH);
   });
 
   test("a logged out reader is not offered the tag editor", async ({
