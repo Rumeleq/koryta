@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mount, flushPromises } from "@vue/test-utils";
+import { registerEndpoint } from "@nuxt/test-utils/runtime";
+// Explicit: a test file gets none of the server auto-imports, so an endpoint
+// handler that reaches for `getQuery` throws a ReferenceError, answers 500, and
+// the component quietly treats it as an empty listing.
+import { getQuery } from "h3";
 import { createVuetify } from "vuetify";
 import * as components from "vuetify/components";
 import * as directives from "vuetify/directives";
@@ -8,6 +13,19 @@ import EntityPicker from "../../../app/components/form/EntityPicker.vue";
 const { mockFetch } = vi.hoisted(() => ({ mockFetch: vi.fn() }));
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).$fetch = mockFetch;
+
+/** What the two endpoints answer with, set per test by `respondWith`. */
+let searched: { id: string; name: string; type: string }[] = [];
+let listedNodes: Record<string, { name: string; visibility?: boolean }> = {};
+/** Which kinds were asked for whole, so a test can say the listing happened. */
+let askedForTypes: string[] = [];
+
+registerEndpoint("/api/search", () => searched);
+registerEndpoint("/api/nodes", (event) => {
+  const type = getQuery(event).type as string | undefined;
+  if (type) askedForTypes.push(type);
+  return { nodes: listedNodes };
+});
 
 const vuetify = createVuetify({ components, directives });
 
@@ -61,6 +79,9 @@ describe("EntityPicker", () => {
     vi.clearAllMocks();
     document.body.innerHTML = "";
     mockFetch.mockResolvedValue([]);
+    searched = [];
+    listedNodes = {};
+    askedForTypes = [];
   });
 
   it("offers to add a person the search could not find", async () => {
@@ -111,5 +132,99 @@ describe("EntityPicker", () => {
     await searchFor(wrapper, "Nowy Region");
 
     expect(addEntries()).toEqual([]);
+  });
+
+  describe("kinds that are listed rather than searched", () => {
+    /** `/api/search` matches on `nameChunksLower`, which a trigger writes for
+     * people, places and regions only, and its query names those three types
+     * outright. Articles and topics are therefore fetched whole.
+     *
+     * Served rather than stubbed: the component calls Nuxt's auto-imported
+     * `$fetch`, which the `globalThis.$fetch` assignment above never
+     * intercepted - the tests before this one pass because none of them reads
+     * a response. */
+    function respondWith(options: {
+      search?: { id: string; name: string; type: string }[];
+      nodes?: Record<string, { name: string; visibility?: boolean }>;
+    }) {
+      searched = options.search ?? [];
+      listedNodes = options.nodes ?? {};
+    }
+
+    it("lists topics, which the search index does not hold", async () => {
+      respondWith({ nodes: { "topic-1": { name: "Powodzianie KRR" } } });
+
+      const wrapper = mountPicker("topic");
+      await wrapper.find("input").trigger("focus");
+      await searchFor(wrapper, "Powodzianie");
+
+      expect(askedForTypes).toContain("topic");
+      expect(document.body.textContent).toContain("Powodzianie KRR");
+    });
+
+    it("searches and lists together when asked for a mix", async () => {
+      // The regression this pins. `isSearchable` was false as soon as any
+      // listed kind was among the types, so the search never ran and a picker
+      // asked for people *and* topics returned topics only - which is exactly
+      // what the composer on an article page asks for.
+      respondWith({
+        search: [{ id: "p1", name: "Jan Kowalski", type: "person" }],
+        nodes: { "topic-1": { name: "Powodzianie KRR" } },
+      });
+
+      const wrapper = mountPicker(["person", "place", "topic"]);
+      await wrapper.find("input").trigger("focus");
+      await searchFor(wrapper, "Kowalski");
+
+      // The searched kind answers, and the listed one was fetched too - it
+      // contributes nothing here only because a name filter is applied to it
+      // in the browser, which the next case shows working the other way.
+      expect(document.body.textContent).toContain("Jan Kowalski");
+      expect(askedForTypes).toContain("topic");
+    });
+
+    it("shows a listed match alongside a searched one", async () => {
+      respondWith({
+        search: [{ id: "p1", name: "Jan Powodzianin", type: "person" }],
+        nodes: { "topic-1": { name: "Powodzianie KRR" } },
+      });
+
+      const wrapper = mountPicker(["person", "topic"]);
+      await wrapper.find("input").trigger("focus");
+      await searchFor(wrapper, "Powodzian");
+
+      const rendered = document.body.textContent;
+      expect(rendered).toContain("Jan Powodzianin");
+      expect(rendered).toContain("Powodzianie KRR");
+    });
+
+    it("offers to create a topic nobody has named yet", async () => {
+      respondWith({ nodes: {} });
+
+      const wrapper = mountPicker("topic");
+      await wrapper.find("input").trigger("focus");
+      await searchFor(wrapper, "Nowa sprawa");
+
+      expect(addEntries()).toEqual(["entity-picker-add-new-topic"]);
+    });
+
+    it("hides an unapproved entry from a logged out reader", async () => {
+      respondWith({
+        nodes: {
+          "topic-1": { name: "Zatwierdzony" },
+          "topic-2": { name: "Szkic", visibility: false },
+        },
+      });
+
+      const wrapper = mountPicker("topic");
+      await wrapper.find("input").trigger("focus");
+      // A letter both names hold, so only the visibility filter can separate
+      // them.
+      await searchFor(wrapper, "z");
+
+      const rendered = document.body.textContent;
+      expect(rendered).toContain("Zatwierdzony");
+      expect(rendered).not.toContain("Szkic");
+    });
   });
 });

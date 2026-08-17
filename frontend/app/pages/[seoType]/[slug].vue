@@ -1,5 +1,9 @@
 <template>
-  <EntityDetailView :key="id" :node="id" :type="type" />
+  <!-- An article has a page of its own. `EntityDetailView` could not serve it:
+       every section it renders for an article reads the local graph, which
+       drops any edge with an article on either end. -->
+  <ArticleDetailView v-if="type === 'article'" :key="id" :node-id="id" />
+  <EntityDetailView v-else :key="id" :node="id" :type="type" />
 </template>
 
 <script setup lang="ts">

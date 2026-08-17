@@ -126,6 +126,17 @@
                 class="mb-2"
               />
             </template>
+            <template v-if="type === 'topic'">
+              <v-textarea
+                v-model="editData.description"
+                label="Opis tematu (opcjonalnie)"
+                hint="Jedno, dwa zdania o co chodzi w tej sprawie - pokazujemy je na stronie tematu"
+                persistent-hint
+                auto-grow
+                rows="2"
+                class="mb-2"
+              />
+            </template>
             <template v-if="type === 'article'">
               <v-text-field
                 v-model="editData.sourceURL"
@@ -205,6 +216,7 @@ const createTitles: Record<string, string> = {
   person: "Zaproponuj dodanie osoby",
   place: "Zaproponuj dodanie instytucji",
   article: "Zaproponuj dodanie źródła",
+  topic: "Zaproponuj nowy temat",
 };
 
 const title = computed(() =>
@@ -259,6 +271,7 @@ const editData = reactive({
   ktomaco: "",
   sourceURL: "",
   shortName: "",
+  description: "",
 });
 
 /** An article is identified by its address, so a typo there creates a second
@@ -296,6 +309,7 @@ watch(dialog, (val) => {
   editData.ktomaco = entity.ktomaco || "";
   editData.sourceURL = entity.sourceURL || "";
   editData.shortName = entity.shortName || "";
+  editData.description = entity.description || "";
 });
 
 async function submit() {
@@ -343,6 +357,10 @@ async function submit() {
     if (type.value === "article") {
       body.sourceURL = editData.sourceURL;
       if (editData.shortName) body.shortName = editData.shortName;
+    }
+
+    if (type.value === "topic") {
+      body.description = editData.description;
     }
 
     const response = await authRequest<{ id: string; node_id: string }>(
