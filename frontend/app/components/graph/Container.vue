@@ -13,8 +13,10 @@ import { ref } from "vue";
 import { useGraph } from "~/composables/graph";
 
 const props = defineProps<{
+  /** Empty when `source` supplies the whole layout, as it does for a topic. */
   focusNodeId: string;
   maxDepth?: number;
+  source?: string;
 }>();
 
 const expandedNodes = ref(

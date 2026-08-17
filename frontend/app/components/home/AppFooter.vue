@@ -65,6 +65,7 @@ const sections = [
     title: "O projekcie",
     items: [
       { title: "O nas", link: "/o-nas" },
+      { title: "Tematy", link: "/tematy" },
       { title: "Źródła", link: "/zrodla" },
     ],
   },
