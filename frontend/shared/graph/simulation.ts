@@ -30,7 +30,23 @@ export function simulation(
       .forceSimulation(nodes)
       .force("edge", forceLink.distance(80).strength(0.3))
       .force("charge", d3.forceManyBody().strength(-400))
-      .force("center", d3.forceCenter().strength(0.3))
+      // No `forceCenter`, and this is not a tidy-up: it drew two people on top
+      // of one another.
+      //
+      // It works by translating every node so that their centroid sits at the
+      // origin. An entity page pins its focus node there (`layoutCentered` in
+      // Canvas.vue sets fx/fy), and a pinned node is put back every tick - so the
+      // whole correction lands on the nodes that are free to move. With exactly
+      // two nodes the centroid can only reach the origin when the free one
+      // coincides with the pinned one, so that is where it was driven, every
+      // time. Three nodes hid it: two free nodes settle either side of the pin,
+      // their centroid is already the origin, and there is nothing to correct.
+      //
+      // Measured, with one node pinned: as shipped a pair settled 3px apart and
+      // a triple 66px; without this force, 140px and 172px. Nothing else needed
+      // changing - `forceX`/`forceY` below already pull toward the origin, and
+      // they do it per node, so they hold the graph in frame without fighting a
+      // pin. Guarded by tests/shared/graph/simulationLayout.test.ts.
       .force("x", d3.forceX().strength(0.02))
       .force("y", d3.forceY().strength(0.02));
 

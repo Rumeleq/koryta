@@ -68,7 +68,13 @@ describe("shared/graph/simulation.ts", () => {
         "charge",
         expect.anything(),
       );
-      expect(simulationMock.force).toHaveBeenCalledWith(
+      // Deliberately absent: `forceCenter` moves every node so their centroid
+      // lands on the origin, and an entity page pins its focus node there. The
+      // pinned node is put back each tick, so the correction fell entirely on
+      // the free nodes - and with two of them the only way for the centroid to
+      // reach the origin is for the free one to sit on top of the pin, which is
+      // where it ended up. See simulationLayout.test.ts, which measures it.
+      expect(simulationMock.force).not.toHaveBeenCalledWith(
         "center",
         expect.anything(),
       );
