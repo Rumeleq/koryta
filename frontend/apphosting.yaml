@@ -21,6 +21,16 @@ runConfig:
 # extension's default origin; `autopush` gets the same wiring so the flow can be
 # exercised there. Note the extractor's own KORYTA_API_URL is https://koryta.pl,
 # so facts from either backend's captures are submitted to production.
+#
+# Both read this file, but only `autopush` is named in firebase.json, and that
+# asymmetry is deliberate rather than an oversight. That block is what the
+# firebase CLI deploys, `alwaysDeployFromSource` and all — listing `prod` there
+# would make a bare `firebase deploy` push whatever is in the working copy
+# straight to koryta.pl, with no branch and no review in between. Leaving it out
+# means the CLI can only reach staging and prod is released by the build the
+# GitHub connection triggers. firebase.json takes an array if that ever needs to
+# change (`Array.isArray` in firebase-tools' deploy/apphosting/prepare.ts); it is
+# strict JSON, so this note cannot live there.
 env:
   # Cloud Tasks rather than a direct call: the extraction is tens of seconds and
   # Cloud Run throttles the cpu once a response is written. "direct" is for a
