@@ -9,6 +9,18 @@
     <header>
       <img src="icons/icon32.png" alt="" width="20" height="20" />
       <h1 id="page">Koryta</h1>
+      <!-- Chrome draws no chrome of its own around a side panel, so a panel
+           can only be dismissed from the toolbar button that opened it. This is
+           the cross the reader looks for instead. -->
+      <button
+        id="close"
+        type="button"
+        class="icon-button"
+        aria-label="Zamknij panel"
+        title="Zamknij panel"
+      >
+        ×
+      </button>
     </header>
 
     <p id="status" class="status" role="status" aria-live="polite"></p>

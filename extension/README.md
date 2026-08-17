@@ -45,7 +45,10 @@ quote-insensitive and falls back to the opening words, because a `justification`
 is the model's own wording and need not appear on the page verbatim.
 
 Turn it off in **Ustawienia** if you would rather keep the column: the popup
-still lists the facts, one line each.
+still lists the facts, one line each. The cross in the panel's own top right
+closes it — Chrome puts no window furniture around a side panel, and the
+`chrome.sidePanel` API can open one but not close one, so the panel calls
+`window.close()` on itself.
 
 The panel follows the front tab, not the tab it was opened over. It needs
 Chrome 114 (`chrome.sidePanel`), and it can only scroll a page the extension has

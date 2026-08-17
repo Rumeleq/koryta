@@ -192,6 +192,13 @@ chrome.tabs.onUpdated.addListener((updatedId, change) => {
   if (updatedId === tabId && change.status === "complete") void load();
 });
 
+/** `chrome.sidePanel` opens a panel and has no call that closes one, so the
+ * panel closes itself: `window.close()` on its own document is what dismisses
+ * it. The other way round would be `setOptions({ enabled: false })`, which also
+ * takes away the toolbar button's ability to open it again on this tab — a
+ * cross that quietly disables the panel is not a cross. */
+el("close").addEventListener("click", () => window.close());
+
 el("capture").addEventListener("click", async () => {
   renderJob({ state: "capturing" });
   renderJob(

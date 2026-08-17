@@ -49,7 +49,16 @@ header {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 8px;
+  /* Pulled out to the body's edges and given the padding back, so that the
+     opaque strip it becomes while stuck covers the full width of the column.
+     A dozen fact cards is more than one screen, and a close button that has to
+     be scrolled back up to is one the reader gives up looking for. */
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: -12px -12px 0;
+  padding: 12px 12px 8px;
+  background: var(--bg);
 }
 
 h1 {
@@ -62,6 +71,31 @@ h1 {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* `margin-left: auto` rather than a spacer: the headline beside it is clamped
+   to two lines and shrinks, so the cross stays in the corner however long the
+   article is called. */
+.icon-button {
+  flex: none;
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.icon-button:hover,
+.icon-button:focus-visible {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  color: var(--fg);
 }
 
 .status {
