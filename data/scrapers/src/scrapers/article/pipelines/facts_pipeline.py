@@ -10,7 +10,6 @@ from typing import Any
 import pandas as pd
 from tqdm import tqdm
 
-from analysis.article_person_mentions import ArticlePersonMentions
 from entities.article import ArticleFacts
 from entities.facts import (
     AffairInvolvementFact,
@@ -27,12 +26,13 @@ from scrapers.article.pipelines.koryciarski_scores_pipeline import (
 from scrapers.article.pipelines.pipeline_utils import (
     article_facts_max_tokens,
     article_facts_min_koryciarski_score,
+    article_facts_require_mentions,
     article_facts_text_limit,
     llm_model,
 )
 from scrapers.stores import LLM, VERSIONED_DIR, Context, LLMRequest
 
-PROMPT_VERSION = 25
+PROMPT_VERSION = 26
 TEXT_LIMIT = 100000
 MAX_TOKENS = 20000
 TEMPERATURE = 0.1
@@ -49,6 +49,9 @@ _SCORES_FILE = (
 )
 _FINAL_OUTPUT_FILE = Path(VERSIONED_DIR) / "article_facts" / "article_facts.jsonl"
 _TEMP_OUTPUT_FILE = Path(VERSIONED_DIR) / "article_facts" / "article_facts.jsonl.tmp"
+_MENTIONS_FILE = (
+    Path(VERSIONED_DIR) / "article_person_mentions" / "article_person_mentions.jsonl"
+)
 _THINK_BLOCK_RE = re.compile(r"<think>(.*?)</think>", flags=re.DOTALL)
 _RUN_RESPONSE_THINK_CHARS = 0
 _RUN_RESPONSE_THINK_BLOCKS = 0
@@ -272,7 +275,6 @@ class ArticleExtractedFacts(IncrementalJsonlPipeline[ArticleFacts]):
     interrupt_note = "will save partial facts"
 
     koryciarski_scores: ArticleKoryciarskiScores
-    mentions: ArticlePersonMentions
     llm: LLM
 
     @property
@@ -292,10 +294,19 @@ class ArticleExtractedFacts(IncrementalJsonlPipeline[ArticleFacts]):
         )
         self.prepare_temp_output()
         model = llm_model()
-        mentions_path = self.mentions.final_output_path
-        if not mentions_path.exists():
-            raise FileNotFoundError(mentions_path)
-        mentioned = _mentioned_people_by_url(mentions_path)
+        # Mentions are an optional enrichment: they only add the people hint
+        # (and, downstream, koryta_ids). Fact extraction itself works from the
+        # parsed articles + koryciarski scores alone, so a missing mentions
+        # file must not gate the run. The --article-facts-require-mentions flag
+        # restores the old mentched-corpus-only behavior for targeted runs.
+        require_mentions = article_facts_require_mentions()
+        if require_mentions and not _MENTIONS_FILE.exists():
+            raise FileNotFoundError(_MENTIONS_FILE)
+        mentioned = (
+            _mentioned_people_by_url(_MENTIONS_FILE)
+            if _MENTIONS_FILE.exists()
+            else {}
+        )
         records = _extractable_records(
             _PARSED_FILE,
             _SCORES_FILE,
@@ -394,8 +405,6 @@ def _extractable_records(
             url = row.get("url")
             if not isinstance(url, str) or url not in article_scores:
                 continue
-            if url not in mentioned:
-                continue
             if row.get("parse_status") != "ok":
                 continue
             content_hash = row.get("article_content_hash")
@@ -407,13 +416,14 @@ def _extractable_records(
             ):
                 # Keep only the fields fact extraction needs — dropping
                 # outbound_urls (63% of the row) and other columns keeps memory
-                # bounded on the 20GB parsed file.
+                # bounded on the 20GB parsed file. people_mentioned is an
+                # optional hint, empty when the url has no confirmed mentions.
                 latest[url] = {
                     "url": url,
                     "article_content_hash": content_hash,
                     "article_content": content,
                     "koryciarski_llm_score": article_scores[url],
-                    "people_mentioned": [name for name, _ in mentioned[url]],
+                    "people_mentioned": [name for name, _ in mentioned.get(url, [])],
                 }
     return list(latest.values())
 

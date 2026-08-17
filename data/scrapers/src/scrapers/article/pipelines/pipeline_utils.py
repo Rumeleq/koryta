@@ -204,6 +204,14 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         help="Max article text characters fed to the facts extraction prompt.",
     )
     parser.add_argument(
+        "--article-facts-require-mentions",
+        action="store_true",
+        help="Only extract facts for articles that have confirmed person "
+        "mentions, and error if the mentions file is missing. Off by default: "
+        "ArticleExtractedFacts runs over every scored parsed article and treats "
+        "mentions as an optional people hint.",
+    )
+    parser.add_argument(
         "--tag",
         type=str,
         default=None,
@@ -283,3 +291,7 @@ def article_facts_max_tokens() -> int | None:
 
 def article_facts_text_limit() -> int | None:
     return _args().article_facts_text_limit
+
+
+def article_facts_require_mentions() -> bool:
+    return bool(_args().article_facts_require_mentions)
