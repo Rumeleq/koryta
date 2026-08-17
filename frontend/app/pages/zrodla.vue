@@ -112,7 +112,19 @@
               size="x-small"
               class="mr-2"
             />
-            <a :href="item.sourceURL" target="_blank">{{ item.name }}</a>
+            <!-- Our page for the article rather than the publisher's. The
+                 outbound link lives there, beside everything else we know
+                 about the article - and that page is the only place a reader
+                 can put it in a temat or cite a relation to it, which nothing
+                 linked to before. -->
+            <NuxtLink
+              v-if="articleUrl(item)"
+              :to="articleUrl(item)!"
+              data-testid="zrodla-article-link"
+            >
+              {{ item.name }}
+            </NuxtLink>
+            <span v-else>{{ item.name }}</span>
           </div>
         </template>
         <template #[`item.publishedDate`]="{ item }">
@@ -142,6 +154,7 @@ import { useCurrentUser } from "vuefire";
 import type { Timestamp } from "firebase-admin/firestore";
 import { useDomainIcon } from "~/composables/useDomainIcon";
 import { useCanCapture, useCaptures } from "~/composables/captures";
+import { generateEntityUrl } from "~/composables/slugs";
 
 definePageMeta({
   title: "Źródła",
@@ -159,6 +172,15 @@ const { entities: articles, refresh: refreshArticles } = useEntities(
 );
 const user = useCurrentUser();
 const { getDomainIcon } = useDomainIcon();
+
+/** Where the article's own page lives, when the row has an id to build it from.
+ * A row without one is rendered as plain text rather than linked somewhere
+ * wrong. */
+function articleUrl(article: { id?: string; name?: string }) {
+  return article.id
+    ? generateEntityUrl("article", article.id, article.name)
+    : undefined;
+}
 
 type FirestoreTimestamp = {
   _seconds: number;

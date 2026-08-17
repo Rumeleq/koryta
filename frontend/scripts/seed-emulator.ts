@@ -99,6 +99,14 @@ async function seedDatabase() {
     if (typeof nodeData.name === "string") {
       nodeData.nameChunksLower = generateChunksLower(nodeData.name);
     }
+    // JSON has no timestamp, and the collection stores one - the same
+    // conversion the extractions below need. Without a date at all an article
+    // is invisible to /zrodla, which sorts on this field: Firestore's orderBy
+    // drops any document that does not carry it, so the table came up empty in
+    // the emulator however many articles had been seeded.
+    if (typeof nodeData.publishedDate === "string") {
+      nodeData.publishedDate = new Date(nodeData.publishedDate);
+    }
     defaultPublished(nodeData);
     const ref = db.collection("nodes").doc(id);
     batch.set(ref, nodeData);
