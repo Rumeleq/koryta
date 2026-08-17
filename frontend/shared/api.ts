@@ -1,4 +1,10 @@
-import type { Article, Company, ElectionPosition, Person } from "./model";
+import type {
+  Article,
+  Company,
+  ElectionPosition,
+  Person,
+  Topic,
+} from "./model";
 import {
   isValidNip,
   isValidRegon,
@@ -219,12 +225,32 @@ export const articleEditSchema = z.object({
 
 export type ArticleEditRequest = z.infer<typeof articleEditSchema>;
 
+/** Fields a user may propose for a topic node, on the same allowlist terms as
+ * `personEditSchema`.
+ *
+ * A topic carries no facts of its own - it is a name for a story, and what
+ * belongs to it is said by the `tagged` edges pointing at it rather than by
+ * anything stored here.
+ */
+export const topicEditSchema = z.object({
+  name: z.string().min(1, "Nazwa tematu jest wymagana"),
+  content: z.string().optional(),
+  description: z.string().optional(),
+}) satisfies z.ZodType<Pick<Topic, "name" | "content" | "description">>;
+
+export type TopicEditRequest = z.infer<typeof topicEditSchema>;
+
 /** The node types a person may propose from the site.
  *
  * Regions are left out: they come from the TERYT register, are complete, and
  * carry ids the rest of the data joins on.
  */
-export const proposableNodeTypes = ["person", "place", "article"] as const;
+export const proposableNodeTypes = [
+  "person",
+  "place",
+  "article",
+  "topic",
+] as const;
 
 export type ProposableNodeType = (typeof proposableNodeTypes)[number];
 
@@ -232,6 +258,7 @@ export const editSchemas = {
   person: personEditSchema,
   place: companyEditSchema,
   article: articleEditSchema,
+  topic: topicEditSchema,
 } as const;
 
 /** A proposal to take an entry down, which is a revision like any other and is

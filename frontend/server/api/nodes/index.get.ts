@@ -14,7 +14,7 @@ import {
 } from "~~/server/utils/nodeFilters";
 import { authCachedEventHandler } from "~~/server/utils/handlers";
 import { getUser } from "~~/server/utils/auth";
-import { pageIsPublic } from "~~/shared/model";
+import { nodeTypes, pageIsPublic } from "~~/shared/model";
 import { defineEventHandler } from "h3";
 import { logger } from "firebase-functions/logger";
 
@@ -22,7 +22,7 @@ const queryValidator = z.object({
   // We use generic fetch options for pagination
   ...fetchOptionsValidator.shape,
 
-  type: z.enum(["person", "place", "article", "region"]).optional(),
+  type: z.enum(nodeTypes).optional(),
   // TODO: remove party in the future
   party: z.string().optional(),
   parties: z.union([z.string(), z.array(z.string())]).optional(),

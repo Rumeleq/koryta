@@ -43,7 +43,13 @@ export interface Edge {
   target: string;
   label?: string;
   type:
-    "employed" | "connection" | "mentions" | "owns" | "comment" | "election";
+    | "employed"
+    | "connection"
+    | "mentions"
+    | "owns"
+    | "comment"
+    | "election"
+    | "tagged";
 
   traverse?: TraversePolicy;
   content?: string;

@@ -107,5 +107,74 @@ describe("graph utils", () => {
       expect(nodesNoStats["r1"].type).toBe("document");
       expect((nodesNoStats["r1"] as any).entityType).toBe("region");
     });
+
+    it("draws no node for a topic, so a tagged edge cannot reach the canvas", () => {
+      // `getLocalGraph` keeps only the edges whose *both* ends are in here, so
+      // this absence is what stops `tagged` edges - article to topic, neither
+      // of them a graph node - from ever being drawn. The `dead_end` policy
+      // below is the second line of defence, for whoever later decides a topic
+      // should be visible.
+      const nodesNoStats = getNodesNoStats(
+        { p1: { name: "Person A", type: "person" } as Person },
+        {},
+        {},
+        {},
+      );
+
+      expect(Object.keys(nodesNoStats)).toEqual(["p1"]);
+    });
+  });
+
+  describe("tagged edges", () => {
+    const taggedEdge: DBEdge = {
+      id: "t1",
+      source: "a1",
+      target: "topic1",
+      type: "tagged",
+    } as DBEdge;
+
+    it("is a dead end in both directions", () => {
+      const [edge] = getEdges([taggedEdge]);
+
+      // Not a stylistic choice. A topic is joined to every article in its
+      // story, so a traversable `tagged` edge makes the topic a hub two hops
+      // wide and every person mentioned anywhere in an affair reads as
+      // connected to every other one.
+      expect(edge!.traverse).toEqual({
+        forward: "dead_end",
+        backward: "dead_end",
+      });
+    });
+
+    it("does not connect two people who share a topic", () => {
+      // The arrangement the policy exists to prevent: two unrelated people,
+      // each mentioned by an article, both articles under one topic.
+      const people: Record<string, Person> = {
+        p1: { name: "Person A", type: "person" } as Person,
+        p2: { name: "Person B", type: "person" } as Person,
+      };
+      const nodesNoStats = {
+        ...getNodesNoStats(people, {}, {}, {}),
+        a1: { name: "Article 1", type: "document", color: "" } as never,
+        a2: { name: "Article 2", type: "document", color: "" } as never,
+        topic1: {
+          name: "Powodzianie KRR",
+          type: "document",
+          color: "",
+        } as never,
+      };
+
+      const edges = getEdges([
+        { id: "m1", source: "a1", target: "p1", type: "mentions" } as DBEdge,
+        { id: "m2", source: "a2", target: "p2", type: "mentions" } as DBEdge,
+        { id: "t1", source: "a1", target: "topic1", type: "tagged" } as DBEdge,
+        { id: "t2", source: "a2", target: "topic1", type: "tagged" } as DBEdge,
+      ]);
+
+      const groups = getNodeGroups(nodesNoStats, edges, people, {}, {});
+      const forPerson1 = groups.find((group) => group.id === "p1");
+
+      expect(forPerson1?.connected).not.toContain("p2");
+    });
   });
 });

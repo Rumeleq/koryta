@@ -117,7 +117,12 @@
                 />
               </v-col>
             </template>
-            <v-col v-if="nodeType !== 'article'" cols="12">
+            <!-- A tagged edge says which story an article belongs to, which is
+                 an editorial call rather than a claim needing a citation. -->
+            <v-col
+              v-if="nodeType !== 'article' && option?.realType !== 'tagged'"
+              cols="12"
+            >
               <FormEntityPicker
                 v-model="reference"
                 entity="article"
@@ -216,13 +221,20 @@ const title = computed(() => props.title ?? "Dodaj powiązanie");
  * every one of them up front, which is the step this drops. */
 const searchableTypes = computed<NodeType[]>(() => {
   const kinds = new Set<NodeType>();
+  // An article is normally a citation rather than one end of a relation - that
+  // is the source picker's job, at the bottom of this dialog. `tagged` is the
+  // exception: there an article really is one end, so a topic page has to be
+  // able to search for one.
+  let articleIsAnEnd = false;
   for (const option of Object.values(edgeTypeOptions)) {
     if (props.types && !props.types.includes(option.value)) continue;
     if (option.sourceType === props.nodeType) kinds.add(option.targetType);
     if (option.targetType === props.nodeType) kinds.add(option.sourceType);
+    if (option.realType === "tagged" && option.targetType === props.nodeType) {
+      articleIsAnEnd = true;
+    }
   }
-  // Articles are the source picker's job, not the subject of a relation.
-  kinds.delete("article");
+  if (!articleIsAnEnd) kinds.delete("article");
   return Array.from(kinds);
 });
 
@@ -231,6 +243,8 @@ const pickerLabel = computed(() => {
     person: "osobę",
     place: "firmę",
     region: "region",
+    article: "artykuł",
+    topic: "temat",
   };
   const named = searchableTypes.value
     .map((kind) => labels[kind])

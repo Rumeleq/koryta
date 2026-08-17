@@ -131,6 +131,7 @@ const edgeLabel: Record<EdgeType, string> = {
   owns: "właściciel",
   comment: "komentarz",
   election: "kandydował",
+  tagged: "temat",
 };
 
 const edgeTraverse: Record<EdgeType, TraversePolicy> = {
@@ -155,6 +156,17 @@ const edgeTraverse: Record<EdgeType, TraversePolicy> = {
     backward: "dead_end",
   },
   election: {
+    forward: "dead_end",
+    backward: "dead_end",
+  },
+  // Dead in both directions, and it has to stay that way. A topic is joined to
+  // every article in its story, so a traversable `tagged` edge turns the topic
+  // node into a hub two hops wide: everyone mentioned anywhere in an affair
+  // would read as connected to everyone else, on `/graf` and on every entity
+  // page. The topic view builds its own graph from the articles' `references`
+  // instead, which is a claim somebody actually made.
+  // Guarded by a test in `tests/shared/graph/util.test.ts`.
+  tagged: {
     forward: "dead_end",
     backward: "dead_end",
   },

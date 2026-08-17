@@ -79,6 +79,7 @@ import {
   mdiMapMarkerRadiusOutline,
   mdiOfficeBuildingOutline,
   mdiOpenInNew,
+  mdiTagOutline,
 } from "@mdi/js";
 import { noteKindConfig } from "~/composables/notes";
 import { generateEntityUrl } from "~/composables/slugs";
@@ -91,6 +92,7 @@ const nodeTypeIcons: Record<NodeType, string> = {
   place: mdiOfficeBuildingOutline,
   article: mdiFileDocumentOutline,
   region: mdiMapMarkerRadiusOutline,
+  topic: mdiTagOutline,
 };
 
 const kindConfig = computed(() => noteKindConfig[row.kind]);

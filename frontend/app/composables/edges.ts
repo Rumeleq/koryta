@@ -40,6 +40,7 @@ export const edgeTypeLabels: Record<string, string> = {
   mentions: "Wspomina o",
   comment: "Komentarz",
   election: "Kandydował/a w",
+  tagged: "Dotyczy tematu",
 };
 
 export async function useEdges(nodeID: MaybeRefOrGetter<string | undefined>) {

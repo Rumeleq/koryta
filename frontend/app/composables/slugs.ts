@@ -1,12 +1,13 @@
 import type { NodeType, Node } from "~~/shared/model";
 
-export type SeoType = "osoba" | "instytucja" | "region" | "artykul";
+export type SeoType = "osoba" | "instytucja" | "region" | "artykul" | "temat";
 
 export const seoTypes: readonly SeoType[] = [
   "osoba",
   "instytucja",
   "region",
   "artykul",
+  "temat",
 ] as const;
 
 export function createSlug(name: string): string {
@@ -30,6 +31,8 @@ export function nodeTypeToSlugPrefix(type: NodeType): SeoType {
       return "region";
     case "article":
       return "artykul";
+    case "topic":
+      return "temat";
     default:
       return type;
   }
@@ -45,6 +48,8 @@ export function slugPrefixToNodeType(prefix: SeoType): NodeType {
       return "region";
     case "artykul":
       return "article";
+    case "temat":
+      return "topic";
     default:
       throw new Error(`Unknown slug prefix: ${prefix}`);
   }
@@ -65,10 +70,12 @@ export function generateNodeUrl(node: Node): string | undefined {
   if (!node.id) return undefined;
 
   switch (node.type) {
-    // The two types with a readable page of their own. Both are what the
-    // sitemap lists, and both are what somebody shares.
+    // The types with a readable page of their own. The first two are what the
+    // sitemap lists, and what somebody shares. A topic is reachable but stays
+    // out of the sitemap until the tagging is more than a handful of stories.
     case "person":
     case "article":
+    case "topic":
       return generateEntityUrl(node.type, node.id, node.name);
 
     case "place":

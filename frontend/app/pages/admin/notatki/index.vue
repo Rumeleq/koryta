@@ -257,6 +257,7 @@ import {
   mdiMapMarkerRadiusOutline,
   mdiOfficeBuildingOutline,
   mdiOpenInNew,
+  mdiTagOutline,
 } from "@mdi/js";
 import { computed, ref, shallowRef, watch } from "vue";
 import { useRoute } from "vue-router";
@@ -379,6 +380,7 @@ const nodeTypeLabels: Record<NodeType, string> = {
   place: "Instytucja",
   article: "Artykuł",
   region: "Region",
+  topic: "Temat",
 };
 
 const nodeTypeIcons: Record<NodeType, string> = {
@@ -386,6 +388,7 @@ const nodeTypeIcons: Record<NodeType, string> = {
   place: mdiOfficeBuildingOutline,
   article: mdiFileDocumentOutline,
   region: mdiMapMarkerRadiusOutline,
+  topic: mdiTagOutline,
 };
 
 const nodeTypeFilterOptions = Object.entries(nodeTypeLabels).map(
