@@ -143,7 +143,11 @@ async function loadListed(kind: NodeType) {
   try {
     const response = await $fetch<{ nodes: Record<string, Article> }>(
       "/api/nodes",
-      { query: { type: kind } },
+      // `latest` for a signed in reader, or they cannot see what they have just
+      // made. /api/nodes is cached for six hours and this is a plain `$fetch`,
+      // so without it somebody who created a topic on one article could not
+      // find it from another until the cache expired.
+      { query: { type: kind, ...(user.value ? { latest: true } : {}) } },
     );
     listed.value = {
       ...listed.value,

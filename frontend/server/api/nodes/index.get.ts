@@ -12,7 +12,10 @@ import {
   buildStructuralFilterOps,
   type NodeFilterOp,
 } from "~~/server/utils/nodeFilters";
-import { authCachedEventHandler } from "~~/server/utils/handlers";
+import {
+  editorFreshCachedEventHandler,
+  wantsLatest,
+} from "~~/server/utils/handlers";
 import { getUser } from "~~/server/utils/auth";
 import { nodeTypes, pageIsPublic } from "~~/shared/model";
 import { defineEventHandler } from "h3";
@@ -46,12 +49,20 @@ export type Query = z.infer<typeof queryValidator>;
 
 // We wrap the original logic in a cached handler to preserve the caching
 // for endpoints that rely on the old behavior (e.g. useEntities).
-const cachedHandler = authCachedEventHandler(async (event) => {
+//
+// `editorFresh`, and both layers of cache have to give way for it to mean
+// anything: the response cache here, and `fetchNodes`'s own hour-long one
+// underneath. An editor who has just created a topic asks this endpoint for the
+// list to pick it from, and was handed a list from before they made it.
+const cachedHandler = editorFreshCachedEventHandler(async (event) => {
   const query = await getValidatedQuery(event, (query) =>
     queryValidator.parse(query),
   );
 
-  const opts = { personParties: query.parties || query.party };
+  const opts = {
+    personParties: query.parties || query.party,
+    bypassCache: wantsLatest(event),
+  };
 
   // The typeless caller is rejected before we get here, so there is always a
   // type to fetch.
