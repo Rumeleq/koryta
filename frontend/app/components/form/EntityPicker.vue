@@ -101,12 +101,15 @@ const entityTypes = computed<NodeType[]>(() =>
  * still has to be able to add them, and naming the kind on the row answers
  * "which?" without asking it as a separate question. */
 const creatableTypes = computed<NodeType[]>(() =>
-  entityTypes.value.filter((kind) => kind === "person" || kind === "place"),
+  entityTypes.value.filter(
+    (kind) => kind === "person" || kind === "place" || kind === "topic",
+  ),
 );
 
 const asKindLabel: Partial<Record<NodeType, string>> = {
   person: "jako osobę.",
   place: "jako firmę lub instytucję.",
+  topic: "jako temat.",
 };
 
 const canCreate = computed(() => creatableTypes.value.length > 0);
@@ -114,36 +117,48 @@ const canCreate = computed(() => creatableTypes.value.length > 0);
 /** Which kind the open dialog is creating. */
 const pendingCreateType = ref<NodeType>("person");
 
-/** `/api/search` indexes people, places and regions by name prefix. Articles
- * are not in that index, so they are listed rather than searched - which only
- * works when articles are the whole of what was asked for. */
-const isSearchable = computed(() => !entityTypes.value.includes("article"));
+/** The kinds `/api/search` cannot find.
+ *
+ * It matches on `nameChunksLower`, which a trigger writes for people, places
+ * and regions only, and its query names those three types outright. Articles
+ * and topics are therefore listed in full and filtered in the browser - there
+ * are few enough of either for that to be the cheaper answer anyway.
+ */
+const LISTED_TYPES: readonly NodeType[] = ["article", "topic"];
 
-/** Every article, fetched once when the picker is first opened. Kept out of
- * setup so a form that never opens the source picker does not pay for it. */
-const articles = ref<Link<NodeType>[] | null>(null);
+const searchableTypes = computed(() =>
+  entityTypes.value.filter((kind) => !LISTED_TYPES.includes(kind)),
+);
+const listedTypes = computed(() =>
+  entityTypes.value.filter((kind) => LISTED_TYPES.includes(kind)),
+);
 
-async function loadArticles() {
-  if (articles.value) return;
+/** Whole-collection listings, fetched once when the picker is first opened and
+ * kept out of setup so a form that never opens the picker does not pay for
+ * them. Keyed by kind because a picker can want both at once. */
+const listed = ref<Partial<Record<NodeType, Link<NodeType>[]>>>({});
+
+async function loadListed(kind: NodeType) {
+  if (listed.value[kind]) return;
   try {
     const response = await $fetch<{ nodes: Record<string, Article> }>(
       "/api/nodes",
-      { query: { type: "article" } },
+      { query: { type: kind } },
     );
-    articles.value = Object.entries(response.nodes)
-      .filter(([, node]) => !!user.value || node.visibility !== false)
-      .map(([id, node]) => ({
-        type: "article" as NodeType,
-        id,
-        name: node.name,
-      }));
+    listed.value = {
+      ...listed.value,
+      [kind]: Object.entries(response.nodes)
+        .filter(([, node]) => !!user.value || node.visibility !== false)
+        .map(([id, node]) => ({ type: kind, id, name: node.name })),
+    };
   } catch (e) {
-    console.error("Failed to list articles", e);
-    articles.value = [];
+    console.error(`Failed to list ${kind}`, e);
+    listed.value = { ...listed.value, [kind]: [] };
   }
 }
 
 async function search_(term: string) {
+  if (searchableTypes.value.length === 0) return;
   loading.value = true;
   try {
     const response = await $fetch<
@@ -165,19 +180,24 @@ async function search_(term: string) {
   }
 }
 
+/** Both halves, because a picker can be asked for a mix. The relation composer
+ * on an article offers people, places and topics at once: the first two have to
+ * be searched and the third has to be listed, and until this did both, asking
+ * for any listed kind alongside a searchable one silently returned only the
+ * listed one. */
 async function load() {
-  if (isSearchable.value) {
+  loading.value = true;
+  try {
+    await Promise.all(listedTypes.value.map(loadListed));
     const term = (search.value || "").trim();
     if (term) await search_(term);
-  } else {
-    loading.value = true;
-    await loadArticles();
+  } finally {
     loading.value = false;
   }
 }
 
 watch(debouncedSearch, async (term) => {
-  if (!isSearchable.value) return;
+  if (searchableTypes.value.length === 0) return;
   const trimmed = (term || "").trim();
   if (!trimmed || trimmed === model.value?.name) {
     results.value = [];
@@ -187,11 +207,13 @@ watch(debouncedSearch, async (term) => {
 });
 
 const items = computed<Link<NodeType>[]>(() => {
-  const base = isSearchable.value
-    ? results.value
-    : (articles.value ?? []).filter((article) =>
-        article.name.toLowerCase().includes((search.value || "").toLowerCase()),
-      );
+  const term = (search.value || "").toLowerCase();
+  const fromListings = listedTypes.value.flatMap((kind) =>
+    (listed.value[kind] ?? []).filter((entry) =>
+      entry.name.toLowerCase().includes(term),
+    ),
+  );
+  const base = [...results.value, ...fromListings];
 
   // The picked entry has to stay in the list, or the autocomplete has no title
   // to render for it once the search that found it has been cleared.
@@ -230,7 +252,13 @@ function onCreated(id: string) {
     name: pendingCreateName.value,
   };
   results.value = [created];
-  if (articles.value) articles.value = [created, ...articles.value];
+  // A listed kind is not searched, so a freshly created one is only findable
+  // if it is put into the listing it would otherwise wait for a reload to
+  // appear in.
+  const existing = listed.value[created.type];
+  if (existing) {
+    listed.value = { ...listed.value, [created.type]: [created, ...existing] };
+  }
   model.value = created;
   search.value = pendingCreateName.value;
 }
