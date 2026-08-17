@@ -5,6 +5,8 @@ import waitOn from "wait-on";
 import { readFileSync } from "fs";
 import { resolve } from "path";
 
+import { generateChunksLower } from "../shared/search";
+
 import nodes from "./nodes.json";
 import edges from "./edges.json";
 import revisions from "./revisions.json";
@@ -89,6 +91,13 @@ async function seedDatabase() {
     // Only default to approved=true if not explicitly set in seed data
     if (stats.isApproved === undefined) {
       stats.isApproved = true;
+    }
+    // The search index is computed here rather than written into the fixture,
+    // with the function the trigger in functions/src/nodes.ts uses. The fixture
+    // used to carry it by hand and had drifted to a different scheme entirely,
+    // which is why every spec that searched for a full name found nobody.
+    if (typeof nodeData.name === "string") {
+      nodeData.nameChunksLower = generateChunksLower(nodeData.name);
     }
     defaultPublished(nodeData);
     const ref = db.collection("nodes").doc(id);
