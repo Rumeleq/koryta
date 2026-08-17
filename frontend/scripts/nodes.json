@@ -63,7 +63,8 @@
     "revision_id": "rev7",
     "stats": {
       "nodeGroupSize": 1
-    }
+    },
+    "publishedDate": "2026-01-15T09:00:00.000Z"
   },
   "7": {
     "name": "Not approved article",
@@ -71,7 +72,8 @@
     "sourceURL": "http://google.com",
     "stats": {
       "nodeGroupSize": 1
-    }
+    },
+    "publishedDate": "2026-01-10T09:00:00.000Z"
   },
   "8": {
     "name": "Artykuł bez krawędzi",
@@ -80,7 +82,8 @@
     "revision_id": "rev8",
     "stats": {
       "nodeGroupSize": 1
-    }
+    },
+    "publishedDate": "2026-01-05T09:00:00.000Z"
   },
   "a1": {
     "name": "Artykuł placeholder 1",
@@ -89,7 +92,8 @@
     "revision_id": "a1",
     "stats": {
       "nodeGroupSize": 1
-    }
+    },
+    "publishedDate": "2025-12-01T09:00:00.000Z"
   },
   "a2": {
     "name": "Artykuł placeholder 2",
@@ -98,7 +102,8 @@
     "revision_id": "a2",
     "stats": {
       "nodeGroupSize": 1
-    }
+    },
+    "publishedDate": "2025-11-01T09:00:00.000Z"
   },
   "a3": {
     "name": "Artykuł placeholder 3",
@@ -107,7 +112,8 @@
     "revision_id": "a3",
     "stats": {
       "nodeGroupSize": 1
-    }
+    },
+    "publishedDate": "2025-10-01T09:00:00.000Z"
   },
   "a4": {
     "name": "Artykuł placeholder 4",
@@ -116,7 +122,8 @@
     "revision_id": "a4",
     "stats": {
       "nodeGroupSize": 1
-    }
+    },
+    "publishedDate": "2025-09-01T09:00:00.000Z"
   },
   "a5": {
     "name": "Artykuł placeholder 5",
@@ -125,7 +132,8 @@
     "revision_id": "a5",
     "stats": {
       "nodeGroupSize": 1
-    }
+    },
+    "publishedDate": "2025-08-01T09:00:00.000Z"
   },
   "a6": {
     "name": "Artykuł placeholder 6",
@@ -134,7 +142,8 @@
     "revision_id": "a6",
     "stats": {
       "nodeGroupSize": 1
-    }
+    },
+    "publishedDate": "2025-07-01T09:00:00.000Z"
   },
   "teryt22": {
     "name": "Województwo Pomorskie",
