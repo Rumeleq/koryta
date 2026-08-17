@@ -72,7 +72,11 @@ import type { TopicSummary } from "~~/server/api/topics/index.get";
 definePageMeta({ title: "Tematy" });
 
 const user = useCurrentUser();
-const { data } = await authFetch<{ topics: TopicSummary[] }>("/api/topics");
+// Explicit, not left to `authFetch`: its hook returns early on the server, so a
+// server rendered load would hide every draft topic from whoever made it.
+const { data } = await authFetch<{ topics: TopicSummary[] }>("/api/topics", {
+  query: computed(() => ({ latest: !!user.value })),
+});
 const topics = computed<TopicSummary[]>(() => data.value?.topics ?? []);
 
 function topicUrl(topic: TopicSummary) {

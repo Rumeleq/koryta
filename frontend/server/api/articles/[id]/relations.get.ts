@@ -1,6 +1,9 @@
 import { getFirestore } from "firebase-admin/firestore";
 import { getApp } from "firebase-admin/app";
-import { authCachedEventHandler } from "~~/server/utils/handlers";
+import {
+  editorFreshCachedEventHandler,
+  wantsLatest,
+} from "~~/server/utils/handlers";
 import { fetchEdgesForNode } from "~~/server/utils/edgePublication";
 import { pageIsPublic } from "~~/shared/model";
 import type { NodeType } from "~~/shared/model";
@@ -36,12 +39,12 @@ export type ArticleRelations = {
  * the same rule as the graph endpoint, and what makes an unapproved tag visible
  * to the person who just added it.
  */
-export default authCachedEventHandler(async (event) => {
+export default editorFreshCachedEventHandler(async (event) => {
   const id = getRouterParam(event, "id");
   if (!id) {
     throw createError({ statusCode: 400, message: "Brak identyfikatora." });
   }
-  const wantsLatest = getQuery(event).latest !== undefined;
+  const includeDrafts = wantsLatest(event);
 
   const db = getFirestore(getApp(), "koryta-pl");
   const edges = (await fetchEdgesForNode(db, id))
@@ -50,7 +53,7 @@ export default authCachedEventHandler(async (event) => {
     // An article is the source of both kinds; an edge pointing the other way
     // would put the article itself on the far end.
     .filter((edge) => edge.source === id)
-    .filter((edge) => (wantsLatest ? true : pageIsPublic(edge)));
+    .filter((edge) => (includeDrafts ? true : pageIsPublic(edge)));
 
   const farIds = Array.from(new Set(edges.map((edge) => edge.target)));
   const snaps = farIds.length

@@ -135,16 +135,25 @@ const { getDomainIcon } = useDomainIcon();
 
 const topicId = parseEntityUrlSlug(route.params.slug as string).id;
 
-const { data, status } = await authFetch<TopicDetail>(`/api/topics/${topicId}`);
+/** Asked for explicitly, because `authFetch`'s hook that would add it returns
+ * early on the server - so a server rendered load would be handed the public
+ * view and a curator would not see the story they are still assembling. */
+const latest = computed(() => !!user.value);
+
+const { data, status } = await authFetch<TopicDetail>(
+  `/api/topics/${topicId}`,
+  { query: computed(() => ({ latest: latest.value })) },
+);
 
 const topic = computed(() => data.value?.topic);
 const topicPublished = computed(() => topic.value?.published === true);
 const articles = computed<TopicArticle[]>(() => data.value?.articles ?? []);
 
-/** The graph endpoint, asked for once the id is known. `authFetch` inside
- * `useGraph` appends `latest` for a signed in reader, which is what makes an
- * unapproved tag count towards the story. */
-const graphSource = computed(() => `/api/graph/topic/${topicId}`);
+/** The graph endpoint, with the same question in the url: `useGraph` passes it
+ * to `authFetch` whole, so this is the only place that can say it. */
+const graphSource = computed(
+  () => `/api/graph/topic/${topicId}?latest=${latest.value}`,
+);
 
 function articleUrl(article: TopicArticle) {
   return generateEntityUrl("article", article.id, article.name);

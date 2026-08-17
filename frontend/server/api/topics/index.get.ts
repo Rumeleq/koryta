@@ -1,6 +1,9 @@
 import { getFirestore } from "firebase-admin/firestore";
 import { getApp } from "firebase-admin/app";
-import { authCachedEventHandler } from "~~/server/utils/handlers";
+import {
+  editorFreshCachedEventHandler,
+  wantsLatest,
+} from "~~/server/utils/handlers";
 import { pageIsPublic } from "~~/shared/model";
 
 export type TopicSummary = {
@@ -18,8 +21,8 @@ export type TopicSummary = {
  * One pass over the `tagged` edges rather than a count query per topic - there
  * are far fewer of both than there are articles, and this is the index page.
  */
-export default authCachedEventHandler(async (event) => {
-  const includeDrafts = getQuery(event).latest !== undefined;
+export default editorFreshCachedEventHandler(async (event) => {
+  const includeDrafts = wantsLatest(event);
   const db = getFirestore(getApp(), "koryta-pl");
 
   const [topicsSnap, taggedSnap] = await Promise.all([

@@ -1,7 +1,10 @@
 import { getFirestore } from "firebase-admin/firestore";
 import { getApp } from "firebase-admin/app";
 import { z } from "zod";
-import { authCachedEventHandler } from "~~/server/utils/handlers";
+import {
+  editorFreshCachedEventHandler,
+  wantsLatest,
+} from "~~/server/utils/handlers";
 import { pageIsPublic } from "~~/shared/model";
 import type { Edge, EdgeType, NodeType } from "~~/shared/model";
 
@@ -45,9 +48,9 @@ const queryValidator = z.object({
  * graph endpoint applies - see `wantsLatest` there. Everyone else sees the
  * published ones.
  */
-export default authCachedEventHandler(async (event) => {
+export default editorFreshCachedEventHandler(async (event) => {
   const query = await getValidatedQuery(event, (q) => queryValidator.parse(q));
-  const wantsLatest = getQuery(event).latest !== undefined;
+  const includeDrafts = wantsLatest(event);
 
   const db = getFirestore(getApp(), "koryta-pl");
   const snapshot = await db
@@ -58,7 +61,7 @@ export default authCachedEventHandler(async (event) => {
   const edges = snapshot.docs
     .map((doc) => ({ id: doc.id, ...(doc.data() as Edge) }))
     .filter((edge) => edge.deleted !== true)
-    .filter((edge) => (wantsLatest ? true : pageIsPublic(edge)));
+    .filter((edge) => (includeDrafts ? true : pageIsPublic(edge)));
 
   const endpointIds = Array.from(
     new Set(edges.flatMap((edge) => [edge.source, edge.target])),

@@ -298,14 +298,28 @@ watchEffect(async () => {
   }
 });
 
+/** Whether to ask for drafts, said out loud rather than left to `authFetch`.
+ *
+ * Its `onRequest` hook returns early on the server, so a server rendered page -
+ * every full load and every reload - would ask without `latest` and be handed
+ * the public view. A signed in reader would tag an article, see the chip, and
+ * find it gone the moment they refreshed. Reactive so that the fetch runs again
+ * once auth resolves on the client, which is the same shape `useEdges` uses.
+ */
+const latest = computed(() => !!user.value);
+
 const { data: relations, refresh: refreshRelations } =
-  await authFetch<ArticleRelations>(`/api/articles/${nodeId}/relations`);
+  await authFetch<ArticleRelations>(`/api/articles/${nodeId}/relations`, {
+    query: computed(() => ({ latest: latest.value })),
+  });
 const topics = computed(() => relations.value?.topics ?? []);
 const mentions = computed(() => relations.value?.mentions ?? []);
 
 const { data: sourcedResponse, refresh: refreshSourced } = await authFetch<{
   edges: SourcedEdge[];
-}>("/api/edges/byReference", { query: { articleId: nodeId } });
+}>("/api/edges/byReference", {
+  query: computed(() => ({ articleId: nodeId, latest: latest.value })),
+});
 const sourcedEdges = computed(() => sourcedResponse.value?.edges ?? []);
 
 const { data: extractions } = useExtractions({
