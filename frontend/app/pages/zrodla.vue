@@ -86,11 +86,13 @@
       <h3 class="text-h6 font-weight-bold mb-4">
         Źródła tej strony to między innymi:
       </h3>
-      <v-data-table
+      <v-data-table-server
+        v-model:page="page"
+        v-model:items-per-page="itemsPerPage"
         :headers="headers"
         :items="sortedArticles"
-        :items-per-page="50"
-        :sort-by="[{ key: 'publishedDate', order: 'desc' }]"
+        :items-length="articleCount"
+        :items-per-page-options="[25, 50, 100]"
         mobile-breakpoint="md"
         hover
       >
@@ -166,7 +168,7 @@
         <template #[`item.capture`]="{ item }">
           <ArticleCaptureStatus :capture="forUrl(item.sourceURL)" />
         </template>
-      </v-data-table>
+      </v-data-table-server>
     </v-col>
 
     <v-col cols="12">
@@ -210,14 +212,27 @@ definePageMeta({
   affineLink: "BBMIZtWOoDBTDknqC82Ms",
 });
 
-const { entities: articles, refresh: refreshArticles } = useEntities(
+const page = ref(1);
+const itemsPerPage = ref(50);
+
+// Asked for one page at a time rather than one fixed slice. The table used to
+// be handed the newest hundred and left to page within them, so the older
+// articles - most of what /zrodla is a list of - had no way of being reached.
+//
+// `items-per-page-options` is spelled out because Vuetify's default set ends in
+// "wszystkie", and `limit=-1` is not something the api can be asked for.
+const {
+  entities: articles,
+  total: articleCount,
+  refresh: refreshArticles,
+} = useEntities(
   "article",
-  {
-    limit: 100,
-    page: 1,
+  computed(() => ({
+    limit: itemsPerPage.value,
+    page: page.value,
     sortBy: "publishedDate",
     sortDesc: "true",
-  },
+  })),
 );
 const user = useCurrentUser();
 const { getDomainIcon } = useDomainIcon();

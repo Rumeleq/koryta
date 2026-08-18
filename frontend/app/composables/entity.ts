@@ -30,6 +30,7 @@ export function useEntities<N extends NodeType>(
 ) {
   const { data: response, refresh } = authFetch<{
     nodes: Record<string, NodeTypeMap[N]>;
+    total?: number;
   }>(`/api/nodes?type=${nodeType}`, {
     query: filters,
     ...options,
@@ -39,7 +40,13 @@ export function useEntities<N extends NodeType>(
 
   const entities = useEntitiesFiltering(entitiesRaw);
 
-  return { entities, refresh };
+  /** How many rows the filters match, not how many this page holds - the whole
+   * point of asking is to size a pager. Only the paginated path of /api/nodes
+   * counts, so this is 0 for a caller that passed no `limit`, and it undercounts
+   * for an anonymous reader by however many private rows the client then drops. */
+  const total = computed(() => response?.value?.total ?? 0);
+
+  return { entities, total, refresh };
 }
 
 export interface EntityWithVisibility {
