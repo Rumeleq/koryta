@@ -21,6 +21,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from analysis.people import PeopleMerged
+from analysis.utils import empty_list_if_nan
 from entities.article import ArticlePeopleMentioned
 from scrapers.article.parse import date_iso_from_ld_json, title_from_ld_json
 from scrapers.article.pipelines.incremental import IncrementalJsonlPipeline
@@ -127,13 +128,8 @@ class PersonNameIndex:
 
 
 def _display_name(row: dict[str, Any]) -> str:
-    full = row.get("base_full_name")
-    if (
-        isinstance(full, list)
-        and full
-        and isinstance(full[0], str)
-        and full[0].strip()
-    ):
+    full = empty_list_if_nan(row.get("base_full_name"))
+    if len(full) and isinstance(full[0], str) and full[0].strip():
         return full[0].strip()
     first = str(row.get("base_first_name") or "").strip()
     last = str(row.get("base_last_name") or "").strip()

@@ -213,10 +213,8 @@ class Extract(Pipeline):
         relevant_companies = self.relevant_companies(ctx)
 
         def works_in_relevant(employment_list) -> int:
-            if not isinstance(employment_list, list):
-                return 0
             result = 0
-            for emp in employment_list:
+            for emp in empty_list_if_nan(employment_list):
                 if emp.get("employed_krs") in relevant_companies or self.all:
                     if self.employed_after:
                         start_date = emp.get("employed_start")
@@ -238,11 +236,9 @@ class Extract(Pipeline):
         def check(elections) -> int:
             if self.ignore_elections:
                 return 1
-            if not isinstance(elections, list):
-                return 0
 
             result = 0
-            for election in elections:
+            for election in empty_list_if_nan(elections):
                 election_ok = True
                 if self.region:
                     teryt = candidacy_teryt(election) or ""
@@ -305,9 +301,7 @@ class Extract(Pipeline):
         if self.rejestrio_id:
 
             def check_rejestrio_id(ids_list):
-                if not isinstance(ids_list, list):
-                    return False
-                return self.rejestrio_id in set(map(str, ids_list))
+                return self.rejestrio_id in set(map(str, empty_list_if_nan(ids_list)))
 
             relevant = relevant | people["rejestrio_id"].apply(check_rejestrio_id)
         people["relevance_ratio"] = (relevant_employment + relevant_elections) / (

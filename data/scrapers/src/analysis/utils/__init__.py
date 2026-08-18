@@ -149,6 +149,19 @@ def drop_duplicates(df, *cols):
 
 
 def empty_list_if_nan(value):
+    """The list a pipeline column holds, whatever shape it arrived in.
+
+    A list-valued column has two representations, and which one a caller gets
+    says nothing about the data: a frame duckdb just produced holds one
+    `numpy.ndarray` per row, while the same frame parsed back out of the
+    pipeline's own jsonl holds a Python `list`. So a pipeline that reads its
+    input from cache sees lists and the same pipeline run right after its
+    source refreshed sees arrays.
+
+    That is why this exists and why a bare `isinstance(value, list)` is always
+    wrong here - it silently reports every row as empty on exactly the runs
+    that recomputed something.
+    """
     if isinstance(value, (np.ndarray, list)):
         return value
     return []
