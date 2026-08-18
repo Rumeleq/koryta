@@ -69,10 +69,12 @@ def test_single_snapshot_included():
 
 def test_two_snapshots_same_hash_excluded():
     """Two identical snapshots → no change → excluded."""
-    pipeline = make_pipeline([
-        _row(KRS_1, "2026-01-01", "aaa"),
-        _row(KRS_1, "2026-06-01", "aaa"),
-    ])
+    pipeline = make_pipeline(
+        [
+            _row(KRS_1, "2026-01-01", "aaa"),
+            _row(KRS_1, "2026-06-01", "aaa"),
+        ]
+    )
     result = pipeline.krs_with_people_changes(FakeContext())
 
     assert KRS_1 not in result
@@ -80,10 +82,12 @@ def test_two_snapshots_same_hash_excluded():
 
 def test_two_snapshots_different_hash_included():
     """Two different snapshots → change detected."""
-    pipeline = make_pipeline([
-        _row(KRS_1, "2026-01-01", "aaa"),
-        _row(KRS_1, "2026-06-01", "bbb"),
-    ])
+    pipeline = make_pipeline(
+        [
+            _row(KRS_1, "2026-01-01", "aaa"),
+            _row(KRS_1, "2026-06-01", "bbb"),
+        ]
+    )
     result = pipeline.krs_with_people_changes(FakeContext())
 
     assert result[KRS_1] == "2026-06-01"
@@ -91,11 +95,13 @@ def test_two_snapshots_different_hash_included():
 
 def test_change_date_is_most_recent_change():
     """Multiple changes → report the most recent date."""
-    pipeline = make_pipeline([
-        _row(KRS_1, "2026-01-01", "aaa"),
-        _row(KRS_1, "2026-03-01", "bbb"),
-        _row(KRS_1, "2026-06-01", "ccc"),
-    ])
+    pipeline = make_pipeline(
+        [
+            _row(KRS_1, "2026-01-01", "aaa"),
+            _row(KRS_1, "2026-03-01", "bbb"),
+            _row(KRS_1, "2026-06-01", "ccc"),
+        ]
+    )
     result = pipeline.krs_with_people_changes(FakeContext())
 
     # Most recent change is bbb→ccc at 2026-06-01
@@ -110,11 +116,13 @@ def test_stale_change_not_reported_as_latest():
     reported change_date is March, which allows the pre-filter
     to exclude this KRS if already scraped after March.
     """
-    pipeline = make_pipeline([
-        _row(KRS_1, "2026-01-01", "aaa"),
-        _row(KRS_1, "2026-03-01", "bbb"),
-        _row(KRS_1, "2026-07-01", "bbb"),
-    ])
+    pipeline = make_pipeline(
+        [
+            _row(KRS_1, "2026-01-01", "aaa"),
+            _row(KRS_1, "2026-03-01", "bbb"),
+            _row(KRS_1, "2026-07-01", "bbb"),
+        ]
+    )
     result = pipeline.krs_with_people_changes(FakeContext())
 
     assert result[KRS_1] == "2026-03-01"
@@ -195,23 +203,28 @@ def test_full_prefilter_scenario():
     people change newer than its last rejestr.io scrape.
     """
     method = "rejestrio_org_krs_powiazania_aktualne"
-    needs_refresh = pd.DataFrame([
-        {
-            "krs": KRS_1, "method": method,
-            "date": "2026-04-15",
-            "update_date": "2026-07-01",
-        },
-        {
-            "krs": KRS_2, "method": method,
-            "date": "2026-04-15",
-            "update_date": "2026-07-01",
-        },
-        {
-            "krs": KRS_3, "method": method,
-            "date": "2026-04-15",
-            "update_date": "2026-07-01",
-        },
-    ])
+    needs_refresh = pd.DataFrame(
+        [
+            {
+                "krs": KRS_1,
+                "method": method,
+                "date": "2026-04-15",
+                "update_date": "2026-07-01",
+            },
+            {
+                "krs": KRS_2,
+                "method": method,
+                "date": "2026-04-15",
+                "update_date": "2026-07-01",
+            },
+            {
+                "krs": KRS_3,
+                "method": method,
+                "date": "2026-04-15",
+                "update_date": "2026-07-01",
+            },
+        ]
+    )
 
     # KRS_1: change in March (stale, scraped in April)
     # KRS_2: change in June (fresh, after April scrape)
@@ -354,3 +367,21 @@ def test_a_cached_output_with_duplicate_rows_is_deduplicated_on_read():
     )
 
     assert KRS_1 not in pipeline.krs_with_people_changes(FakeContext())
+
+
+def test_a_section_the_register_adds_is_carried_into_the_output():
+    """So a people-bearing key nobody has taught the parser fails a test."""
+    grown = board("K*****")
+    grown["odpis"]["dane"]["dzial2"]["radaInwestorow"] = [
+        {"nazwisko": {"nazwiskoICzlon": "N*****"}, "imiona": {"imie": "A***"}}
+    ]
+
+    df = run_process({odpis_blob(KRS_1, "P", "2026-07-18"): grown})
+
+    assert df.iloc[0]["unread_paths"] == ["dzial2.radaInwestorow[]"]
+
+
+def test_a_response_we_fully_understand_carries_no_unread_path():
+    df = run_process({odpis_blob(KRS_1, "P", "2026-07-18"): board("K*****")})
+
+    assert df.iloc[0]["unread_paths"] == []

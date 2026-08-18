@@ -3,22 +3,80 @@
 api-krs serves personal data masked: every name arrives as its first character
 followed by one asterisk per remaining character, so "Kaliszewski" comes back
 as ``K**********``. What survives is the initial and the length, which is
-enough to tell two board members apart.
+enough to tell two board members apart and - see `scrapers.krs.names` - enough
+to recognise the same person in a rejestr.io response.
 
-Covers dzial1 (partners) and dzial2 (representation, supervision, proxies).
+Which sections hold people is a table, `PERSON_PATHS`, rather than a function
+per dzial. The register puts people in sixteen places across six dzialy and
+spells the containers three different ways, and reading a section as the wrong
+shape finds nobody without saying so: `prokurenci` is a bare list, was read as
+an organ with a ``sklad``, and 8,020 proxy appointments went unseen. A company
+whose only change was to its proxies then never looked like it had changed at
+all, so nothing re-queried it. `unread_person_paths` walks a response looking
+for people outside the table, so a section the register adds later shows up as
+a failing invariant rather than as silence.
 """
 
 from dataclasses import dataclass
 
-#: The sections of dzial2 that hold a list of people directly, rather than
-#: wrapping them in an organ with a ``sklad``. `prokurenci` belongs here and
-#: not with `reprezentacja`: the API spells a proxy list as a bare list, and
-#: reading it as an organ silently found nobody.
-DZIAL2_PERSON_LISTS = (
-    ("prokurenci", "prokurent", "rodzajProkury"),
-    ("pelnomocnicy", "pelnomocnik", ""),
-    ("osobyReprezentujacePZ", "osoba_pz", ""),
+#: Where an OdpisAktualny keeps people, as
+#: ``(dzial, key, inner key or None, role, field naming the role in detail)``.
+#:
+#: Three container shapes occur and each entry covers whichever it meets: a
+#: bare list of people (``prokurenci``), an organ wrapping them in a ``sklad``
+#: (``reprezentacja``, and ``organNadzoru`` which is a *list* of organs), and a
+#: single person dict (``reprezentacjaIBIGBPPSPZOZ``). The proceedings in
+#: dzial6 nest one further: a list of proceedings, each holding the list of
+#: people appointed by it.
+PERSON_PATHS = (
+    ("dzial1", "wspolnicySpzoo", None, "wspolnik", ""),
+    ("dzial1", "wspolnicyPartnerzy", None, "wspolnik_partner", ""),
+    ("dzial1", "komitetZalozycielski", None, "komitet_zalozycielski", ""),
+    ("dzial1", "jedynyAkcjonariusz", None, "jedyny_akcjonariusz", ""),
+    ("dzial2", "reprezentacja", "sklad", "reprezentacja", "funkcjaWOrganie"),
+    ("dzial2", "organNadzoru", "sklad", "nadzor", "funkcjaWOrganie"),
+    ("dzial2", "prokurenci", None, "prokurent", "rodzajProkury"),
+    ("dzial2", "pelnomocnicy", None, "pelnomocnik", ""),
+    ("dzial2", "osobyReprezentujacePZ", None, "osoba_pz", ""),
+    ("dzial2", "reprezentacjaIBIGBPPSPZOZ", None, "kierownik_pzoz", ""),
+    ("dzial5", "kurator", None, "kurator", ""),
+    ("dzial6", "likwidacja", "likwidatorzy", "likwidator", ""),
+    ("dzial6", "postepowanieUpadlosciowe", "daneSyndyka", "syndyk", ""),
+    (
+        "dzial6",
+        "postepowanieUpadlosciowe",
+        "daneOsobyReprezentujacejUpadlego",
+        "reprezentant_upadlego",
+        "",
+    ),
+    (
+        "dzial6",
+        "zarzadKomisarycznyPrzymusowyPowierzenieZarzadzania",
+        "zarzadcyPrzedstawiciele",
+        "zarzadca_komisaryczny",
+        "",
+    ),
+    (
+        "dzial6",
+        "postepowanieRestrukturyzacyjneNaprawczePrzymusowaRestrukturyzacja",
+        "nadzorcaZarzadcaReprezentujacyAdministratorPelnomocnik",
+        "nadzorca_restrukturyzacyjny",
+        "",
+    ),
+    (
+        "dzial6",
+        "postepowanieRestrukturyzacyjneNaprawczePrzymusowaRestrukturyzacja"
+        "UporzadkowanaLikwidacja",
+        "nadzorcaZarzadcaReprezentujacyAdministratorZastepcaPelnomocnik"
+        "ZarzadcaNadzwyczajny",
+        "nadzorca_restrukturyzacyjny",
+        "",
+    ),
 )
+
+#: The keys that make an object a person rather than a partner company, which
+#: carries a ``nazwa`` and a ``krs`` instead.
+PERSON_KEYS = ("nazwisko", "imiona")
 
 
 @dataclass(frozen=True, order=True)
@@ -70,6 +128,13 @@ class CensoredPerson:
         )
 
 
+def is_person(entry) -> bool:
+    """Whether an object in an odpis describes a person rather than a company."""
+    return isinstance(entry, dict) and any(
+        isinstance(entry.get(key), dict) for key in PERSON_KEYS
+    )
+
+
 def parse_person(p: dict, role: str) -> CensoredPerson | None:
     """Parse a single person dict into a CensoredPerson, or None."""
     if not isinstance(p, dict):
@@ -108,98 +173,101 @@ def parse_person(p: dict, role: str) -> CensoredPerson | None:
     )
 
 
-def extract_sklad(
-    container: dict,
-    key: str,
-    role_prefix: str,
-    role_field: str,
-) -> list[CensoredPerson]:
-    """Extract people from a 'sklad' list inside a container dict."""
-    results: list[CensoredPerson] = []
-    section = container.get(key, {})
-    if not isinstance(section, dict):
-        return results
-    sklad = section.get("sklad", [])
-    if not isinstance(sklad, list):
-        return results
-    for p in sklad:
-        function = p.get(role_field, "") if isinstance(p, dict) else ""
-        parsed = parse_person(p, f"{role_prefix}: {function}")
+def _entries(node) -> list:
+    """A section as a list, whether the register spelled it as one or not."""
+    if isinstance(node, list):
+        return node
+    if isinstance(node, dict):
+        return [node]
+    return []
+
+
+def people_at(dane: dict, path) -> list[CensoredPerson]:
+    """The people one `PERSON_PATHS` entry points at."""
+    dzial_name, key, inner, role, role_field = path
+    dzial = dane.get(dzial_name)
+    if not isinstance(dzial, dict):
+        return []
+
+    containers = _entries(dzial.get(key))
+    if inner is not None:
+        containers = [
+            entry
+            for container in containers
+            if isinstance(container, dict)
+            for entry in _entries(container.get(inner))
+        ]
+
+    people = []
+    for entry in containers:
+        if not isinstance(entry, dict):
+            continue
+        detail = str(entry.get(role_field, "") or "") if role_field else ""
+        parsed = parse_person(entry, f"{role}: {detail}" if detail else role)
         if parsed:
-            results.append(parsed)
-    return results
-
-
-def extract_person_list(
-    container: dict,
-    key: str,
-    role: str,
-    role_field: str,
-) -> list[CensoredPerson]:
-    """Extract people from a plain list of person dicts."""
-    results: list[CensoredPerson] = []
-    section = container.get(key, [])
-    if not isinstance(section, list):
-        return results
-    for p in section:
-        detail = p.get(role_field, "") if role_field and isinstance(p, dict) else ""
-        parsed = parse_person(p, f"{role}: {detail}" if detail else role)
-        if parsed:
-            results.append(parsed)
-    return results
-
-
-def extract_dzial1_people(dane: dict) -> set[CensoredPerson]:
-    """Extract people from dzial1 (wspolnicySpzoo).
-
-    Most partners are companies rather than people; those carry a ``nazwa``
-    and a ``krs`` and no name fields, so `parse_person` drops them.
-    """
-    dzial1 = dane.get("dzial1", {})
-    if not isinstance(dzial1, dict):
-        return set()
-    return set(extract_person_list(dzial1, "wspolnicySpzoo", "wspolnik", ""))
-
-
-def extract_dzial2_people(dane: dict) -> set[CensoredPerson]:
-    """Extract people from dzial2 (representation, supervision, etc.)."""
-    people: set[CensoredPerson] = set()
-    dzial2 = dane.get("dzial2", {})
-    if not isinstance(dzial2, dict):
-        return people
-
-    for t in extract_sklad(
-        dzial2,
-        "reprezentacja",
-        "reprezentacja",
-        "funkcjaWOrganie",
-    ):
-        people.add(t)
-
-    # organNadzoru (can be list or dict)
-    organ_nadzoru = dzial2.get("organNadzoru", {})
-    organs = organ_nadzoru if isinstance(organ_nadzoru, list) else [organ_nadzoru]
-    for organ in organs:
-        if isinstance(organ, dict):
-            for t in extract_sklad(
-                {"o": organ},
-                "o",
-                "nadzor",
-                "funkcjaWOrganie",
-            ):
-                people.add(t)
-
-    # reprezentacjaIBIGBPPSPZOZ (single person dict)
-    rep_pzoz = dzial2.get("reprezentacjaIBIGBPPSPZOZ", {})
-    if isinstance(rep_pzoz, dict):
-        parsed = parse_person(rep_pzoz, "kierownik_pzoz")
-        if parsed:
-            people.add(parsed)
-
-    for key, role, role_field in DZIAL2_PERSON_LISTS:
-        people.update(extract_person_list(dzial2, key, role, role_field))
-
+            people.append(parsed)
     return people
+
+
+def response_data(data) -> dict:
+    """The ``dane`` of an odpis, or an empty dict for anything else."""
+    if not is_odpis(data):
+        return {}
+    dane = data["odpis"].get("dane", {})
+    return dane if isinstance(dane, dict) else {}
+
+
+def extract_censored_people(data: dict) -> set[CensoredPerson]:
+    """Extract all censored people from an api-krs JSON response.
+
+    Returns an empty set for anything that is not an odpis - api-krs answers a
+    query against the wrong register with a 404 body, which parses as JSON and
+    would otherwise read as a company with nobody in it.
+    """
+    dane = response_data(data)
+    if not dane:
+        return set()
+    return {person for path in PERSON_PATHS for person in people_at(dane, path)}
+
+
+def unread_person_paths(data) -> set[str]:
+    """Dotted paths in this response that hold people `PERSON_PATHS` misses.
+
+    The register has sixteen places for a person and gains one occasionally.
+    One it gains and we do not read is a change that never registers as a
+    change, which is silent in exactly the way the `prokurenci` bug was.
+    """
+    dane = response_data(data)
+    if not dane:
+        return set()
+
+    known = {(dzial, key) for dzial, key, *_ in PERSON_PATHS}
+    known_inner = {
+        (dzial, key, inner) for dzial, key, inner, *_ in PERSON_PATHS if inner
+    }
+    found: set[str] = set()
+
+    def walk(node, path: str, depth: tuple[str, ...]) -> None:
+        if isinstance(node, list):
+            for entry in node:
+                walk(entry, f"{path}[]", depth)
+            return
+        if not isinstance(node, dict):
+            return
+        if is_person(node):
+            container = depth[:3] if len(depth) >= 3 else depth
+            if len(container) >= 3 and container[:3] in known_inner:
+                return
+            if len(container) >= 2 and container[:2] in known:
+                return
+            found.add(path)
+            return
+        for key, value in node.items():
+            walk(value, f"{path}.{key}", (*depth, key))
+
+    for dzial_name, body in dane.items():
+        walk(body, dzial_name, (dzial_name,))
+    return found
 
 
 def is_odpis(data) -> bool:
@@ -222,17 +290,3 @@ def is_odpis(data) -> bool:
         return False
     dane = odpis.get("dane")
     return isinstance(dane, dict) and bool(dane)
-
-
-def extract_censored_people(data: dict) -> set[CensoredPerson]:
-    """Extract all censored people from an api-krs JSON response.
-
-    Returns an empty set for anything that is not an odpis - api-krs answers a
-    query against the wrong register with a 404 body, which parses as JSON and
-    would otherwise read as a company with nobody in it.
-    """
-    if not is_odpis(data):
-        return set()
-
-    dane = data["odpis"]["dane"]
-    return extract_dzial1_people(dane) | extract_dzial2_people(dane)
