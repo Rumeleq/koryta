@@ -15,6 +15,7 @@ from scrapers.krs.people_parsing import (
     CensoredPerson,
     extract_censored_people,
     is_odpis,
+    unread_person_paths,
 )
 from scrapers.stores import CloudStorage, Context, Pipeline
 from scrapers.stores.file import DownloadableFile
@@ -29,8 +30,8 @@ def hash_people_set(people) -> str:
 class KRSCensoredPeople(Pipeline):
     """Indexes censored people from api-krs snapshots.
 
-    Outputs a DataFrame with columns: krs, date, people_hash, n_people. Each
-    row represents one KRS on one crawl date.
+    Outputs a DataFrame with columns: krs, date, people_hash, n_people,
+    unread_paths. Each row represents one KRS on one crawl date.
 
     A KRS is queried against both registers - ``?rejestr=P`` and
     ``?rejestr=S`` - and the one it is not in answers with a 404 body. That
@@ -48,6 +49,7 @@ class KRSCensoredPeople(Pipeline):
         # Keyed so a second response for the same KRS and date - the other
         # register, or a re-crawl - cannot become a second row.
         snapshots: dict[tuple[str, str], set[CensoredPerson]] = {}
+        unread: dict[tuple[str, str], set[str]] = {}
 
         for blob_ref in tqdm(
             ctx.io.list_files(CloudStorage(prefix="hostname=api-krs.ms.gov.pl")),
@@ -81,9 +83,12 @@ class KRSCensoredPeople(Pipeline):
             # the larger one is the one that read a full entry.
             if previous is None or len(people) > len(previous):
                 snapshots[(krs, date)] = people
+                unread[(krs, date)] = unread_person_paths(data)
 
         if not snapshots:
-            return pd.DataFrame(columns=["krs", "date", "people_hash", "n_people"])
+            return pd.DataFrame(
+                columns=["krs", "date", "people_hash", "n_people", "unread_paths"]
+            )
 
         return pd.DataFrame(
             [
@@ -92,10 +97,26 @@ class KRSCensoredPeople(Pipeline):
                     "date": date,
                     "people_hash": hash_people_set(people),
                     "n_people": len(people),
+                    # Almost always empty. A section the register adds that
+                    # PERSON_PATHS does not name is a change that never
+                    # registers as one, which is what the prokurenci bug was;
+                    # carrying it here turns that into a failing invariant.
+                    "unread_paths": sorted(unread.get((krs, date), ())),
                 }
                 for (krs, date), people in snapshots.items()
             ]
         )
+
+    def unread_paths(self, ctx: Context) -> dict[str, int]:
+        """Person-bearing paths in the crawl that `PERSON_PATHS` does not name."""
+        df = self._rows(ctx)
+        if df.empty or "unread_paths" not in df.columns:
+            return {}
+        counts: dict[str, int] = {}
+        for paths in df["unread_paths"]:
+            for path in paths if isinstance(paths, (list, tuple)) else ():
+                counts[str(path)] = counts.get(str(path), 0) + 1
+        return counts
 
     def _rows(self, ctx: Context) -> pd.DataFrame:
         """The output, normalised and with one row per KRS per day.
