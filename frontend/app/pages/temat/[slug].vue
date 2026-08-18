@@ -65,8 +65,8 @@
           />
         </div>
         <p class="text-caption text-medium-emphasis mt-2">
-          Pokazujemy osoby i instytucje połączone powiązaniami, dla których
-          artykuły z tego tematu są źródłem.
+          Pokazujemy osoby i instytucje wspomniane w artykułach z tego tematu
+          oraz powiązania, dla których te artykuły są źródłem.
         </p>
       </v-card-text>
     </v-card>
