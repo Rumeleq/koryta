@@ -1,8 +1,14 @@
 """Tests for KRSCensoredPeople change detection and pre-filter."""
 
+import json
+
 import pandas as pd
 
 from scrapers.krs.censored import KRSCensoredPeople, hash_people_set
+from scrapers.krs.people_parsing import is_odpis
+from scrapers.stores import Context, ProcessPolicy
+from scrapers.stores.file import DownloadableFile
+from scrapers.test_tree import MockIO, MockNLP, MockRejestrIO, MockUtils, MockWeb
 
 KRS_1 = "0000000001"
 KRS_2 = "0000000002"
@@ -224,3 +230,127 @@ def test_full_prefilter_scenario():
 
     assert len(filtered) == 1
     assert filtered.iloc[0]["krs"] == KRS_2
+
+
+# ─── process: one row per KRS per day ──────────────────────
+#
+# A KRS is asked for against both registers, and the one it is not in answers
+# with a 404 body. That body parses as JSON, so it used to become a second row
+# for the same day holding nobody - which reads as the whole board resigning
+# and being reappointed, on every company, on every crawl.
+
+BUCKET = "gs://koryta-pl-crawled"
+
+NOT_FOUND = {"title": "Not Found", "status": 404}
+
+
+def board(*surnames):
+    return {
+        "odpis": {
+            "naglowekA": {"numerKRS": KRS_1},
+            "dane": {
+                "dzial2": {
+                    "organNadzoru": [
+                        {
+                            "sklad": [
+                                {
+                                    "nazwisko": {"nazwiskoICzlon": s},
+                                    "imiona": {"imie": "J***"},
+                                    "identyfikator": {"pesel": "7**********"},
+                                }
+                                for s in surnames
+                            ]
+                        }
+                    ]
+                }
+            },
+        }
+    }
+
+
+class OdpisFile:
+    def __init__(self, body):
+        self.body = body
+
+    def read_string(self) -> str:
+        return self.body if isinstance(self.body, str) else json.dumps(self.body)
+
+
+class OdpisIO(MockIO):
+    def __init__(self, blobs: dict[str, object]):
+        self.blobs = blobs
+
+    def list_files(self, path):
+        for name in self.blobs:
+            yield DownloadableFile(f"{BUCKET}/{name}")
+
+    def read_data(self, fs):
+        return OdpisFile(self.blobs[fs.url.removeprefix(f"{BUCKET}/")])
+
+
+def odpis_blob(krs: str, register: str, day: str) -> str:
+    return (
+        f"hostname=api-krs.ms.gov.pl/api/krs/OdpisAktualny/{krs}"
+        f"/?rejestr={register}/date={day}"
+    )
+
+
+def run_process(blobs):
+    ctx = Context(
+        io=OdpisIO(blobs),
+        rejestr_io=MockRejestrIO(),
+        con=None,  # type: ignore[arg-type]
+        utils=MockUtils(),
+        web=MockWeb(),
+        nlp=MockNLP(),
+        refresh_policy=ProcessPolicy.with_default(),
+    )
+    return KRSCensoredPeople().process(ctx)
+
+
+def test_the_404_from_the_other_register_is_not_a_snapshot():
+    df = run_process(
+        {
+            odpis_blob(KRS_1, "P", "2026-07-18"): board("K*****", "N****"),
+            odpis_blob(KRS_1, "S", "2026-07-18"): NOT_FOUND,
+        }
+    )
+
+    assert len(df) == 1
+    assert df.iloc[0]["n_people"] == 2
+
+
+def test_a_crawl_stored_as_an_empty_object_is_not_a_snapshot():
+    df = run_process(
+        {
+            odpis_blob(KRS_1, "P", "2026-07-18"): board("K*****"),
+            odpis_blob(KRS_1, "S", "2026-07-18"): "",
+        }
+    )
+
+    assert len(df) == 1
+
+
+def test_a_day_with_no_readable_odpis_produces_no_row():
+    df = run_process({odpis_blob(KRS_1, "S", "2026-07-18"): NOT_FOUND})
+
+    assert df.empty
+
+
+def test_an_odpis_with_no_body_is_not_a_snapshot():
+    """It would otherwise read as a company everybody just resigned from."""
+    assert not is_odpis({"odpis": {}})
+    assert not is_odpis({"odpis": {"naglowekA": {"numerKRS": "110"}, "dane": {}}})
+
+
+def test_a_cached_output_with_duplicate_rows_is_deduplicated_on_read():
+    """A file written before process keyed by (krs, date) still holds them."""
+    pipeline = make_pipeline(
+        [
+            {"krs": KRS_1, "date": "2026-07-18", "people_hash": "aaa", "n_people": 3},
+            {"krs": KRS_1, "date": "2026-07-18", "people_hash": "empty", "n_people": 0},
+            {"krs": KRS_1, "date": "2026-07-19", "people_hash": "aaa", "n_people": 3},
+        ]
+    )
+
+    assert KRS_1 not in pipeline.krs_with_people_changes(FakeContext())
