@@ -4,6 +4,16 @@ Extracts the masked name/PESEL data from the OdpisAktualny JSON structure,
 covering dzial1 (partners) and dzial2 (representation, supervision, proxies).
 """
 
+#: The sections of dzial2 that hold a list of people directly, rather than
+#: wrapping them in an organ with a ``sklad``. `prokurenci` belongs here and
+#: not with `reprezentacja`: the API spells a proxy list as a bare list, and
+#: reading it as an organ silently found nobody.
+DZIAL2_PERSON_LISTS = (
+    ("prokurenci", "prokurent", "rodzajProkury"),
+    ("pelnomocnicy", "pelnomocnik", ""),
+    ("osobyReprezentujacePZ", "osoba_pz", ""),
+)
+
 
 def parse_person(p: dict) -> tuple | None:
     """Parse a single person dict into a (nazwisko, imie, imie2, pesel) tuple."""
@@ -15,9 +25,7 @@ def parse_person(p: dict) -> tuple | None:
         else ""
     )
     imie = (
-        p.get("imiona", {}).get("imie", "")
-        if isinstance(p.get("imiona"), dict)
-        else ""
+        p.get("imiona", {}).get("imie", "") if isinstance(p.get("imiona"), dict) else ""
     )
     imie2 = (
         p.get("imiona", {}).get("imieDrugie", "")
@@ -35,7 +43,10 @@ def parse_person(p: dict) -> tuple | None:
 
 
 def extract_sklad(
-    container: dict, key: str, role_prefix: str, role_field: str,
+    container: dict,
+    key: str,
+    role_prefix: str,
+    role_field: str,
 ) -> list[tuple]:
     """Extract people from a 'sklad' list inside a container dict."""
     results: list[tuple] = []
@@ -50,6 +61,26 @@ def extract_sklad(
         if parsed:
             fn = p.get(role_field, "") if isinstance(p, dict) else ""
             results.append((*parsed, f"{role_prefix}: {fn}"))
+    return results
+
+
+def extract_person_list(
+    container: dict,
+    key: str,
+    role: str,
+    role_field: str,
+) -> list[tuple]:
+    """Extract people from a plain list of person dicts."""
+    results: list[tuple] = []
+    section = container.get(key, [])
+    if not isinstance(section, list):
+        return results
+    for p in section:
+        parsed = parse_person(p)
+        if not parsed:
+            continue
+        detail = p.get(role_field, "") if role_field and isinstance(p, dict) else ""
+        results.append((*parsed, f"{role}: {detail}" if detail else role))
     return results
 
 
@@ -73,27 +104,24 @@ def extract_dzial2_people(dane: dict) -> set[tuple]:
     if not isinstance(dzial2, dict):
         return people
 
-    # reprezentacja / prokurenci (sklad-based)
     for t in extract_sklad(
-        dzial2, "reprezentacja", "reprezentacja", "funkcjaWOrganie",
-    ):
-        people.add(t)
-    for t in extract_sklad(
-        dzial2, "prokurenci", "prokurent", "rodzajProkury",
+        dzial2,
+        "reprezentacja",
+        "reprezentacja",
+        "funkcjaWOrganie",
     ):
         people.add(t)
 
     # organNadzoru (can be list or dict)
     organ_nadzoru = dzial2.get("organNadzoru", {})
-    organs = (
-        organ_nadzoru
-        if isinstance(organ_nadzoru, list)
-        else [organ_nadzoru]
-    )
+    organs = organ_nadzoru if isinstance(organ_nadzoru, list) else [organ_nadzoru]
     for organ in organs:
         if isinstance(organ, dict):
             for t in extract_sklad(
-                {"o": organ}, "o", "nadzor", "funkcjaWOrganie",
+                {"o": organ},
+                "o",
+                "nadzor",
+                "funkcjaWOrganie",
             ):
                 people.add(t)
 
@@ -104,15 +132,8 @@ def extract_dzial2_people(dane: dict) -> set[tuple]:
         if parsed:
             people.add((*parsed, "kierownik_pzoz"))
 
-    # pelnomocnicy / osobyReprezentujacePZ (plain lists)
-    for key, role in [
-        ("pelnomocnicy", "pelnomocnik"),
-        ("osobyReprezentujacePZ", "osoba_pz"),
-    ]:
-        for p in dzial2.get(key, []):
-            parsed = parse_person(p)
-            if parsed:
-                people.add((*parsed, role))
+    for key, role, role_field in DZIAL2_PERSON_LISTS:
+        people.update(extract_person_list(dzial2, key, role, role_field))
 
     return people
 
