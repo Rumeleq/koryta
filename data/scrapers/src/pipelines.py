@@ -31,6 +31,7 @@ from scrapers.kmgp.people import PeopleKMGP
 from scrapers.koryta.differ import KorytaDiffer
 from scrapers.koryta.download import KorytaCompanies, KorytaPeople, KorytaVotes
 from scrapers.krs.censored import KRSCensoredPeople
+from scrapers.krs.coverage import RejestrIOCoverage
 from scrapers.krs.list import CompaniesKRS, PeopleKRS
 from scrapers.krs.scrape import KRSAlreadyScraped, KRSNeedsRefresh, ScrapeRejestrIO
 from scrapers.krs.updates import KRSUpdates
@@ -69,6 +70,7 @@ PIPELINES = [
     KRSCensoredPeople,
     KRSNeedsRefresh,
     KRSUpdates,
+    RejestrIOCoverage,
     KorytaCompanies,
     KorytaDiffer,
     KorytaPeople,

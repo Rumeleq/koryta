@@ -112,6 +112,7 @@ REFRESH_PIPELINES = {
     "KRSNeedsRefresh",
     "CompaniesKRS",
     "KRSUpdates",
+    "RejestrIOCoverage",
 }
 
 

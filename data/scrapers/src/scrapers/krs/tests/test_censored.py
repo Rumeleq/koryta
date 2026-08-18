@@ -3,9 +3,14 @@
 import json
 
 import pandas as pd
+import pytest
 
-from scrapers.krs.censored import KRSCensoredPeople, hash_people_set
-from scrapers.krs.people_parsing import is_odpis
+from scrapers.krs.censored import (
+    KRSCensoredPeople,
+    StaleOutputError,
+    hash_people_set,
+)
+from scrapers.krs.people_parsing import CensoredPerson
 from scrapers.stores import Context, ProcessPolicy
 from scrapers.stores.file import DownloadableFile
 from scrapers.test_tree import MockIO, MockNLP, MockRejestrIO, MockUtils, MockWeb
@@ -350,23 +355,33 @@ def test_a_day_with_no_readable_odpis_produces_no_row():
     assert df.empty
 
 
-def test_an_odpis_with_no_body_is_not_a_snapshot():
-    """It would otherwise read as a company everybody just resigned from."""
-    assert not is_odpis({"odpis": {}})
-    assert not is_odpis({"odpis": {"naglowekA": {"numerKRS": "110"}, "dane": {}}})
+def test_the_people_survive_into_the_output():
+    df = run_process({odpis_blob(KRS_1, "P", "2026-07-18"): board("K*****")})
+
+    people = [CensoredPerson.from_row(r) for r in df.iloc[0]["people"]]
+
+    assert [p.surname for p in people] == [("K*****",)]
 
 
-def test_a_cached_output_with_duplicate_rows_is_deduplicated_on_read():
-    """A file written before process keyed by (krs, date) still holds them."""
+def test_snapshots_reads_the_people_back():
     pipeline = make_pipeline(
         [
-            {"krs": KRS_1, "date": "2026-07-18", "people_hash": "aaa", "n_people": 3},
-            {"krs": KRS_1, "date": "2026-07-18", "people_hash": "empty", "n_people": 0},
-            {"krs": KRS_1, "date": "2026-07-19", "people_hash": "aaa", "n_people": 3},
+            {
+                "krs": KRS_1,
+                "date": "2026-07-18",
+                "people_hash": "aaa",
+                "n_people": 1,
+                "people": [
+                    ["K*****|S******", "J***", "", "7**********", "", "nadzor: "]
+                ],
+            }
         ]
     )
 
-    assert KRS_1 not in pipeline.krs_with_people_changes(FakeContext())
+    people = pipeline.snapshots(FakeContext())[KRS_1]["2026-07-18"]
+
+    assert people[0].surname == ("K*****", "S******")
+    assert people[0].role == "nadzor: "
 
 
 def test_a_section_the_register_adds_is_carried_into_the_output():
@@ -385,3 +400,26 @@ def test_a_response_we_fully_understand_carries_no_unread_path():
     df = run_process({odpis_blob(KRS_1, "P", "2026-07-18"): board("K*****")})
 
     assert df.iloc[0]["unread_paths"] == []
+
+
+def test_a_cached_output_with_duplicate_rows_is_deduplicated_on_read():
+    """A file written before process keyed by (krs, date) still holds them."""
+    pipeline = make_pipeline(
+        [
+            {"krs": KRS_1, "date": "2026-07-18", "people_hash": "aaa", "n_people": 3},
+            {"krs": KRS_1, "date": "2026-07-18", "people_hash": "empty", "n_people": 0},
+            {"krs": KRS_1, "date": "2026-07-19", "people_hash": "aaa", "n_people": 3},
+        ]
+    )
+
+    assert KRS_1 not in pipeline.krs_with_people_changes(FakeContext())
+
+
+def test_a_cached_output_without_the_people_column_fails_loudly():
+    """Silently it would report rejestr.io's coverage as perfect everywhere."""
+    pipeline = make_pipeline(
+        [{"krs": KRS_1, "date": "2026-07-18", "people_hash": "aaa", "n_people": 3}]
+    )
+
+    with pytest.raises(StaleOutputError):
+        pipeline.snapshots(FakeContext())

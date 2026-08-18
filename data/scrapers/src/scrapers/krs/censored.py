@@ -21,6 +21,10 @@ from scrapers.stores import CloudStorage, Context, Pipeline
 from scrapers.stores.file import DownloadableFile
 
 
+class StaleOutputError(RuntimeError):
+    """A cached pipeline output predates the columns the reader needs."""
+
+
 def hash_people_set(people) -> str:
     """Produce a deterministic hash for a set of people."""
     canonical = sorted(str(p) for p in people)
@@ -31,15 +35,15 @@ class KRSCensoredPeople(Pipeline):
     """Indexes censored people from api-krs snapshots.
 
     Outputs a DataFrame with columns: krs, date, people_hash, n_people,
-    unread_paths. Each row represents one KRS on one crawl date.
+    people. Each row represents one KRS on one crawl date.
 
     A KRS is queried against both registers - ``?rejestr=P`` and
     ``?rejestr=S`` - and the one it is not in answers with a 404 body. That
     body is valid JSON, so reading it as a snapshot used to produce a second
-    row for the same KRS and date holding nobody, which
-    `krs_with_people_changes` then read as everyone resigning and being
-    reappointed on the same day. Both the register mismatch and a crawl that
-    failed (stored as an empty object) are dropped here instead.
+    row for the same KRS and date holding nobody, which `krs_with_people_changes`
+    then read as everyone resigning and being reappointed on the same day. Both
+    the register mismatch and a crawl that failed (stored as an empty object)
+    are dropped here instead.
     """
 
     filename = "krs_censored_people"
@@ -87,7 +91,14 @@ class KRSCensoredPeople(Pipeline):
 
         if not snapshots:
             return pd.DataFrame(
-                columns=["krs", "date", "people_hash", "n_people", "unread_paths"]
+                columns=[
+                    "krs",
+                    "date",
+                    "people_hash",
+                    "n_people",
+                    "people",
+                    "unread_paths",
+                ]
             )
 
         return pd.DataFrame(
@@ -97,6 +108,7 @@ class KRSCensoredPeople(Pipeline):
                     "date": date,
                     "people_hash": hash_people_set(people),
                     "n_people": len(people),
+                    "people": [p.as_row() for p in sorted(people)],
                     # Almost always empty. A section the register adds that
                     # PERSON_PATHS does not name is a change that never
                     # registers as one, which is what the prokurenci bug was;
@@ -106,6 +118,26 @@ class KRSCensoredPeople(Pipeline):
                 for (krs, date), people in snapshots.items()
             ]
         )
+
+    def snapshots(self, ctx: Context) -> dict[str, dict[str, list[CensoredPerson]]]:
+        """KRS → crawl date → the people api-krs listed on that date."""
+        df = self._rows(ctx)
+        by_krs: dict[str, dict[str, list[CensoredPerson]]] = {}
+        if df.empty:
+            return by_krs
+        if "people" not in df.columns:
+            # Loudly: a caller that reads this as "nobody works anywhere"
+            # concludes rejestr.io's coverage is perfect and buys nothing.
+            raise StaleOutputError(
+                f"{self.filename} has no `people` column - it predates the "
+                f"column being added. Re-run with `--refresh {type(self).__name__}`."
+            )
+        for krs, date, people in zip(df["krs"], df["date"], df["people"]):
+            rows = people if isinstance(people, (list, tuple)) else []
+            by_krs.setdefault(str(krs), {})[str(date)] = [
+                CensoredPerson.from_row(r) for r in rows
+            ]
+        return by_krs
 
     def unread_paths(self, ctx: Context) -> dict[str, int]:
         """Person-bearing paths in the crawl that `PERSON_PATHS` does not name."""
