@@ -202,13 +202,37 @@ def extract_dzial2_people(dane: dict) -> set[CensoredPerson]:
     return people
 
 
+def is_odpis(data) -> bool:
+    """Whether a parsed api-krs response actually carries a register entry.
+
+    Checks the header and the body, not just the envelope. A query against the
+    wrong register answers 404 with a JSON body, which has no ``odpis`` at all;
+    but an ``odpis`` present and empty would pass a shallower check and become
+    a snapshot of a company with nobody in it - which is exactly how the 404
+    body used to read as the whole board resigning. Every one of the 13,139
+    real entries in the crawl carries both of these.
+    """
+    if not isinstance(data, dict):
+        return False
+    odpis = data.get("odpis")
+    if not isinstance(odpis, dict):
+        return False
+    header = odpis.get("naglowekA")
+    if not isinstance(header, dict) or not header.get("numerKRS"):
+        return False
+    dane = odpis.get("dane")
+    return isinstance(dane, dict) and bool(dane)
+
+
 def extract_censored_people(data: dict) -> set[CensoredPerson]:
-    """Extract all censored people from an api-krs JSON response."""
-    if not isinstance(data, dict) or "odpis" not in data:
+    """Extract all censored people from an api-krs JSON response.
+
+    Returns an empty set for anything that is not an odpis - api-krs answers a
+    query against the wrong register with a 404 body, which parses as JSON and
+    would otherwise read as a company with nobody in it.
+    """
+    if not is_odpis(data):
         return set()
 
-    dane = data["odpis"].get("dane", {})
-    if not isinstance(dane, dict):
-        return set()
-
+    dane = data["odpis"]["dane"]
     return extract_dzial1_people(dane) | extract_dzial2_people(dane)

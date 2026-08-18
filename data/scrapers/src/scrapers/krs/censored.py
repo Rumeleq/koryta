@@ -11,7 +11,11 @@ import pandas as pd
 from tqdm import tqdm
 
 from scrapers.krs.columns import normalise
-from scrapers.krs.people_parsing import extract_censored_people
+from scrapers.krs.people_parsing import (
+    CensoredPerson,
+    extract_censored_people,
+    is_odpis,
+)
 from scrapers.stores import CloudStorage, Context, Pipeline
 from scrapers.stores.file import DownloadableFile
 
@@ -19,28 +23,34 @@ from scrapers.stores.file import DownloadableFile
 def hash_people_set(people) -> str:
     """Produce a deterministic hash for a set of people."""
     canonical = sorted(str(p) for p in people)
-    return hashlib.sha256(
-        json.dumps(canonical).encode()
-    ).hexdigest()[:16]
+    return hashlib.sha256(json.dumps(canonical).encode()).hexdigest()[:16]
 
 
 class KRSCensoredPeople(Pipeline):
     """Indexes censored people from api-krs snapshots.
 
-    Outputs a DataFrame with columns: krs, date, people_hash, n_people.
-    Each row represents one api-krs OdpisAktualny file.
+    Outputs a DataFrame with columns: krs, date, people_hash, n_people. Each
+    row represents one KRS on one crawl date.
+
+    A KRS is queried against both registers - ``?rejestr=P`` and
+    ``?rejestr=S`` - and the one it is not in answers with a 404 body. That
+    body is valid JSON, so reading it as a snapshot used to produce a second
+    row for the same KRS and date holding nobody, which
+    `krs_with_people_changes` then read as everyone resigning and being
+    reappointed on the same day. Both the register mismatch and a crawl that
+    failed (stored as an empty object) are dropped here instead.
     """
 
     filename = "krs_censored_people"
     dtype = {"krs": str}
 
     def process(self, ctx: Context) -> pd.DataFrame:
-        results: list[dict] = []
+        # Keyed so a second response for the same KRS and date - the other
+        # register, or a re-crawl - cannot become a second row.
+        snapshots: dict[tuple[str, str], set[CensoredPerson]] = {}
 
         for blob_ref in tqdm(
-            ctx.io.list_files(
-                CloudStorage(prefix="hostname=api-krs.ms.gov.pl")
-            ),
+            ctx.io.list_files(CloudStorage(prefix="hostname=api-krs.ms.gov.pl")),
             desc="Indexing censored people",
         ):
             assert isinstance(blob_ref, DownloadableFile)
@@ -62,22 +72,48 @@ class KRSCensoredPeople(Pipeline):
             except Exception:
                 continue
 
+            if not is_odpis(data):
+                continue
+
             people = extract_censored_people(data)
-            results.append(
+            previous = snapshots.get((krs, date))
+            # Two odpisy for one KRS on one day should not happen; if they do,
+            # the larger one is the one that read a full entry.
+            if previous is None or len(people) > len(previous):
+                snapshots[(krs, date)] = people
+
+        if not snapshots:
+            return pd.DataFrame(columns=["krs", "date", "people_hash", "n_people"])
+
+        return pd.DataFrame(
+            [
                 {
                     "krs": krs,
                     "date": date,
                     "people_hash": hash_people_set(people),
                     "n_people": len(people),
                 }
-            )
+                for (krs, date), people in snapshots.items()
+            ]
+        )
 
-        if not results:
-            return pd.DataFrame(
-                columns=["krs", "date", "people_hash", "n_people"]
-            )
+    def _rows(self, ctx: Context) -> pd.DataFrame:
+        """The output, normalised and with one row per KRS per day.
 
-        return pd.DataFrame(results)
+        `process` cannot emit a duplicate, but a cached file written before it
+        keyed by (krs, date) can hold one, and `read_or_process` will hand back
+        that file - or restore it from the shared cache - without a word. The
+        larger row wins, as it does in `process`: it is the one that read a
+        real entry rather than the 404 from the other register.
+        """
+        df = normalise(self.read_or_process(ctx), "date")
+        if df.empty or "n_people" not in df.columns:
+            return df
+        return (
+            df.sort_values("n_people")
+            .drop_duplicates(subset=["krs", "date"], keep="last")
+            .sort_values(["krs", "date"])
+        )
 
     def krs_with_people_changes(self, ctx: Context) -> dict[str, str]:
         """Return KRS → change_date for entries where people changed.
@@ -89,7 +125,7 @@ class KRSCensoredPeople(Pipeline):
         KRS entries with only one snapshot are included with that
         snapshot's date (first-time scrape, no prior data).
         """
-        df = normalise(self.read_or_process(ctx), "date")
+        df = self._rows(ctx)
         if df.empty:
             return {}
 

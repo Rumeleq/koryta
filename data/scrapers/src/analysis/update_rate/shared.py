@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 
 from conductor import setup_context
+from scrapers.krs.people_parsing import is_odpis
 from scrapers.krs.scrape import KRSAlreadyScraped
 from scrapers.krs.updates import KRSUpdates
 from scrapers.stores import Pipeline
@@ -92,7 +93,14 @@ def extract_rejestrio_people(content: str) -> set[tuple] | None:
 
 
 def index_api_krs_files() -> dict[tuple[str, str], Path]:
-    """Build a lookup dict for api-krs OdpisAktualny files: (krs, date) -> filepath."""
+    """Build a lookup dict for api-krs OdpisAktualny files: (krs, date) -> filepath.
+
+    A KRS is asked for against both registers on the same day and the one it is
+    not in answers with a 404 body, so half the (krs, date) keys have two files
+    behind them. Only the one carrying an ``odpis`` says anything about who
+    runs the company; taking whichever the directory listing happened to yield
+    last read as a company with nobody in it.
+    """
     api_krs_files = {}
     krs_pat = re.compile(r"\b\d{10}\b")
     date_pat = re.compile(r"date=(\d{4}-\d{2}-\d{2})")
@@ -102,12 +110,19 @@ def index_api_krs_files() -> dict[tuple[str, str], Path]:
         if "api-krs.ms.gov.pl" in name and "OdpisAktualny" in name:
             krs_match = krs_pat.search(name)
             date_match = date_pat.search(name)
-            if krs_match and date_match:
+            if krs_match and date_match and _holds_an_odpis(p):
                 krs = krs_match.group(0)
                 date = date_match.group(1)
                 api_krs_files[(krs, date)] = p
 
     return api_krs_files
+
+
+def _holds_an_odpis(path: Path) -> bool:
+    try:
+        return is_odpis(json.loads(path.read_text(encoding="utf-8", errors="replace")))
+    except Exception:
+        return False
 
 
 def build_scrape_dates(
