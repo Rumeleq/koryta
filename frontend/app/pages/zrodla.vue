@@ -105,12 +105,12 @@
           </span>
         </template>
         <template #[`item.name`]="{ item }">
-          <div class="d-flex align-center">
+          <div class="d-flex align-center zrodla-title-cell">
             <v-avatar
               v-if="item.sourceURL"
               :image="getDomainIcon(item.sourceURL)"
               size="x-small"
-              class="mr-2"
+              class="mr-2 flex-shrink-0"
             />
             <!-- Our page for the article rather than the publisher's. The
                  outbound link lives there, beside everything else we know
@@ -120,12 +120,15 @@
             <NuxtLink
               v-if="articleUrl(item)"
               :to="articleUrl(item)!"
-              class="zrodla-link"
+              class="zrodla-link zrodla-title"
+              :title="item.name"
               data-testid="zrodla-article-link"
             >
               {{ item.name }}
             </NuxtLink>
-            <span v-else>{{ item.name }}</span>
+            <span v-else class="zrodla-title" :title="item.name">{{
+              item.name
+            }}</span>
           </div>
         </template>
         <template #[`item.publishedDate`]="{ item }">
@@ -407,5 +410,26 @@ function formatDate(dateVal: string | Timestamp | undefined) {
 .zrodla-link:hover,
 .zrodla-link:focus-visible {
   text-decoration: underline;
+}
+
+/* A crawled title is sometimes a whole sentence. Allowed to wrap it made its
+   row two or three lines tall, so a screenful of the table held a third of the
+   articles it should and the columns beside it drifted out of line with their
+   headers. The cap sits on the cell rather than the text because a data table
+   is laid out by its content: without it the longest title in the page decides
+   how wide the column is. `vw` keeps it from running off a phone, where the
+   32rem alone would be wider than the screen. */
+.zrodla-title-cell {
+  max-width: min(32rem, 60vw);
+}
+
+/* min-width:0 is the part that actually does it: a flex item defaults to
+   min-width:auto, which refuses to shrink below its own text and would leave
+   the ellipsis to never trigger. */
+.zrodla-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>
