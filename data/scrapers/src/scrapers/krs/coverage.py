@@ -37,7 +37,12 @@ from tqdm import tqdm
 
 from scrapers.krs.censored import KRSCensoredPeople
 from scrapers.krs.columns import normalise
-from scrapers.krs.names import missing_from_response, people_in_response
+from scrapers.krs.names import (
+    comparable_people,
+    missing_from_response,
+    people_in_response,
+    phantoms_in_response,
+)
 from scrapers.krs.updates import KRSUpdates
 from scrapers.stores import CloudStorage, Context, Pipeline
 from scrapers.stores.file import split_crawl_date
@@ -76,6 +81,25 @@ def parse_current_connections_url(url: str) -> tuple[str, str] | None:
     if not krs.isdigit():
         return None
     return krs.zfill(10), crawl_date
+
+
+def nearest(api_dates: list[str], crawl_date: str) -> str | None:
+    """The api-krs snapshot closest in time to a rejestr.io response.
+
+    Either side: a snapshot taken after the response still says what the
+    register held when we asked, provided the bulletin says nothing moved in
+    between - which the caller checks. Restricting to earlier snapshots left a
+    third of the responses on file with nothing to compare against.
+    """
+    if not api_dates:
+        return None
+    return min(
+        api_dates,
+        key=lambda day: (
+            abs((date.fromisoformat(day) - date.fromisoformat(crawl_date)).days),
+            day > crawl_date,
+        ),
+    )
 
 
 def days_in(start: str, end: str) -> list[str]:
@@ -181,14 +205,19 @@ class RejestrIOCoverage(Pipeline):
             by_date = snapshots.get(krs)
             if not by_date:
                 continue
-            earlier = [d for d in sorted(by_date) if d <= crawl_date]
-            if not earlier:
+            api_date = nearest(sorted(by_date), crawl_date)
+            if api_date is None:
                 continue
-            api_date = earlier[-1]
             listed = by_date[api_date]
+            comparable = comparable_people(listed)
             missing = missing_from_response(listed, body)
-            covered = window.covers(api_date, crawl_date)
-            moved = window.changed_between(krs, api_date, crawl_date)
+            phantom = phantoms_in_response(listed, body)
+            # Whichever came first bounds the span: an api-krs snapshot taken
+            # after the response is just as good a witness to what the register
+            # held, as long as the bulletin says it did not move in between.
+            span = (min(api_date, crawl_date), max(api_date, crawl_date))
+            covered = window.covers(*span)
+            moved = window.changed_between(krs, *span)
             last_change = window.last_change_before(krs, crawl_date)
             rows.append(
                 {
@@ -196,12 +225,18 @@ class RejestrIOCoverage(Pipeline):
                     "api_date": api_date,
                     "rejestr_date": crawl_date,
                     "n_api_people": len(listed),
+                    "n_comparable": len(comparable),
                     "n_rejestr_people": len(people_in_response(body)),
                     "n_missing": len(missing),
                     "missing": [p.as_row() for p in missing],
+                    "n_phantom": len(phantom),
                     "register_moved_between": moved,
                     "bulletin_covers_span": covered,
-                    "conclusive": covered and not moved,
+                    # Nobody comparable is not a clean bill of health: it is a
+                    # company where the check had nothing to say, and counting
+                    # it as verified would make the budget look better the less
+                    # the check actually did.
+                    "conclusive": covered and not moved and bool(comparable),
                     "last_register_change": last_change,
                 }
             )
@@ -213,9 +248,11 @@ class RejestrIOCoverage(Pipeline):
                     "api_date",
                     "rejestr_date",
                     "n_api_people",
+                    "n_comparable",
                     "n_rejestr_people",
                     "n_missing",
                     "missing",
+                    "n_phantom",
                     "register_moved_between",
                     "bulletin_covers_span",
                     "conclusive",
@@ -225,11 +262,21 @@ class RejestrIOCoverage(Pipeline):
         return pd.DataFrame(rows).sort_values(["krs", "rejestr_date"])
 
     def stale(self, ctx: Context) -> pd.DataFrame:
-        """The comparisons that show a response fetched before rejestr.io knew."""
+        """The comparisons where the response and the register disagree.
+
+        Either direction counts: somebody the register lists and rejestr.io
+        does not know about yet, or somebody rejestr.io still shows as holding
+        a seat the register has already taken away.
+        """
         df = normalise(self.read_or_process(ctx), "api_date", "rejestr_date")
         if df.empty:
             return df
-        return df[df["conclusive"] & (df["n_missing"] > 0)]
+        return df[df["conclusive"] & (self._disagreements(df) > 0)]
+
+    @staticmethod
+    def _disagreements(df: pd.DataFrame) -> pd.Series:
+        phantom = df["n_phantom"] if "n_phantom" in df.columns else 0
+        return df["n_missing"] + phantom
 
     def consecutive_misses(self, ctx: Context) -> dict[str, tuple[str, int]]:
         """KRS → (date of the last conclusive scrape, misses in a row since).
@@ -244,17 +291,29 @@ class RejestrIOCoverage(Pipeline):
             return {}
 
         result: dict[str, tuple[str, int]] = {}
-        conclusive = df[df["conclusive"]].sort_values("rejestr_date")
-        for krs, group in conclusive.groupby("krs"):
-            misses = group["n_missing"].tolist() if not group.empty else []
-            if not misses or misses[-1] == 0:
+        df = df.assign(_disagreements=self._disagreements(df))
+        for krs, group in df.sort_values("rejestr_date").groupby("krs"):
+            conclusive = group[group["conclusive"]]
+            counts = conclusive["_disagreements"].tolist()
+            if not counts or counts[-1] == 0:
                 continue
-            run = 0
-            for count in reversed(misses):
+            since = conclusive["rejestr_date"].iloc[-1]
+            for count, day in zip(
+                reversed(counts), reversed(conclusive["rejestr_date"].tolist())
+            ):
                 if count == 0:
                     break
-                run += 1
-            result[str(krs)] = (str(group["rejestr_date"].iloc[-1]), run)
+                since = day
+            # Every response fetched since the disagreement first showed is one
+            # we paid for and did not fix, whether or not its own comparison
+            # came out conclusive - and the clock runs from the last of them,
+            # not the last conclusive one, or a re-query whose comparison was
+            # discarded would leave the company due again the same day.
+            attempts = group[group["rejestr_date"] >= since]
+            result[str(krs)] = (
+                str(attempts["rejestr_date"].iloc[-1]),
+                len(attempts),
+            )
         return result
 
     def krs_to_rescrape(self, ctx: Context, today: date | None = None) -> list[str]:

@@ -114,6 +114,18 @@ class PlainPerson:
         return PlainPerson(frozenset(surnames), given_signature)
 
 
+#: rejestr.io connection types that say nothing about how fresh a response is,
+#: because the register entry we compare against does not record them.
+#:
+#: ``BENEFICIARY`` is a beneficial owner, which comes from the CRBR register
+#: rather than the KRS, so 31% of them are in no OdpisAktualny at all.
+#: ``KRS_FOUNDER`` is the mirror of ``komitet_zalozycielski``: a fact from the
+#: moment of registration, 96% of which the register no longer carries.
+#: ``KRS_CREDITOR`` sits in a part of dzial4 that holds no people. Every other
+#: type is in the register 96-100% of the time.
+TYPES_NOT_IN_THE_REGISTER = frozenset({"BENEFICIARY", "KRS_FOUNDER", "KRS_CREDITOR"})
+
+
 def is_person(entry) -> bool:
     """Whether a rejestr.io krs-powiazania entry describes a human."""
     return isinstance(entry, dict) and entry.get("typ") in (
@@ -122,8 +134,24 @@ def is_person(entry) -> bool:
     )
 
 
-def people_in_response(response) -> list[PlainPerson]:
-    """The people named in a rejestr.io krs-powiazania response."""
+def connection_types(entry) -> set[str]:
+    """The kinds of tie a rejestr.io entry records to the queried company."""
+    links = entry.get("krs_powiazania_kwerendowane")
+    if not isinstance(links, list):
+        return set()
+    return {
+        str(link.get("typ"))
+        for link in links
+        if isinstance(link, dict) and link.get("typ")
+    }
+
+
+def people_in_response(response, comparable_only: bool = False) -> list[PlainPerson]:
+    """The people named in a rejestr.io krs-powiazania response.
+
+    With ``comparable_only``, drops those held by a tie the register does not
+    record, whose absence from an OdpisAktualny means nothing.
+    """
     if not isinstance(response, list):
         return []
     people = []
@@ -133,6 +161,10 @@ def people_in_response(response) -> list[PlainPerson]:
         identity = entry.get("tozsamosc")
         if not isinstance(identity, dict):
             continue
+        if comparable_only:
+            types = connection_types(entry)
+            if types and types <= TYPES_NOT_IN_THE_REGISTER:
+                continue
         person = PlainPerson.build(
             str(identity.get("nazwisko", "") or ""),
             str(identity.get("imie", "") or ""),
@@ -157,11 +189,39 @@ def comparable(censored: CensoredPerson) -> bool:
     return censored.role.split(":")[0].strip() not in ROLES_REJESTRIO_OMITS
 
 
+def comparable_people(censored_people) -> list[CensoredPerson]:
+    """Those whose absence from a rejestr.io response would mean something."""
+    return [person for person in censored_people if comparable(person)]
+
+
 def missing_from_response(censored_people, response) -> list[CensoredPerson]:
     """The people api-krs lists that a rejestr.io response does not name."""
     people = people_in_response(response)
     return [
         person
-        for person in censored_people
-        if comparable(person) and not is_present(person, people)
+        for person in comparable_people(censored_people)
+        if not is_present(person, people)
+    ]
+
+
+def named_by(censored: CensoredPerson, person: PlainPerson) -> bool:
+    """Whether a censored person could be this plain one."""
+    wanted = censored_surname_signatures(censored.surname)
+    given = signature(censored.given)
+    return bool(wanted and given == person.given and wanted & person.surnames)
+
+
+def phantoms_in_response(censored_people, response) -> list[PlainPerson]:
+    """The people a rejestr.io response names that the register does not.
+
+    The other direction of the same staleness, and the more visible one: a seat
+    rejestr.io still shows as held is published as a live connection, where a
+    seat it has not heard about yet is merely absent. Ties the register does
+    not record at all are dropped first - see TYPES_NOT_IN_THE_REGISTER.
+    """
+    listed = comparable_people(censored_people)
+    return [
+        person
+        for person in people_in_response(response, comparable_only=True)
+        if not any(named_by(censored, person) for censored in listed)
     ]
