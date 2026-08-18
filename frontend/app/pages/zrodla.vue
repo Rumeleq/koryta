@@ -391,9 +391,21 @@ function formatDate(dateVal: string | Timestamp | undefined) {
 <style scoped>
 /* One colour whether the reader has opened the link before or not. The table
    is long enough that the browser's visited purple made half the titles look
-   like a state this page was tracking, rather than the reader's own history. */
+   like a state this page was tracking, rather than the reader's own history.
+
+   That colour is the body text's, not `primary`: the brand sage is around
+   1.9:1 on white, which carries a chip's tint but is too light to read as a
+   column of titles. Inheriting also keeps it right under a theme that changes
+   the surface underneath. Every cell in Tytul is a link, so the underline is
+   only wanted on hover. */
 .zrodla-link,
 .zrodla-link:visited {
-  color: rgb(var(--v-theme-primary));
+  color: inherit;
+  text-decoration: none;
+}
+
+.zrodla-link:hover,
+.zrodla-link:focus-visible {
+  text-decoration: underline;
 }
 </style>
