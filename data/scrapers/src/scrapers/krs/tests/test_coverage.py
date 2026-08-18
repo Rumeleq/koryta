@@ -252,15 +252,93 @@ def test_a_span_the_bulletin_does_not_cover_is_not_evidence():
     assert coverage.stale(ctx).empty
 
 
-def test_a_response_older_than_the_snapshot_is_not_compared():
-    """Only a snapshot taken at or before the scrape says what was true then."""
-    _, _, df = build_coverage(
+def test_a_snapshot_taken_after_the_response_still_counts():
+    """It says what the register held, if the bulletin says nothing moved."""
+    coverage, ctx, df = build_coverage(
         {connections_blob(KRS, "2026-07-01"): [entry("Kowal", "Małgorzata")]},
         {KRS: {"2026-07-05": BOARD}},
         SPAN,
     )
 
-    assert df.empty
+    assert df.iloc[0]["api_date"] == "2026-07-05"
+    assert df.iloc[0]["conclusive"]
+    assert list(coverage.stale(ctx)["krs"]) == [KRS]
+
+
+def test_a_snapshot_taken_after_a_change_does_not_count():
+    coverage, ctx, df = build_coverage(
+        {connections_blob(KRS, "2026-07-01"): [entry("Kowal", "Małgorzata")]},
+        {KRS: {"2026-07-05": BOARD}},
+        [*SPAN, (KRS, "2026-07-03")],
+    )
+
+    assert not df.iloc[0]["conclusive"]
+    assert coverage.stale(ctx).empty
+
+
+def test_the_snapshot_nearest_in_time_is_the_one_used():
+    _, _, df = build_coverage(
+        {connections_blob(KRS, "2026-07-10"): [entry("Kowal", "Małgorzata")]},
+        {KRS: {"2026-06-01": [person("Z*****", "K*****")], "2026-07-12": BOARD}},
+        SPAN,
+    )
+
+    assert df.iloc[0]["api_date"] == "2026-07-12"
+
+
+# ─── the other direction ──────────────────────────────────
+
+
+def test_a_seat_the_register_has_taken_away_is_still_a_disagreement():
+    """rejestr.io publishing a seat that ended is the more visible error."""
+    coverage, ctx, df = build_coverage(
+        {
+            connections_blob(KRS, "2026-07-10"): [
+                entry("Kowal", "Małgorzata"),
+                entry("Nowak", "Adam"),
+                entry("Zieliński", "Karol"),
+            ]
+        },
+        {KRS: {"2026-07-05": BOARD}},
+        SPAN,
+    )
+
+    assert df.iloc[0]["n_missing"] == 0
+    assert df.iloc[0]["n_phantom"] == 1
+    assert list(coverage.stale(ctx)["krs"]) == [KRS]
+
+
+def test_a_beneficial_owner_is_not_a_phantom():
+    """Beneficial owners come from CRBR; no OdpisAktualny records them."""
+    _, _, df = build_coverage(
+        {
+            connections_blob(KRS, "2026-07-10"): [
+                entry("Kowal", "Małgorzata"),
+                entry("Nowak", "Adam"),
+                {
+                    "typ": "osoba",
+                    "tozsamosc": {"nazwisko": "Zieliński", "imie": "Karol"},
+                    "krs_powiazania_kwerendowane": [{"typ": "BENEFICIARY"}],
+                },
+            ]
+        },
+        {KRS: {"2026-07-05": BOARD}},
+        SPAN,
+    )
+
+    assert df.iloc[0]["n_phantom"] == 0
+
+
+def test_a_snapshot_of_nobody_comparable_is_not_a_clean_bill_of_health():
+    """Otherwise the budget improves the less the check manages to check."""
+    _, _, df = build_coverage(
+        {connections_blob(KRS, "2026-07-10"): []},
+        {KRS: {"2026-07-05": [person("K****", "M*********", role="kierownik_pzoz")]}},
+        SPAN,
+    )
+
+    assert df.iloc[0]["n_comparable"] == 0
+    assert not df.iloc[0]["conclusive"]
 
 
 def test_the_newest_snapshot_at_or_before_the_scrape_is_the_one_used():

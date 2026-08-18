@@ -35,26 +35,29 @@ from scrapers.krs.people_parsing import PERSON_PATHS
 
 pytestmark = pytest.mark.e2e
 
-#: Companies whose most recent conclusive comparison came back short.
+#: Companies whose most recent conclusive comparison disagreed with api-krs.
 #:
-#: 101 on 2026-08-18, against 4,758 companies with both sources on file. They
+#: 114 on 2026-08-18, against 5,381 companies with both sources on file. They
 #: are what this check was written to find and had never been re-queried; the
 #: backoff in `RejestrIOCoverage.krs_to_rescrape` feeds them back to
 #: `ScrapeRejestrIO` a few at a time, so the number should fall. Around 40 of
 #: them were scraped within a week of the register change, which is the
 #: too-early case exactly; the rest are companies rejestr.io has no record of
 #: the person for, and those stay until rejestr.io fixes its own data.
-STALE_COMPANY_BUDGET = 115
+STALE_COMPANY_BUDGET = 130
 
-#: Of every censored person api-krs listed, the share rejestr.io failed to
-#: name in a comparison that means something. 0.43% on 2026-08-18 (204 of
-#: 47,387). Kept as a rate rather than a count because the corpus grows.
-MISSING_PEOPLE_BUDGET = 0.0075
+#: Of every person a conclusive comparison could check, the share the two
+#: sources disagree about in either direction. 0.85% on 2026-08-18: 216
+#: missing from rejestr.io and 186 it names that the register does not, of
+#: 47,102. A rate rather than a count, because the corpus grows.
+DISAGREEMENT_BUDGET = 0.012
 
-#: Comparisons the bulletin can vouch for. 97.5% on 2026-08-18 - the rest are
-#: companies whose register moved between our two observations. If this
-#: collapses, the gate has broken rather than the data.
-MIN_CONCLUSIVE_SHARE = 0.90
+#: Comparisons the bulletin can vouch for. 76.9% on 2026-08-18. The rest are
+#: mostly companies whose register moved between our two observations, which
+#: is why the nearer api-krs snapshot was on the far side of the response in
+#: the first place. If this collapses, the gate has broken rather than the
+#: data.
+MIN_CONCLUSIVE_SHARE = 0.65
 
 
 @pytest.fixture(scope="module")
@@ -86,17 +89,37 @@ def test_most_comparisons_are_conclusive(coverage):
     )
 
 
-def test_rejestrio_names_everybody_api_krs_lists(coverage):
-    """Someone in the register and not in the response: a response bought too soon."""
+def test_the_two_sources_name_the_same_people(coverage):
+    """Either direction is a response that does not match the register.
+
+    Somebody the register lists and rejestr.io has not heard of is a response
+    bought before it caught up. Somebody rejestr.io still names whom the
+    register has removed is the same staleness seen from the other side, and
+    the more visible one: it is published as a live connection.
+    """
     _, df = coverage
     conclusive = df[df["conclusive"]]
-    checked = int(conclusive["n_api_people"].sum())
+    checked = int(conclusive["n_comparable"].sum())
     missing = int(conclusive["n_missing"].sum())
+    phantom = int(conclusive["n_phantom"].sum())
 
     assert checked > 0
-    assert missing / checked <= MISSING_PEOPLE_BUDGET, (
-        f"{missing} of {checked} people api-krs lists are absent from the "
-        f"rejestr.io response we hold ({missing / checked:.2%}), over budget"
+    assert (missing + phantom) / checked <= DISAGREEMENT_BUDGET, (
+        f"{missing} people api-krs lists are absent from the rejestr.io "
+        f"response we hold and {phantom} more are named by it and not by the "
+        f"register, of {checked} checked "
+        f"({(missing + phantom) / checked:.2%}), over budget"
+    )
+
+
+def test_a_conclusive_comparison_actually_compared_something(coverage):
+    """A company with nobody comparable is not a company that checked out."""
+    _, df = coverage
+    conclusive = df[df["conclusive"]]
+
+    assert (conclusive["n_comparable"] > 0).all(), (
+        "a comparison with nothing left to compare is recorded as conclusive, "
+        "so the budget improves the less the check manages to check"
     )
 
 
