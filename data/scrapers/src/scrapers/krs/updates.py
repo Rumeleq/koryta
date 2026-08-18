@@ -28,6 +28,26 @@ class KRSUpdates(Pipeline[KRSUpdate]):
     def output_class(self) -> typing.Type:
         return KRSUpdate
 
+    def days_crawled(self, ctx: Context) -> set[str]:
+        """Every bulletin day with a response on file, empty ones included.
+
+        Not derivable from this pipeline's own rows: a day on which no company
+        changed produces no rows and is indistinguishable there from a day we
+        never fetched. The difference matters to anything that reads "this
+        company is not in the bulletin" as "this company did not change" - two
+        of the days on file are genuinely empty, and six calendar days in the
+        middle of the range were never fetched at all.
+        """
+        days = set()
+        for blob_ref in ctx.io.list_files(
+            CloudStorage(prefix="hostname=api-krs.ms.gov.pl/api/Krs/Biuletyn")
+        ):
+            url = getattr(blob_ref, "url", "")
+            if "Biuletyn/" not in url:
+                continue
+            days.add(url.split("Biuletyn/", 1)[1].split("/", 1)[0])
+        return days
+
     def process(self, ctx: Context) -> pd.DataFrame:
         results = []
         for blob_ref in ctx.io.list_files(

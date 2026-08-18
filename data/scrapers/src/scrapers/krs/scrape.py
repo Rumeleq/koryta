@@ -16,6 +16,7 @@ from entities.person import RejestrIOKey
 from scrapers.koryta.download import KorytaPeople, KorytaVotes
 from scrapers.krs.censored import KRSCensoredPeople
 from scrapers.krs.columns import normalise
+from scrapers.krs.coverage import RejestrIOCoverage
 from scrapers.krs.data import CompaniesHardcoded, PeopleRejestrIOHardcoded
 from scrapers.krs.graph import CompanyGraph
 from scrapers.krs.list import CompaniesKRS, PeopleKRS
@@ -244,6 +245,15 @@ def compute_refresh_cutoff_date(today: date, skip_days: int) -> str:
     return current.isoformat()
 
 
+#: The paid rejestr.io calls a company needs re-issued once its stored
+#: connections are known to be out of date. The api-krs pair is free and
+#: re-fetched every run anyway.
+ORG_CONNECTION_METHODS = (
+    QueryType.REJESTRIO_ORG_KRS_POWIAZANIA_AKTUALNE.value,
+    QueryType.REJESTRIO_ORG_KRS_POWIAZANIA_HISTORYCZNE.value,
+)
+
+
 class KRSNeedsRefresh(Pipeline):
     filename = "krs_needs_refresh"
     dtype = {"krs": str}
@@ -251,10 +261,35 @@ class KRSNeedsRefresh(Pipeline):
     already_scraped: KRSAlreadyScraped
     updates: KRSUpdates
     censored_people: KRSCensoredPeople
+    coverage: RejestrIOCoverage
 
     @property
     def refresh_cutoff_date(self) -> str:
         return compute_refresh_cutoff_date(date.today(), SKIP_WORK_DAYS)
+
+    def stale_coverage(self, ctx) -> pd.DataFrame:
+        """Companies whose stored rejestr.io response is missing somebody.
+
+        The bulletin path below only fires on a *new* change, so a response
+        fetched before rejestr.io caught up with an old one would never be
+        corrected. RejestrIOCoverage finds those by comparing the response
+        against the censored people api-krs served at the same time, and holds
+        each one back for a backoff so a company rejestr.io has no record of
+        is not re-bought every run.
+        """
+        due = self.coverage.krs_to_rescrape(ctx)
+        if not due:
+            return pd.DataFrame(columns=["krs", "method", "date", "update_date"])
+
+        scraped = self.already_scraped.latest_scrapes(ctx)
+        rows = scraped[
+            scraped["krs"].isin(due) & scraped["method"].isin(ORG_CONNECTION_METHODS)
+        ].copy()
+        # The scrape that came back short is what dates the refresh: it is the
+        # observation that made this company stale.
+        rows["update_date"] = rows["date"]
+        print(f"Stale rejestr.io responses: {len(rows)} queries over {len(due)} KRS")
+        return rows
 
     def process(self, ctx):
         """Lists updates for a KRS, filtered by actual people changes.
@@ -268,9 +303,7 @@ class KRSNeedsRefresh(Pipeline):
 
         updates_df = normalise(self.updates.read_or_process(ctx), "date")
         if updates_df.empty:
-            return pd.DataFrame(
-                columns=["krs", "method", "date", "update_date"]
-            )
+            return self.stale_coverage(ctx)
 
         latest_updates = (
             updates_df.groupby(["krs"]).aggregate("max").reset_index()
@@ -307,6 +340,10 @@ class KRSNeedsRefresh(Pipeline):
             f"Censored people pre-filter: {before_count} → "
             f"{len(needs_refresh)} KRS entries"
         )
+
+        needs_refresh = pd.concat(
+            [needs_refresh, self.stale_coverage(ctx)], ignore_index=True
+        ).drop_duplicates(subset=["krs", "method"], keep="first")
 
         return needs_refresh.sort_values(
             by=["update_date"], ascending=False
