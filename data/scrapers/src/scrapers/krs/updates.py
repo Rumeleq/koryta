@@ -22,6 +22,7 @@ class KRSUpdate:
 
 class KRSUpdates(Pipeline[KRSUpdate]):
     filename = "krs_updates"
+    dtype = {"krs": str}
 
     @property
     def output_class(self) -> typing.Type:

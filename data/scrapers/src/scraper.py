@@ -10,6 +10,7 @@ from tqdm import tqdm
 
 from conductor import setup_context
 from scrapers.kmgp.people import PeopleKMGP
+from scrapers.krs.columns import ISO_DATE_LENGTH
 from scrapers.krs.scrape import ScrapeRejestrIO
 from scrapers.krs.updates import KRSUpdates
 from scrapers.stores import Context, ProcessPolicy, RejestrIO
@@ -205,7 +206,12 @@ def scrape_updates_by_dates(sleep_time=0.2):
     pipeline = KRSUpdates()
     already_scraped_dates = set()
     for update in pipeline.read_or_process_list(ctx):
-        already_scraped_dates.add(update.date)
+        # Truncated, because a run that reads the cached output rather than
+        # rebuilding it gets "2025-06-02 00:00:00" here: pandas parses a column
+        # named `date` into a Timestamp whatever dtype asks for. That matches
+        # no date_str below, so every bulletin day since 2025-06-01 would be
+        # fetched again, on every run.
+        already_scraped_dates.add(str(update.date)[:ISO_DATE_LENGTH])
 
     print("already_scraped_dates: ", already_scraped_dates)
 

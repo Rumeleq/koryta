@@ -10,6 +10,7 @@ import json
 import pandas as pd
 from tqdm import tqdm
 
+from scrapers.krs.columns import normalise
 from scrapers.krs.people_parsing import extract_censored_people
 from scrapers.stores import CloudStorage, Context, Pipeline
 from scrapers.stores.file import DownloadableFile
@@ -88,7 +89,7 @@ class KRSCensoredPeople(Pipeline):
         KRS entries with only one snapshot are included with that
         snapshot's date (first-time scrape, no prior data).
         """
-        df = self.read_or_process(ctx)
+        df = normalise(self.read_or_process(ctx), "date")
         if df.empty:
             return {}
 

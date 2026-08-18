@@ -15,6 +15,7 @@ from entities.company import KRS
 from entities.person import RejestrIOKey
 from scrapers.koryta.download import KorytaPeople, KorytaVotes
 from scrapers.krs.censored import KRSCensoredPeople
+from scrapers.krs.columns import normalise
 from scrapers.krs.data import CompaniesHardcoded, PeopleRejestrIOHardcoded
 from scrapers.krs.graph import CompanyGraph
 from scrapers.krs.list import CompaniesKRS, PeopleKRS
@@ -175,6 +176,7 @@ def enum_dict_factory(data):
 
 class KRSAlreadyScraped(Pipeline):
     filename = "krs_already_scraped"
+    dtype = {"krs": str}
 
     def process(self, ctx: Context):
         output = []
@@ -213,7 +215,7 @@ class KRSAlreadyScraped(Pipeline):
 
     def latest_scrapes(self, ctx: Context):
         """Groups by krs and lists methods already used"""
-        df = self.read_or_process(ctx)
+        df = normalise(self.read_or_process(ctx), "date")
         max_dates = df.groupby(["krs", "method"]).aggregate("max").reset_index()
         return max_dates
 
@@ -244,6 +246,7 @@ def compute_refresh_cutoff_date(today: date, skip_days: int) -> str:
 
 class KRSNeedsRefresh(Pipeline):
     filename = "krs_needs_refresh"
+    dtype = {"krs": str}
 
     already_scraped: KRSAlreadyScraped
     updates: KRSUpdates
@@ -263,13 +266,12 @@ class KRSNeedsRefresh(Pipeline):
 
         latest_scrapes = self.already_scraped.latest_scrapes(ctx)
 
-        updates_df = self.updates.read_or_process(ctx)
+        updates_df = normalise(self.updates.read_or_process(ctx), "date")
         if updates_df.empty:
             return pd.DataFrame(
                 columns=["krs", "method", "date", "update_date"]
             )
 
-        updates_df["krs"] = updates_df["krs"].astype(str).str.zfill(10)
         latest_updates = (
             updates_df.groupby(["krs"]).aggregate("max").reset_index()
         )
