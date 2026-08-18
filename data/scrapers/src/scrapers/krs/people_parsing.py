@@ -1,8 +1,14 @@
 """Parsing of censored people from api-krs.ms.gov.pl JSON responses.
 
-Extracts the masked name/PESEL data from the OdpisAktualny JSON structure,
-covering dzial1 (partners) and dzial2 (representation, supervision, proxies).
+api-krs serves personal data masked: every name arrives as its first character
+followed by one asterisk per remaining character, so "Kaliszewski" comes back
+as ``K**********``. What survives is the initial and the length, which is
+enough to tell two board members apart.
+
+Covers dzial1 (partners) and dzial2 (representation, supervision, proxies).
 """
+
+from dataclasses import dataclass
 
 #: The sections of dzial2 that hold a list of people directly, rather than
 #: wrapping them in an organ with a ``sklad``. `prokurenci` belongs here and
@@ -15,31 +21,91 @@ DZIAL2_PERSON_LISTS = (
 )
 
 
-def parse_person(p: dict) -> tuple | None:
-    """Parse a single person dict into a (nazwisko, imie, imie2, pesel) tuple."""
+@dataclass(frozen=True, order=True)
+class CensoredPerson:
+    """One person as api-krs masks them, with the role they hold.
+
+    ``surname`` keeps the components apart because the register does:
+    "Kałuża Swoboda" arrives as ``nazwiskoICzlon`` plus ``nazwiskoIICzlon``,
+    and folding the two into one string would make her indistinguishable from
+    a "Kałuża" who holds a different seat.
+
+    ``born`` is the one field here the register does not mask. It is carried
+    for the same reason as ``pesel``: for 347 people in the crawl it is the
+    only identifier there is, and without it two masked namesakes in the same
+    role hash alike and a replacement of one by the other is invisible.
+    """
+
+    surname: tuple[str, ...]
+    given: str
+    second_given: str
+    pesel: str
+    born: str
+    role: str
+
+    def as_row(self) -> list[str]:
+        """A JSON-serialisable form, for a pipeline column."""
+        return [
+            "|".join(self.surname),
+            self.given,
+            self.second_given,
+            self.pesel,
+            self.born,
+            self.role,
+        ]
+
+    @staticmethod
+    def from_row(row) -> "CensoredPerson":
+        surname, given, second_given, pesel, born, role = row
+        return CensoredPerson(
+            # "|" rather than a space: a censored component is asterisks, but
+            # nothing promises the register never puts a space inside one, and
+            # a separator that cannot occur makes the round trip total.
+            surname=tuple(s for s in str(surname).split("|") if s),
+            given=str(given),
+            second_given=str(second_given),
+            pesel=str(pesel),
+            born=str(born),
+            role=str(role),
+        )
+
+
+def parse_person(p: dict, role: str) -> CensoredPerson | None:
+    """Parse a single person dict into a CensoredPerson, or None."""
     if not isinstance(p, dict):
         return None
-    nazwisko = (
-        p.get("nazwisko", {}).get("nazwiskoICzlon", "")
-        if isinstance(p.get("nazwisko"), dict)
-        else ""
+
+    nazwisko = p.get("nazwisko")
+    surname: tuple[str, ...] = ()
+    if isinstance(nazwisko, dict):
+        surname = tuple(
+            str(nazwisko[key])
+            for key in ("nazwiskoICzlon", "nazwiskoIICzlon")
+            if nazwisko.get(key)
+        )
+
+    imiona = p.get("imiona")
+    if not isinstance(imiona, dict):
+        imiona = {}
+    imie = str(imiona.get("imie", "") or "")
+    imie2 = str(imiona.get("imieDrugie", "") or "")
+
+    identyfikator = p.get("identyfikator")
+    if not isinstance(identyfikator, dict):
+        identyfikator = {}
+    pesel = str(identyfikator.get("pesel", "") or "")
+    born = str(identyfikator.get("dataUrodzenia", "") or "")
+
+    if not (surname or imie or pesel or born):
+        return None
+    return CensoredPerson(
+        surname=surname,
+        given=imie,
+        second_given=imie2,
+        pesel=pesel,
+        born=born,
+        role=role,
     )
-    imie = (
-        p.get("imiona", {}).get("imie", "") if isinstance(p.get("imiona"), dict) else ""
-    )
-    imie2 = (
-        p.get("imiona", {}).get("imieDrugie", "")
-        if isinstance(p.get("imiona"), dict)
-        else ""
-    )
-    pesel = (
-        p.get("identyfikator", {}).get("pesel", "")
-        if isinstance(p.get("identyfikator"), dict)
-        else ""
-    )
-    if nazwisko or imie or pesel:
-        return (nazwisko, imie, imie2, pesel)
-    return None
 
 
 def extract_sklad(
@@ -47,9 +113,9 @@ def extract_sklad(
     key: str,
     role_prefix: str,
     role_field: str,
-) -> list[tuple]:
+) -> list[CensoredPerson]:
     """Extract people from a 'sklad' list inside a container dict."""
-    results: list[tuple] = []
+    results: list[CensoredPerson] = []
     section = container.get(key, {})
     if not isinstance(section, dict):
         return results
@@ -57,10 +123,10 @@ def extract_sklad(
     if not isinstance(sklad, list):
         return results
     for p in sklad:
-        parsed = parse_person(p)
+        function = p.get(role_field, "") if isinstance(p, dict) else ""
+        parsed = parse_person(p, f"{role_prefix}: {function}")
         if parsed:
-            fn = p.get(role_field, "") if isinstance(p, dict) else ""
-            results.append((*parsed, f"{role_prefix}: {fn}"))
+            results.append(parsed)
     return results
 
 
@@ -69,37 +135,35 @@ def extract_person_list(
     key: str,
     role: str,
     role_field: str,
-) -> list[tuple]:
+) -> list[CensoredPerson]:
     """Extract people from a plain list of person dicts."""
-    results: list[tuple] = []
+    results: list[CensoredPerson] = []
     section = container.get(key, [])
     if not isinstance(section, list):
         return results
     for p in section:
-        parsed = parse_person(p)
-        if not parsed:
-            continue
         detail = p.get(role_field, "") if role_field and isinstance(p, dict) else ""
-        results.append((*parsed, f"{role}: {detail}" if detail else role))
+        parsed = parse_person(p, f"{role}: {detail}" if detail else role)
+        if parsed:
+            results.append(parsed)
     return results
 
 
-def extract_dzial1_people(dane: dict) -> set[tuple]:
-    """Extract people from dzial1 (wspolnicySpzoo)."""
-    people: set[tuple] = set()
+def extract_dzial1_people(dane: dict) -> set[CensoredPerson]:
+    """Extract people from dzial1 (wspolnicySpzoo).
+
+    Most partners are companies rather than people; those carry a ``nazwa``
+    and a ``krs`` and no name fields, so `parse_person` drops them.
+    """
     dzial1 = dane.get("dzial1", {})
     if not isinstance(dzial1, dict):
-        return people
-    for w in dzial1.get("wspolnicySpzoo", []):
-        parsed = parse_person(w)
-        if parsed:
-            people.add((*parsed, "wspolnik"))
-    return people
+        return set()
+    return set(extract_person_list(dzial1, "wspolnicySpzoo", "wspolnik", ""))
 
 
-def extract_dzial2_people(dane: dict) -> set[tuple]:
+def extract_dzial2_people(dane: dict) -> set[CensoredPerson]:
     """Extract people from dzial2 (representation, supervision, etc.)."""
-    people: set[tuple] = set()
+    people: set[CensoredPerson] = set()
     dzial2 = dane.get("dzial2", {})
     if not isinstance(dzial2, dict):
         return people
@@ -128,9 +192,9 @@ def extract_dzial2_people(dane: dict) -> set[tuple]:
     # reprezentacjaIBIGBPPSPZOZ (single person dict)
     rep_pzoz = dzial2.get("reprezentacjaIBIGBPPSPZOZ", {})
     if isinstance(rep_pzoz, dict):
-        parsed = parse_person(rep_pzoz)
+        parsed = parse_person(rep_pzoz, "kierownik_pzoz")
         if parsed:
-            people.add((*parsed, "kierownik_pzoz"))
+            people.add(parsed)
 
     for key, role, role_field in DZIAL2_PERSON_LISTS:
         people.update(extract_person_list(dzial2, key, role, role_field))
@@ -138,11 +202,8 @@ def extract_dzial2_people(dane: dict) -> set[tuple]:
     return people
 
 
-def extract_censored_people(data: dict) -> set[tuple]:
-    """Extract all censored people from an api-krs JSON response.
-
-    Returns a set of (nazwiskoICzlon, imie, imieDrugie, pesel, role).
-    """
+def extract_censored_people(data: dict) -> set[CensoredPerson]:
+    """Extract all censored people from an api-krs JSON response."""
     if not isinstance(data, dict) or "odpis" not in data:
         return set()
 

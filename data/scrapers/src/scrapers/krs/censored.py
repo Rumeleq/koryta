@@ -16,8 +16,8 @@ from scrapers.stores import CloudStorage, Context, Pipeline
 from scrapers.stores.file import DownloadableFile
 
 
-def hash_people_set(people: set[tuple]) -> str:
-    """Produce a deterministic hash for a set of people tuples."""
+def hash_people_set(people) -> str:
+    """Produce a deterministic hash for a set of people."""
     canonical = sorted(str(p) for p in people)
     return hashlib.sha256(
         json.dumps(canonical).encode()
