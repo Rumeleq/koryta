@@ -1,5 +1,5 @@
 <template>
-  <div class="pa-4">
+  <v-container>
     <h1 class="text-h4 mb-4">Administracja - Rewizje</h1>
 
     <v-card>
@@ -38,7 +38,7 @@
         </template>
       </v-data-table-server>
     </v-card>
-  </div>
+  </v-container>
 </template>
 
 <script setup lang="ts">
@@ -47,9 +47,11 @@ import { useCurrentUser, useIsCurrentUserLoaded } from "vuefire";
 import { useRoute } from "vue-router";
 import { useQueryFilters } from "~/composables/queryFilters";
 
+// No `fullWidth`: five columns do not need the whole window, and edge to edge
+// they left the reader tracking a row across a monitor. The list sits in the
+// same centred column an article page does.
 definePageMeta({
   middleware: "auth",
-  fullWidth: true,
 });
 
 useHead({
