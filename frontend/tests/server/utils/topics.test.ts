@@ -3,6 +3,7 @@ import type { Firestore } from "firebase-admin/firestore";
 import {
   articleIdsForTopic,
   edgesCitingArticles,
+  nodesMentionedByArticles,
 } from "../../../server/utils/topics";
 
 type Doc = Record<string, unknown>;
@@ -18,6 +19,7 @@ function fakeDb(
       const held = (doc[field] as string[] | undefined) ?? [];
       return (value as string[]).some((wanted) => held.includes(wanted));
     }
+    if (op === "in") return (value as unknown[]).includes(doc[field]);
     return doc[field] === value;
   };
 
@@ -142,5 +144,48 @@ describe("edgesCitingArticles", () => {
       true,
     );
     expect(asked).toHaveLength(0);
+  });
+});
+
+describe("nodesMentionedByArticles", () => {
+  // `mentions` is stored with the article at either end: this page writes
+  // article -> person, `ingest/person.post.ts` writes person -> article.
+  const edges = {
+    m1: { source: "a1", target: "p1", type: "mentions", published: true },
+    m2: { source: "p2", target: "a1", type: "mentions", published: true },
+    m3: { source: "a1", target: "p3", type: "mentions", published: false },
+    m4: { source: "a1", target: "p4", type: "mentions", deleted: true },
+    m5: { source: "a9", target: "p5", type: "mentions", published: true },
+    // Not a mention, and not the article's kind of edge either.
+    t1: { source: "a1", target: "topic", type: "tagged", published: true },
+  };
+
+  it("reads both directions, and only what is approved", async () => {
+    const ids = await nodesMentionedByArticles(fakeDb(edges), ["a1"], false);
+    expect(ids.sort()).toEqual(["p1", "p2"]);
+  });
+
+  it("includes drafts for someone who may see them", async () => {
+    const ids = await nodesMentionedByArticles(fakeDb(edges), ["a1"], true);
+    expect(ids.sort()).toEqual(["p1", "p2", "p3"]);
+  });
+
+  it("never returns one of the articles it was asked about", async () => {
+    const both = {
+      ...edges,
+      m6: { source: "a1", target: "a2", type: "mentions", published: true },
+    };
+    const ids = await nodesMentionedByArticles(
+      fakeDb(both),
+      ["a1", "a2"],
+      false,
+    );
+    expect(ids).not.toContain("a2");
+  });
+
+  it("asks nothing of firestore for a story with no articles", async () => {
+    const db = fakeDb(edges);
+    expect(await nodesMentionedByArticles(db, [], true)).toEqual([]);
+    expect(db.collection).not.toHaveBeenCalled();
   });
 });

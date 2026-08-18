@@ -154,25 +154,27 @@
         </v-expand-transition>
 
         <!-- 4. Who it talks about -->
-        <template v-if="mentions.length">
+        <template v-if="mentions.length || user">
           <v-divider class="my-4" />
           <h2 class="text-subtitle-1 font-weight-bold mb-2">
             Wspomniane osoby i instytucje
           </h2>
-          <div class="d-flex flex-wrap ga-2">
-            <v-chip
-              v-for="mention in mentions"
-              :key="mention.edgeId"
-              :to="mentionUrl(mention)"
-              :variant="mention.published ? 'tonal' : 'outlined'"
-              :prepend-icon="
-                mention.nodeType ? nodeTypeIcon[mention.nodeType] : undefined
-              "
-              size="small"
-            >
-              {{ mention.name ?? mention.nodeId }}
-            </v-chip>
-          </div>
+          <ArticleMentionChips
+            :mentions="mentions"
+            :can-edit="!!user"
+            :saving="savingMentions"
+            @add="addMention"
+            @remove="removeMention"
+          />
+          <v-alert
+            v-if="mentionError"
+            type="error"
+            variant="tonal"
+            density="compact"
+            class="mt-2"
+          >
+            {{ mentionError }}
+          </v-alert>
         </template>
 
         <!-- 5. What rests on it, and adding to that -->
@@ -221,11 +223,15 @@
             "
           >
             <LazyGraphContainer
-              :key="graphNodeIds[0]"
-              :focus-node-id="graphNodeIds[0]!"
-              :max-depth="1"
+              :key="nodeId"
+              focus-node-id=""
+              :source="graphSource"
             />
           </div>
+          <p class="text-caption text-medium-emphasis mt-2">
+            Pokazujemy osoby i instytucje wspomniane w tym artykule oraz
+            powiązania, dla których jest on źródłem.
+          </p>
         </template>
 
         <NoteEditor :node-id="nodeId" node-type="article" class="mt-4" />
@@ -262,8 +268,6 @@ import { useDomainIcon } from "~/composables/useDomainIcon";
 import { useExtractions } from "~/composables/extractions";
 import { useCanCapture } from "~/composables/captures";
 import { entityDescription, SOCIAL_CARD } from "~/composables/entitySeo";
-import { generateEntityUrl } from "~/composables/slugs";
-import { nodeTypeIcon } from "~~/shared/model";
 import type { Article, Link, NodeType } from "~~/shared/model";
 import type { ArticleCapture } from "~~/shared/capture";
 import type {
@@ -375,11 +379,12 @@ const { data: extractions } = useExtractions({
 const facts = computed(() => extractions.value?.facts ?? []);
 const factsOpen = ref(false);
 
-/** Which node the embedded graph is centred on.
+/** Whether there is anything to draw.
  *
- * An article is not drawn in the graph at all, so centring on it renders an
- * empty canvas. The people this article puts on the record are the interesting
- * thing, so it centres on the first of them instead.
+ * An article is not a node in its own graph, so with nothing else the canvas
+ * comes back empty and the section is worth nothing. The people the article
+ * puts on the record are what it draws - the ones it names, and the ones joined
+ * by a relation citing it.
  */
 const graphNodeIds = computed(() => {
   const fromEdges = sourcedEdges.value.flatMap((edge) => [
@@ -392,11 +397,13 @@ const graphNodeIds = computed(() => {
   return Array.from(new Set([...fromEdges, ...fromMentions]));
 });
 
-function mentionUrl(mention: ArticleRelation) {
-  return mention.nodeType && mention.name
-    ? generateEntityUrl(mention.nodeType, mention.nodeId, mention.name)
-    : undefined;
-}
+/** The layout itself comes from the server, the same shape a topic's does.
+ * Drawing the local neighbourhood of whichever person came first answered a
+ * different question: it showed that person's employers, and anybody else the
+ * article named appeared only if they happened to fall within a hop. */
+const graphSource = computed(
+  () => `/api/graph/article/${nodeId}?latest=${latest.value}`,
+);
 
 const savingTopics = ref(false);
 const topicError = ref<string | null>(null);
@@ -420,6 +427,39 @@ async function changeTopics(body: { add?: string[]; remove?: string[] }) {
     savingTopics.value = false;
   }
 }
+
+const savingMentions = ref(false);
+const mentionError = ref<string | null>(null);
+
+/** Records who the article names, or takes a name off it.
+ *
+ * Same shape as `changeTopics`, and the same terms: additive, written as a
+ * draft, and the list is re-read from the server rather than patched here.
+ */
+async function changeMentions(body: { add?: string[]; remove?: string[] }) {
+  savingMentions.value = true;
+  mentionError.value = null;
+  try {
+    await authRequest(`/api/articles/${nodeId}/mentions`, {
+      method: "POST",
+      body,
+    });
+    await refreshRelations();
+  } catch (e: unknown) {
+    const data = (e as { data?: { message?: string } } | null)?.data;
+    mentionError.value =
+      data?.message ||
+      (e instanceof Error ? e.message : "") ||
+      "Nie udało się zapisać wspomnianej osoby.";
+  } finally {
+    savingMentions.value = false;
+  }
+}
+
+const addMention = (mention: Link<NodeType>) =>
+  changeMentions({ add: [mention.id] });
+const removeMention = (mention: ArticleRelation) =>
+  changeMentions({ remove: [mention.nodeId] });
 
 const addTopic = (topic: Link<NodeType>) => changeTopics({ add: [topic.id] });
 const removeTopic = (topic: ArticleRelation) =>

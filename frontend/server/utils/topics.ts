@@ -68,3 +68,48 @@ export async function edgesCitingArticles(
   }
   return Array.from(found.values());
 }
+
+/** Who these articles name.
+ *
+ * `mentions` is stored with the article at either end - the article page and
+ * `useEdgeTypes.ts` write article -> person, `ingest/person.post.ts` writes
+ * person -> article - so both directions are asked for and the far end is
+ * whichever one is not an article we asked about.
+ *
+ * The edges themselves are not returned. An article is not drawn in these
+ * graphs, so an edge with one end on it has nowhere to land; what it
+ * contributes is the person, who belongs in the story whether or not anybody
+ * has yet drawn a relation from them.
+ */
+export async function nodesMentionedByArticles(
+  db: Firestore,
+  articleIds: string[],
+  includeDrafts: boolean,
+): Promise<string[]> {
+  if (articleIds.length === 0) return [];
+
+  const articles = new Set(articleIds);
+  const found = new Set<string>();
+  for (let i = 0; i < articleIds.length; i += ANY_CHUNK) {
+    const chunk = articleIds.slice(i, i + ANY_CHUNK);
+    // No `type` filter in the query: that would want a composite index on
+    // (source, type), and an article has few enough edges that filtering the
+    // handful that come back is cheaper than adding one.
+    const snapshots = await Promise.all([
+      db.collection("edges").where("source", "in", chunk).get(),
+      db.collection("edges").where("target", "in", chunk).get(),
+    ]);
+
+    for (const snapshot of snapshots) {
+      for (const doc of snapshot.docs) {
+        const data = doc.data() as Edge;
+        if (data.type !== "mentions") continue;
+        if (data.deleted === true) continue;
+        if (!includeDrafts && !pageIsPublic(data)) continue;
+        const far = articles.has(data.source) ? data.target : data.source;
+        if (typeof far === "string" && !articles.has(far)) found.add(far);
+      }
+    }
+  }
+  return Array.from(found);
+}

@@ -50,12 +50,20 @@ export default editorFreshCachedEventHandler(async (event) => {
   const edges = (await fetchEdgesForNode(db, id))
     .filter((edge) => edge.deleted !== true)
     .filter((edge) => edge.type === "tagged" || edge.type === "mentions")
-    // An article is the source of both kinds; an edge pointing the other way
-    // would put the article itself on the far end.
-    .filter((edge) => edge.source === id)
+    // `tagged` only ever points article -> topic, so the other direction would
+    // put the article itself on the far end. `mentions` is stored both ways -
+    // this page and `useEdgeTypes.ts` write article -> person, while
+    // `ingest/person.post.ts` writes person -> article and produced most of the
+    // ones in the database - so reading only outgoing edges left the section
+    // showing a fraction of what the pipeline had found.
+    .filter((edge) => edge.type === "mentions" || edge.source === id)
     .filter((edge) => (includeDrafts ? true : pageIsPublic(edge)));
 
-  const farIds = Array.from(new Set(edges.map((edge) => edge.target)));
+  /** The end of the edge that is not this article. */
+  const farId = (edge: (typeof edges)[number]) =>
+    edge.source === id ? edge.target : edge.source;
+
+  const farIds = Array.from(new Set(edges.map(farId)));
   const snaps = farIds.length
     ? await db.getAll(
         ...farIds.map((nodeId) => db.collection("nodes").doc(nodeId)),
@@ -64,10 +72,10 @@ export default editorFreshCachedEventHandler(async (event) => {
   const nodes = new Map(snaps.map((snap) => [snap.id, snap.data()]));
 
   const toRelation = (edge: (typeof edges)[number]): ArticleRelation => {
-    const node = nodes.get(edge.target);
+    const node = nodes.get(farId(edge));
     return {
       edgeId: edge.id,
-      nodeId: edge.target,
+      nodeId: farId(edge),
       name: typeof node?.name === "string" ? node.name : null,
       nodeType: (node?.type as NodeType | undefined) ?? null,
       published: pageIsPublic(edge),
@@ -77,14 +85,29 @@ export default editorFreshCachedEventHandler(async (event) => {
   const byName = (a: ArticleRelation, b: ArticleRelation) =>
     (a.name ?? "").localeCompare(b.name ?? "", "pl");
 
+  /** One chip per person, whichever way round the edges saying so were stored.
+   * The two writers of `mentions` do not know about each other, so an article
+   * the pipeline processed and a reader then edited can carry both. */
+  const dedupe = (relations: ArticleRelation[]) => {
+    const byNode = new Map<string, ArticleRelation>();
+    for (const relation of relations) {
+      const seen = byNode.get(relation.nodeId);
+      // The published one is the one to keep: it is the one the public would be
+      // shown, and it is what decides whether the chip is drawn as a draft.
+      if (!seen || (!seen.published && relation.published)) {
+        byNode.set(relation.nodeId, relation);
+      }
+    }
+    return Array.from(byNode.values());
+  };
+
   return {
     topics: edges
       .filter((edge) => edge.type === "tagged")
       .map(toRelation)
       .sort(byName),
-    mentions: edges
-      .filter((edge) => edge.type === "mentions")
-      .map(toRelation)
-      .sort(byName),
+    mentions: dedupe(
+      edges.filter((edge) => edge.type === "mentions").map(toRelation),
+    ).sort(byName),
   } satisfies ArticleRelations;
 });
