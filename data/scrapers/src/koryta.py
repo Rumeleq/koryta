@@ -47,7 +47,10 @@ class Printer:
 
 
 def get_args():
-    parser = argparse.ArgumentParser()
+    # allow_abbrev=False: argparse would otherwise accept --all as an
+    # unambiguous abbreviation of --all-pipelines and swallow the flag that
+    # scrapers.analysis.extract reads off the same argv.
+    parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument(
         "--refresh",
         help="Pipeline name to refresh, : to exclude or 'all'",
