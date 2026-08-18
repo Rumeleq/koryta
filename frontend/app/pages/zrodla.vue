@@ -120,6 +120,7 @@
             <NuxtLink
               v-if="articleUrl(item)"
               :to="articleUrl(item)!"
+              class="zrodla-link"
               data-testid="zrodla-article-link"
             >
               {{ item.name }}
@@ -130,6 +131,35 @@
         <template #[`item.publishedDate`]="{ item }">
           {{ formatDate(item.publishedDate) }}
         </template>
+        <template #[`item.topics`]="{ item }">
+          <div class="d-flex flex-wrap ga-1 py-1">
+            <v-chip
+              v-for="topic in topicsFor(item.id)"
+              :key="topic.id"
+              :to="generateEntityUrl('topic', topic.id, topic.name)"
+              :variant="topic.published ? 'tonal' : 'outlined'"
+              :prepend-icon="mdiTagOutline"
+              size="small"
+              color="primary"
+              data-testid="zrodla-topic-chip"
+            >
+              {{ topic.name }}
+              <v-tooltip
+                v-if="!topic.published"
+                activator="parent"
+                location="top"
+              >
+                Oczekuje na zatwierdzenie — widoczne tylko dla zalogowanych.
+              </v-tooltip>
+            </v-chip>
+            <span
+              v-if="!topicsFor(item.id).length"
+              class="text-caption text-medium-emphasis"
+            >
+              —
+            </span>
+          </div>
+        </template>
         <template #[`item.capture`]="{ item }">
           <ArticleCaptureStatus :capture="forUrl(item.sourceURL)" />
         </template>
@@ -137,17 +167,31 @@
     </v-col>
 
     <v-col cols="12">
-      <a href="https://www.flaticon.com/free-icons/pork" title="pork icons">
+      <a
+        href="https://www.flaticon.com/free-icons/pork"
+        title="pork icons"
+        class="zrodla-link"
+      >
         Pork icons created by Freepik - Flaticon
       </a>
-      <a href="https://www.flaticon.com/free-icon/pig_3800575"> - link</a>
+      <a
+        href="https://www.flaticon.com/free-icon/pig_3800575"
+        class="zrodla-link"
+      >
+        - link</a
+      >
     </v-col>
   </v-row>
 </template>
 
 <script lang="ts" setup>
 import { computed, ref } from "vue";
-import { mdiArrowDown, mdiCodeTags, mdiPuzzleOutline } from "@mdi/js";
+import {
+  mdiArrowDown,
+  mdiCodeTags,
+  mdiPuzzleOutline,
+  mdiTagOutline,
+} from "@mdi/js";
 import { useEntities } from "~/composables/entity";
 import { getPageMeta } from "~/composables/useFunctions";
 import { useCurrentUser } from "vuefire";
@@ -155,6 +199,8 @@ import type { Timestamp } from "firebase-admin/firestore";
 import { useDomainIcon } from "~/composables/useDomainIcon";
 import { useCanCapture, useCaptures } from "~/composables/captures";
 import { generateEntityUrl } from "~/composables/slugs";
+import { authFetch } from "~/composables/auth";
+import type { ArticleTopics } from "~~/server/api/articles/topics.get";
 
 definePageMeta({
   title: "Źródła",
@@ -172,6 +218,19 @@ const { entities: articles, refresh: refreshArticles } = useEntities(
 );
 const user = useCurrentUser();
 const { getDomainIcon } = useDomainIcon();
+
+// One request for the whole table rather than one per row, and `latest` said
+// out loud: `authFetch`'s hook returns early on the server, so a server
+// rendered load would drop every draft tag from whoever just made it.
+const { data: articleTopics } = await authFetch<ArticleTopics>(
+  "/api/articles/topics",
+  { query: computed(() => ({ latest: !!user.value })) },
+);
+
+function topicsFor(articleId?: string) {
+  if (!articleId) return [];
+  return articleTopics.value?.byArticle[articleId] ?? [];
+}
 
 /** Where the article's own page lives, when the row has an id to build it from.
  * A row without one is rendered as plain text rather than linked somewhere
@@ -220,6 +279,7 @@ const pasteDialogOpen = ref(false);
 const headers = computed(() => [
   { title: "Tytuł", key: "name", sortable: false },
   { title: "Data publikacji", key: "publishedDate", sortable: false },
+  { title: "Tematy", key: "topics", sortable: false },
   ...(canCapture.value
     ? [{ title: "Treść", key: "capture", sortable: false }]
     : []),
@@ -327,3 +387,13 @@ function formatDate(dateVal: string | Timestamp | undefined) {
   return `${year}-${month}-${day}`;
 }
 </script>
+
+<style scoped>
+/* One colour whether the reader has opened the link before or not. The table
+   is long enough that the browser's visited purple made half the titles look
+   like a state this page was tracking, rather than the reader's own history. */
+.zrodla-link,
+.zrodla-link:visited {
+  color: rgb(var(--v-theme-primary));
+}
+</style>

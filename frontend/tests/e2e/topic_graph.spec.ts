@@ -194,6 +194,17 @@ test.describe("Topic graph", () => {
     // delivered with the page. It has always been fine, and that difference is
     // what identified the bug on the article page.
     await expect(nodeGap(page)).resolves.toBeGreaterThan(NODE_WIDTH);
+
+    // 5. And the story is on the list of sources too, against the article that
+    //    is in it - the other way into a topic, for a reader browsing what the
+    //    site is built on rather than one article at a time.
+    await page.goto("/zrodla", { waitUntil: "domcontentloaded" });
+    const row = page.getByTestId("zrodla-topic-chip").filter({
+      hasText: topicName,
+    });
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    await row.click();
+    await expect(page).toHaveURL(/\/temat\//, { timeout: 30_000 });
   });
 
   test("a logged out reader is not offered the tag editor", async ({
