@@ -415,12 +415,35 @@ function formatDate(dateVal: string | Timestamp | undefined) {
 /* A crawled title is sometimes a whole sentence. Allowed to wrap it made its
    row two or three lines tall, so a screenful of the table held a third of the
    articles it should and the columns beside it drifted out of line with their
-   headers. The cap sits on the cell rather than the text because a data table
-   is laid out by its content: without it the longest title in the page decides
-   how wide the column is. `vw` keeps it from running off a phone, where the
-   32rem alone would be wider than the screen. */
+   headers.
+
+   The cap has to be on the column and not on the text inside it. Capping the
+   text left the cell at its full width, and the slack turned into a 295px gap
+   between a title and its date.
+
+   `max-width: 0` is what makes an auto-layout table honour the percentage: on
+   its own the width is a suggestion the algorithm is free to overrule, and it
+   did. The two together measure 642px of title against a 16px gap, where the
+   percentage alone left 295px. It has to be a real percentage - `width: 100%`
+   collapses the column to 32px, because then the max-width is contradicting
+   the width rather than releasing it.
+
+   Below the breakpoint - and in the server-rendered markup, which is stacked
+   until the client knows how wide it is - every cell becomes a row of its own
+   and a column width means nothing: left to apply there it squeezed the title
+   to 32px until hydration caught up. The marker for that is on the row rather
+   than on the cell, and there is no header at all in that state. */
+:deep(thead .v-data-table__th:nth-child(1)),
+:deep(
+  .v-data-table__tr:not(.v-data-table__tr--mobile)
+    > .v-data-table__td:nth-child(1)
+) {
+  width: 55%;
+  max-width: 0;
+}
+
 .zrodla-title-cell {
-  max-width: min(32rem, 60vw);
+  width: 100%;
 }
 
 /* min-width:0 is the part that actually does it: a flex item defaults to
