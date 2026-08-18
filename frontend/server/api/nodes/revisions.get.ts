@@ -8,6 +8,7 @@ import { normalizeUpdateTime } from "~~/shared/revisions";
 const queryValidator = z.object({
   ...fetchOptionsValidator.shape,
   type: z.enum(nodeTypes).optional(),
+  status: z.enum(["unapproved", "approved"]).optional(),
   sortBy: z.string().optional(),
   sortDesc: z.enum(["true", "false"]).optional(),
 });
@@ -20,6 +21,18 @@ export default defineEventHandler(async (event) => {
 
   if (query.type) {
     fsQuery = fsQuery.where("type", "==", query.type);
+  }
+
+  // An equality on the field the "Zaakceptowane" column reads. Either value
+  // drops the nodes with no `revisions` map at all, which is what the page
+  // wants both ways round: a node nobody has ever revised is neither waiting
+  // for approval nor approved, and there are far more of those than of either.
+  if (query.status) {
+    fsQuery = fsQuery.where(
+      "revisions.has_unapproved",
+      "==",
+      query.status === "unapproved",
+    );
   }
 
   if (query.sortBy) {
