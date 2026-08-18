@@ -90,28 +90,68 @@
 
         <!-- 3. What the extractor made of it -->
         <v-divider class="my-4" />
-        <h2 class="text-subtitle-1 font-weight-bold mb-2">Wydobyte fakty</h2>
+        <!-- Closed to begin with: a long article yields a dozen cards, and
+             they used to push everything a reader came for - who is in the
+             article, and what rests on it - a screen and a half down. The
+             count in the header is what a closed section owes them, so that
+             opening it is a decision rather than a guess. -->
+        <div
+          class="d-flex align-center ga-2 mb-2"
+          :class="user ? 'cursor-pointer' : ''"
+          :role="user ? 'button' : undefined"
+          :tabindex="user ? 0 : undefined"
+          :aria-expanded="user ? factsOpen : undefined"
+          data-testid="article-facts-header"
+          @click="user && (factsOpen = !factsOpen)"
+          @keydown.enter.prevent="user && (factsOpen = !factsOpen)"
+          @keydown.space.prevent="user && (factsOpen = !factsOpen)"
+        >
+          <h2 class="text-subtitle-1 font-weight-bold">Wydobyte fakty</h2>
+          <!-- Only a signed in reader is served the facts, so only they are
+               given a number rather than a zero that means "not for you". -->
+          <template v-if="user">
+            <v-chip
+              size="x-small"
+              variant="tonal"
+              data-testid="article-facts-count"
+            >
+              {{ facts.length }}
+            </v-chip>
+            <v-icon
+              :icon="factsOpen ? mdiChevronUp : mdiChevronDown"
+              size="small"
+              class="text-medium-emphasis"
+            />
+          </template>
+        </div>
         <ExploreLoginBanner
           v-if="!user"
           message="Zaloguj się, aby zobaczyć fakty wydobyte z tego artykułu przez model."
         />
-        <template v-else>
-          <div v-if="facts.length" data-testid="article-facts">
-            <ExtractionCard
-              v-for="fact in facts"
-              :key="fact.id ?? fact.url"
-              :fact="fact"
-              class="mb-3"
-            >
-              <template #actions>
-                <ExtractionVoteButtons v-if="fact.id" :id="fact.id" />
-              </template>
-            </ExtractionCard>
+        <v-expand-transition v-else>
+          <!-- `v-if`, not `v-show`: every card carries vote buttons, and each
+               of those opens a vuefire subscription on the fact's vote
+               document. A closed section should not be holding a dozen of
+               them - the same reason ExtractionArticleGroup mounts its cards
+               only when it is opened. -->
+          <div v-if="factsOpen" data-testid="article-facts-body">
+            <div v-if="facts.length" data-testid="article-facts">
+              <ExtractionCard
+                v-for="fact in facts"
+                :key="fact.id ?? fact.url"
+                :fact="fact"
+                class="mb-3"
+              >
+                <template #actions>
+                  <ExtractionVoteButtons v-if="fact.id" :id="fact.id" />
+                </template>
+              </ExtractionCard>
+            </div>
+            <v-alert v-else type="info" variant="tonal" density="compact">
+              Z tego artykułu nie wydobyto jeszcze żadnych faktów.
+            </v-alert>
           </div>
-          <v-alert v-else type="info" variant="tonal" density="compact">
-            Z tego artykułu nie wydobyto jeszcze żadnych faktów.
-          </v-alert>
-        </template>
+        </v-expand-transition>
 
         <!-- 4. Who it talks about -->
         <template v-if="mentions.length">
@@ -210,7 +250,13 @@
  * have to come from `/api/articles/[id]/relations`.
  */
 import { computed, ref } from "vue";
-import { mdiOpenInNew, mdiPlus, mdiRefresh } from "@mdi/js";
+import {
+  mdiChevronDown,
+  mdiChevronUp,
+  mdiOpenInNew,
+  mdiPlus,
+  mdiRefresh,
+} from "@mdi/js";
 import { authFetch, authRequest, useAuthState } from "~/composables/auth";
 import { useDomainIcon } from "~/composables/useDomainIcon";
 import { useExtractions } from "~/composables/extractions";
@@ -327,6 +373,7 @@ const { data: extractions } = useExtractions({
   articleUrl: computed(() => article.value?.sourceURL),
 });
 const facts = computed(() => extractions.value?.facts ?? []);
+const factsOpen = ref(false);
 
 /** Which node the embedded graph is centred on.
  *
@@ -446,3 +493,9 @@ useSeoMeta({
   twitterImage: SOCIAL_CARD,
 });
 </script>
+
+<style scoped>
+.cursor-pointer {
+  cursor: pointer;
+}
+</style>
