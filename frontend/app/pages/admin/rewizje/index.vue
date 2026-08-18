@@ -2,6 +2,19 @@
   <v-container>
     <h1 class="text-h4 mb-4">Administracja - Rewizje</h1>
 
+    <v-card class="mb-4 pa-3">
+      <v-select
+        v-model="filterStatus"
+        :items="statusOptions"
+        label="Status"
+        density="compact"
+        variant="outlined"
+        hide-details
+        clearable
+        style="max-width: 20rem"
+      />
+    </v-card>
+
     <v-card>
       <v-data-table-server
         v-model:items-per-page="itemsPerPage"
@@ -72,6 +85,16 @@ const itemsPerPage = ref(
   ),
 );
 const page = ref(parseInt((route.query.page as string) || "1"));
+const filterStatus = ref<string | null>((route.query.status as string) || null);
+
+// Phrased by what is left to do rather than by the field name: the column says
+// "Zaakceptowane" and `has_unapproved` says the opposite, so naming either one
+// here would read backwards next to the other.
+const statusOptions = [
+  { title: "Oczekujące na akceptację", value: "unapproved" },
+  { title: "W pełni zaakceptowane", value: "approved" },
+];
+
 const sortBy = ref<{ key: string; order: "asc" | "desc" }[]>(
   route.query.sortBy
     ? [
@@ -162,6 +185,7 @@ const fetchData = async () => {
         limit: itemsPerPage.value,
         sortBy: sortParam,
         sortDesc: apiSortDesc,
+        status: filterStatus.value || undefined,
       },
       headers: headersInit,
     });
@@ -179,6 +203,7 @@ const fetchData = async () => {
           : String(itemsPerPage.value),
       sortBy: sortParam,
       sortDesc: sortDescParam,
+      status: filterStatus.value || undefined,
     });
   } catch (err) {
     console.error(err);
@@ -191,4 +216,9 @@ const formatDate = (dateString?: string | null) => {
   if (!dateString) return "-";
   return new Date(dateString).toLocaleString("pl-PL");
 };
+
+watch(filterStatus, () => {
+  page.value = 1;
+  fetchData();
+});
 </script>
