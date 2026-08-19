@@ -100,6 +100,11 @@ class Teryt(Pipeline):
 
 class Regions(Pipeline):
     filename = "regions"
+    # Written zero-padded and only meaningful zero-padded. Without the pin a
+    # restore from the shared cache re-infers the column as an integer and the
+    # leading zeros are gone -- see scrapers/krs/columns.py for the two read
+    # paths and why they disagree.
+    dtype = {"id": str, "parent_id": str}
 
     def process(self, ctx: Context) -> pd.DataFrame:
         teryt_file = ctx.io.read_data(teryt_data)

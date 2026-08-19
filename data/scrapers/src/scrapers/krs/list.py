@@ -111,7 +111,14 @@ def posts_held(item: dict, unknown: typing.Counter[str] | None = None) -> list[P
 
 class PeopleKRS(Pipeline):
     filename = "person_krs"
-    dtype = {"employed_krs": str}
+    # `id` is rejestr.io's person id and `employed_for` a formatted number;
+    # both are all digits, so a restore from the shared cache re-infers them
+    # as int64 and float64 unless pinned.
+    dtype = {
+        "employed_krs": str,
+        "id": str,
+        "employed_for": str,
+    }
 
     def process(self, ctx: Context):
         return extract_people(ctx)
@@ -212,7 +219,7 @@ class CompaniesKRS(Pipeline[KrsCompany]):
     # the pin pandas types the columns as floats, so a REGON of "010053589"
     # comes back as 10053589.0 -- the leading zero gone, and a ".0" appended to
     # every identifier downstream of here.
-    dtype = {"krs": str, "nip": str, "regon": str}
+    dtype = {"krs": str, "nip": str, "regon": str, "teryt_code": str}
     postal_codes: PostalCodes
     hardcoded_companies: CompaniesHardcoded
 
