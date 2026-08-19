@@ -136,7 +136,9 @@ class OpenAICompatibleMultiPortLLM(LLM):
             ) as resp:
                 resp.raise_for_status()
                 data = await resp.json()
-        content = data["choices"][0]["message"]["content"]
+        choice = data["choices"][0]
+        content = choice["message"]["content"]
+        finish_reason = choice.get("finish_reason")
         usage = data.get("usage") or {}
         prompt_tokens = int(usage.get("prompt_tokens") or 0)
         completion_tokens = int(usage.get("completion_tokens") or 0)
@@ -147,6 +149,7 @@ class OpenAICompatibleMultiPortLLM(LLM):
         self.request_count += 1
         return LLMResponse(
             content=content,
+            finish_reason=finish_reason,
             port=port,
             model=model,
             prompt_tokens=prompt_tokens,
