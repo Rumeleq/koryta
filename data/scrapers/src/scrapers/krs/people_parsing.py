@@ -288,6 +288,26 @@ def last_entry_number(data) -> int | None:
         return None
 
 
+def is_not_found(data) -> bool:
+    """Whether the register answered that the company is not in it.
+
+    The counterpart to `is_odpis`, and the reason both exist: a company is
+    asked for against both registers because nothing free says which one it
+    is in, and the one it is not in answers 404 with a JSON body. That is an
+    answer about the company - a permanent one - where a crawl that did not
+    come back is an answer about the crawl.
+
+    Both fields are checked because it is read as permanent. All 4,152 of the
+    404 bodies in the crawl carry both, and each is exactly 168 bytes.
+    """
+    if not isinstance(data, dict):
+        return False
+    title = data.get("title")
+    if not isinstance(title, str):
+        return False
+    return data.get("status") == 404 and title.strip().lower() == "not found"
+
+
 def is_odpis(data) -> bool:
     """Whether a parsed api-krs response actually carries a register entry.
 

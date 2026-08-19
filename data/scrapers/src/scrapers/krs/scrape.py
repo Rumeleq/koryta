@@ -20,6 +20,7 @@ from scrapers.krs.coverage import PersonFeedCoverage, RejestrIOCoverage
 from scrapers.krs.data import CompaniesHardcoded, PeopleRejestrIOHardcoded
 from scrapers.krs.graph import CompanyGraph
 from scrapers.krs.list import CompaniesKRS, PeopleKRS
+from scrapers.krs.people_parsing import is_not_found
 from scrapers.krs.updates import KRSUpdates
 from scrapers.stores import (
     CloudStorage,
@@ -155,6 +156,11 @@ class KRSScraped:
     krs: str
     method: QueryType
     date: str
+    #: This is the newest response for its (krs, register) and the register
+    #: answered that the company is not in it. Only ever set from a body that
+    #: said so: a crawl that did not come back leaves it False, because that
+    #: says nothing about the company and is worth repeating.
+    not_found: bool = False
 
     @staticmethod
     def parse(url: str) -> typing.Optional["KRSScraped"]:
@@ -179,6 +185,33 @@ class KRSScraped:
             return KRSScraped(krs, api_krs_register(url), date)
         else:
             return None
+
+
+#: Anything longer than this is a register entry, so there is nothing to
+#: check by opening it. A 404 body is 168 bytes and the shortest entry in the
+#: crawl is 1,784, which leaves the bound a lot of room to be wrong in.
+NOT_FOUND_SIZE_BOUND = 1024
+
+#: The two free queries, the only ones a 404 can come back from.
+API_KRS_METHODS = (
+    QueryType.API_KRS_ODPIS_AKTUALNY_P,
+    QueryType.API_KRS_ODPIS_AKTUALNY_S,
+)
+
+
+def _read_json(ctx: Context, blob_ref: DownloadableFile):
+    """A stored response as parsed JSON, or None if there is nothing to read."""
+    try:
+        content = ctx.io.read_data(blob_ref).read_string()
+    except Exception as e:
+        print(f"Could not read {blob_ref.url}: {e}")
+        return None
+    if not content:
+        return None
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        return None
 
 
 # TODO spread the usage of this function
@@ -211,6 +244,9 @@ class KRSAlreadyScraped(Pipeline):
         """
         output = []
         success, fail, empty = 0, 0, 0
+        # The newest response for each (krs, register), which is the only one
+        # whose answer still stands.
+        newest: dict[tuple[str, QueryType], tuple[KRSScraped, DownloadableFile]] = {}
 
         for prefix in ("hostname=rejestr.io", "hostname=api-krs.ms.gov.pl"):
             for blob_name in tqdm(ctx.io.list_files(CloudStorage(prefix=prefix))):
@@ -222,19 +258,64 @@ class KRSAlreadyScraped(Pipeline):
                 if r:
                     success += 1
                     output.append(r)
+                    if r.method in API_KRS_METHODS:
+                        seen = newest.get((r.krs, r.method))
+                        if seen is None or r.date >= seen[0].date:
+                            newest[(r.krs, r.method)] = (r, blob_name)
                 else:
                     fail += 1
             print(f"{prefix}: success {success}, fail {fail}, failed crawls {empty}")
+
+        self._mark_not_found(ctx, newest)
 
         return pd.DataFrame.from_records(
             [asdict(r, dict_factory=enum_dict_factory) for r in output]
         )
 
+    def _mark_not_found(
+        self,
+        ctx: Context,
+        newest: dict[tuple[str, QueryType], tuple[KRSScraped, "DownloadableFile"]],
+    ) -> None:
+        """Flag the newest response per register that was a 404.
+
+        Read rather than inferred, because it is used to stop asking: a
+        company that is genuinely absent from a register stays absent, and
+        acting on a guess would be to stop asking about a company we do hold.
+
+        Only the small ones are opened. A 404 body is 168 bytes, every one of
+        the 4,152 in the crawl; the smallest register entry is 1,784, so the
+        listing's own size picks out every candidate and nothing else. A
+        reference whose size is unknown is opened too - unknown is not small,
+        but it is not big either, and only a listing that carries sizes can
+        say which.
+        """
+        candidates = [
+            (scraped, ref)
+            for scraped, ref in newest.values()
+            if ref.size is None or ref.size <= NOT_FOUND_SIZE_BOUND
+        ]
+        for scraped, ref in tqdm(candidates, desc="Reading the short api-krs bodies"):
+            scraped.not_found = is_not_found(_read_json(ctx, ref))
+        settled = sum(scraped.not_found for scraped, _ in candidates)
+        print(
+            f"Registers that answered 404: {settled} "
+            f"(read {len(candidates)} of {len(newest)} newest responses)"
+        )
+
     def latest_scrapes(self, ctx: Context):
-        """Groups by krs and lists methods already used"""
+        """The most recent response for each (krs, method), as it came back.
+
+        The whole row rather than the maximum of each column: `not_found` is
+        the answer the register gave on one date, and maximising it would
+        carry a 404 forward past a later response that did find the company.
+        """
         df = normalise(self.read_or_process(ctx), "date")
-        max_dates = df.groupby(["krs", "method"]).aggregate("max").reset_index()
-        return max_dates
+        return (
+            df.sort_values("date")
+            .drop_duplicates(subset=["krs", "method"], keep="last")
+            .reset_index(drop=True)
+        )
 
 
 # The results from analysis/update_rate suggest 4 days is enough for 90% success rate
@@ -449,6 +530,33 @@ def series_to_list(s: pd.Series) -> list[str]:
     return s.tolist()
 
 
+def settled_registers(already_scraped_krs: pd.DataFrame) -> dict[str, set[QueryType]]:
+    """Register queries a company has already been given the answer to.
+
+    A KRS entry lives in a register, and the other one answers 404. That is
+    not a gap to be filled by asking again: the register has said what it
+    knows, and it will say the same next run. So the query is dropped for
+    good rather than re-issued whenever something else about the company
+    moves.
+
+    What this gives up: an association that later registers as an
+    entrepreneur gains an entry in a register that had answered 404 for it,
+    and nothing here will go back and look. It is rare, and the alternative
+    is a query per company per run for as long as the crawl exists.
+    """
+    if "not_found" not in already_scraped_krs.columns:
+        # An output written before the column existed. Nothing is settled,
+        # which is what the code did before it.
+        return {}
+    settled: dict[str, set[QueryType]] = {}
+    answered = already_scraped_krs[
+        already_scraped_krs["not_found"].fillna(False).astype(bool)
+    ]
+    for krs, method in zip(answered["krs"], answered["method"]):
+        settled.setdefault(str(krs), set()).add(QueryType(method))
+    return settled
+
+
 def save_org_connections(
     already_scraped_krs: pd.DataFrame,
     needs_refresh_krs: pd.DataFrame,
@@ -505,10 +613,14 @@ def save_org_connections(
     print(f"\n\nalready_scraped ({len(already_scraped)}):")
     print(already_scraped.head())
 
+    settled = settled_registers(already_scraped_krs)
+    print(f"Registers already answered 404: {sum(len(s) for s in settled.values())}")
+
     for krs in connections:
         connections_methods: list[QueryType] = [
             QueryType(q) for q in already_scraped["method"].get(krs.id, [])
         ]
+        answered = settled.get(krs.id, set())
         query = RejestrIOQuery(
             krs=krs,
             queries=[
@@ -519,7 +631,7 @@ def save_org_connections(
                     QueryType.REJESTRIO_ORG_KRS_POWIAZANIA_AKTUALNE,
                     QueryType.REJESTRIO_ORG_KRS_POWIAZANIA_HISTORYCZNE,
                 ]
-                if q not in connections_methods
+                if q not in connections_methods and q not in answered
             ],
         )
         if len(list(query.urls())) > 0:
@@ -527,13 +639,13 @@ def save_org_connections(
             yield query
 
     for krs in names:
-        yield RejestrIOQuery(
-            krs=krs,
-            queries=[
-                QueryType.API_KRS_ODPIS_AKTUALNY_P,
-                QueryType.API_KRS_ODPIS_AKTUALNY_S,
-            ],
-        )
+        # This loop asks regardless of what has been asked before - the name
+        # is still missing - but a register that has answered still has
+        # nothing more to say.
+        answered = settled.get(krs.id, set())
+        queries = [q for q in API_KRS_METHODS if q not in answered]
+        if queries:
+            yield RejestrIOQuery(krs=krs, queries=queries)
 
     people_to_fetch = 0
     for person in people:
