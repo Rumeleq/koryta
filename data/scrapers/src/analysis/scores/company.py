@@ -48,6 +48,11 @@ def normalized_scores(scores: pd.DataFrame, n: NormalizationFactors) -> pd.Serie
 
 class CompanyScores(Pipeline):
     filename = "company_scores"
+    # Written zero-padded and only meaningful zero-padded. Without the pin a
+    # restore from the shared cache re-infers the column as an integer and the
+    # leading zeros are gone -- see scrapers/krs/columns.py for the two read
+    # paths and why they disagree.
+    dtype = {"krs": str}
 
     people_payloads: PeoplePayloads
     people_scored: KorytaPeople

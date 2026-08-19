@@ -184,6 +184,11 @@ def process_pkw(ctx: Context, csv_headers, limit: int | None, year: str | None):
 
 class PeoplePKW(Pipeline[Person]):
     filename = "person_pkw"
+    # Written zero-padded and only meaningful zero-padded. Without the pin a
+    # restore from the shared cache re-infers the column as an integer and the
+    # leading zeros are gone -- see scrapers/krs/columns.py for the two read
+    # paths and why they disagree.
+    dtype = {"teryt_candidacy": str, "teryt_living": str}
     teryt: Teryt
 
     @property

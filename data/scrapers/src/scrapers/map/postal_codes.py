@@ -11,6 +11,11 @@ postal_codes_file = DownloadableFile(
 
 class PostalCodes(Pipeline):
     filename = "postal_codes"
+    # Written zero-padded and only meaningful zero-padded. Without the pin a
+    # restore from the shared cache re-infers the column as an integer and the
+    # leading zeros are gone -- see scrapers/krs/columns.py for the two read
+    # paths and why they disagree.
+    dtype = {"teryt": str, "postal_code": str}
 
     def process(self, ctx: Context):
         file = ctx.io.read_data(postal_codes_file)
