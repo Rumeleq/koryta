@@ -179,41 +179,46 @@
 
         <!-- 5. What rests on it, and adding to that -->
         <v-divider class="my-4" />
-        <div class="d-flex align-center flex-wrap ga-2 mb-2">
-          <h2 class="text-subtitle-1 font-weight-bold">
-            Artykuł stanowi źródło dla
-          </h2>
-          <v-spacer />
-          <v-btn
-            color="primary"
-            variant="tonal"
-            size="small"
-            :prepend-icon="mdiPlus"
-            data-testid="article-add-sourced-edge"
-            @click="openAddEdge()"
-          >
-            Dodaj powiązanie
-          </v-btn>
-          <!-- The claim is often already in the base, made from some other
-               article; then the thing to add is this article behind it, not a
-               second copy of the relation. -->
-          <v-btn
-            color="primary"
-            variant="text"
-            size="small"
-            :prepend-icon="mdiLinkVariantPlus"
-            data-testid="article-cite-existing-edge"
-            @click="openCiteExisting()"
-          >
-            Powołaj się na istniejące
-          </v-btn>
+        <!-- Wrapped so the visual suite can capture the section on its own:
+             the page below it draws a force-directed graph, which settles
+             somewhere slightly different on every run. -->
+        <div data-testid="article-sources-section">
+          <div class="d-flex align-center flex-wrap ga-2 mb-2">
+            <h2 class="text-subtitle-1 font-weight-bold">
+              Artykuł stanowi źródło dla
+            </h2>
+            <v-spacer />
+            <v-btn
+              color="primary"
+              variant="tonal"
+              size="small"
+              :prepend-icon="mdiPlus"
+              data-testid="article-add-sourced-edge"
+              @click="openAddEdge()"
+            >
+              Dodaj powiązanie
+            </v-btn>
+            <!-- The claim is often already in the base, made from some other
+                 article; then the thing to add is this article behind it, not a
+                 second copy of the relation. -->
+            <v-btn
+              color="primary"
+              variant="text"
+              size="small"
+              :prepend-icon="mdiLinkVariantPlus"
+              data-testid="article-cite-existing-edge"
+              @click="openCiteExisting()"
+            >
+              Powołaj się na istniejące
+            </v-btn>
+          </div>
+          <ArticleSourcedEdgeList
+            :edges="sourcedEdges"
+            :can-edit="!!user"
+            :removing="detaching"
+            @detach="detachSource"
+          />
         </div>
-        <ArticleSourcedEdgeList
-          :edges="sourcedEdges"
-          :can-edit="!!user"
-          :removing="detaching"
-          @detach="detachSource"
-        />
 
         <ArticleAddSourcedEdgeDialog
           v-if="article"
