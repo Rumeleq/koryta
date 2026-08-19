@@ -213,6 +213,22 @@ def extract_people(ctx: Context):
     return DataFrame.from_records([dataclasses.asdict(d) for d in outputs])
 
 
+def is_owned_by_queried(item: dict) -> bool:
+    """Whether this rejestr.io entry is a company the queried one owns.
+
+    Every connection is looked at, not just the first. A company can be tied to
+    the queried one more than once - a board seat and a shareholding, say - and
+    rejestr.io lists them in no particular order, so reading only
+    ``krs_powiazania_kwerendowane[0]`` dropped the ownership whenever something
+    else happened to be listed first. `propagate_is_public` walks these edges,
+    so a dropped one is a company that does not inherit being public.
+    """
+    return any(
+        QueryRelation.from_rejestrio(conn).is_child()
+        for conn in item.get("krs_powiazania_kwerendowane", [])
+    )
+
+
 class CompaniesKRS(Pipeline[KrsCompany]):
     filename = "company_krs"
     # These are written as strings and have to be read back as strings. Without
@@ -296,13 +312,19 @@ class CompaniesKRS(Pipeline[KrsCompany]):
             for blob_ref in ctx.io.list_files(
                 CloudStorage(prefix=f"hostname={hostname}")
             )
-            if isinstance(blob_ref, DownloadableFile)
+            # A crawl that failed is stored as a zero-byte object, and dropping
+            # it here rather than after `latest_crawls` is the whole point: the
+            # newest crawl of a company may be the failed one, and taking it
+            # and then skipping it loses the company altogether instead of
+            # falling back to the last crawl that worked. `extract_people`
+            # makes the same choice, for the same reason.
+            if isinstance(blob_ref, DownloadableFile) and blob_ref.size != 0
         ]
         for blob_ref in latest_crawls(listing, lambda ref: ref.url):
             blob = ctx.io.read_data(blob_ref)
             content = blob.read_string()
             if content == "":
-                # Skipping files marking failures
+                # Still checked: a listing that carries no sizes cannot say.
                 continue
             data = json.loads(content)
             yield blob_ref.url, data
@@ -323,10 +345,7 @@ class CompaniesKRS(Pipeline[KrsCompany]):
                 self.add_company_source(c.krs, blob_name)
 
                 if "aktualnosc_aktualne" in blob_name:
-                    conn_type = QueryRelation.from_rejestrio(
-                        item["krs_powiazania_kwerendowane"][0]
-                    )
-                    if parent is not None and conn_type.is_child():
+                    if parent is not None and is_owned_by_queried(item):
                         self.add_relation(parent.id, c.krs)
 
         elif "/org" in blob_name:

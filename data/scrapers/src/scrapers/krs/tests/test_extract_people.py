@@ -6,7 +6,12 @@ import json
 import pandas as pd
 import pytest
 
-from scrapers.krs.list import extract_people, posts_held
+from scrapers.krs.list import (
+    CompaniesKRS,
+    extract_people,
+    is_owned_by_queried,
+    posts_held,
+)
 from scrapers.stores import Context, ProcessPolicy
 from scrapers.stores.file import DownloadableFile
 from scrapers.test_tree import MockIO, MockNLP, MockRejestrIO, MockUtils, MockWeb
@@ -55,7 +60,11 @@ class BucketIO(MockIO):
 
     def list_files(self, path):
         for name in self.blobs:
-            yield DownloadableFile(f"{BUCKET}/{name}")
+            # Sized, as a GCS listing is: a caller that needs to tell a failed
+            # crawl from a real one should not have to download it to find out.
+            yield DownloadableFile(
+                f"{BUCKET}/{name}", size=len(self._body(name).encode())
+            )
 
     def read_data(self, fs):
         name = fs.url.removeprefix(f"{BUCKET}/")
@@ -392,3 +401,85 @@ def test_an_organisation_is_still_not_a_person(context):
     )
 
     assert extract_people(ctx).empty
+
+
+# ─── a failed crawl must not lose the company ──────────────
+
+
+def org(krs: str, date: str) -> str:
+    return f"hostname=rejestr.io/api/v2/org/{krs}/date={date}"
+
+
+def test_a_failed_newest_crawl_falls_back_to_the_last_good_one(context):
+    """The bug this guards: the company disappeared instead.
+
+    `iterate_blobs` took the newest crawl and only then noticed it was the
+    zero-byte marker a failed fetch leaves, so a company whose last fetch
+    failed lost its name, NIP, REGON, seat and owners entirely.
+    """
+    ctx, _ = context(
+        {
+            org("0000030563", "2026-02-13"): {
+                "nazwy": {"skrocona": "DOBRA"},
+                "numery": {"krs": "0000030563"},
+                "typ": "organizacja",
+            },
+            org("0000030563", "2026-07-19"): "",
+        }
+    )
+
+    seen = [name for name, _ in CompaniesKRS().iterate_blobs(ctx, "rejestr.io")]
+
+    assert seen == [f"{BUCKET}/{org('0000030563', '2026-02-13')}"]
+
+
+def test_the_newest_good_crawl_is_still_the_one_used(context):
+    ctx, _ = context(
+        {
+            org("0000030563", "2026-02-13"): {"numery": {"krs": "0000030563"}},
+            org("0000030563", "2026-07-19"): {"numery": {"krs": "0000030563"}},
+        }
+    )
+
+    seen = [name for name, _ in CompaniesKRS().iterate_blobs(ctx, "rejestr.io")]
+
+    assert seen == [f"{BUCKET}/{org('0000030563', '2026-07-19')}"]
+
+
+# ─── who owns whom ─────────────────────────────────────────
+
+
+def tie(*types: str) -> dict:
+    """A company tied to the queried one by these connections, in this order."""
+    return {
+        "typ": "organizacja",
+        "krs_powiazania_kwerendowane": [
+            {
+                "typ": t,
+                "kierunek": "PASYWNY" if t == "KRS_SHAREHOLDER" else "AKTYWNY",
+            }
+            for t in types
+        ],
+    }
+
+
+@pytest.mark.parametrize(
+    "types",
+    [("KRS_SHAREHOLDER",), ("KRS_BOARD", "KRS_SHAREHOLDER")],
+    ids=["shareholding-alone", "shareholding-behind-a-board-seat"],
+)
+def test_a_shareholding_is_ownership_wherever_it_is_listed(types):
+    """The bug this guards: only the first connection was looked at.
+
+    Five companies in the crawl list a board seat before the shareholding, and
+    lost the ownership edge that `propagate_is_public` walks.
+    """
+    assert is_owned_by_queried(tie(*types))
+
+
+def test_a_board_seat_alone_is_not_ownership():
+    assert not is_owned_by_queried(tie("KRS_BOARD"))
+
+
+def test_an_entry_with_no_connections_is_not_owned():
+    assert not is_owned_by_queried({"typ": "organizacja"})
