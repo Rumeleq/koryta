@@ -47,3 +47,47 @@ export function regionNamesByPlaceId(
 
   return names;
 }
+
+/** Node ids of the places a person holds or held a post at.
+ *
+ * Only `employed` edges count: an `owns` edge to a company says the person is
+ * behind it, not that they ever sat there, and a `connection` says nothing
+ * about a workplace at all.
+ */
+export function employmentPlaceIds(
+  edges: {
+    type?: string;
+    richNode?: { id?: string; type?: string } | null;
+  }[],
+): string[] {
+  const ids: string[] = [];
+  for (const edge of edges) {
+    if (edge.type !== "employed") continue;
+    const node = edge.richNode;
+    if (node?.type === "place" && node.id) ids.push(node.id);
+  }
+  return ids;
+}
+
+/** The cities a person has worked in, from the places they were employed at.
+ *
+ * `regionNames` is what `regionNamesByPlaceId` returns, so a company nobody has
+ * linked to a region is simply absent - dropped rather than listed blank. The
+ * same city is named once however many employers a person had in it, which is
+ * common: a career inside one town's spółki komunalne is half a dozen edges
+ * pointing at the same region.
+ */
+export function workLocationNames(
+  placeIds: Iterable<string>,
+  regionNames: Record<string, string>,
+): string[] {
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (const id of placeIds) {
+    const name = regionNames[id];
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    names.push(name);
+  }
+  return names;
+}

@@ -219,6 +219,14 @@ export type PersonRich = Person & {
   elections: ElectionRich[];
   experience: number;
   latestEmploymentStart?: string | null;
+  /** Cities the person has worked in - the region of every company they hold
+   * or held a post at, deduplicated.
+   *
+   * Absent rather than empty where the caller could not work them out: the
+   * lookup needs the region collection (see `regionNamesByPlaceId`), which not
+   * every view loads. An empty array means the question was asked and nothing
+   * came back. */
+  workLocations?: string[];
 };
 
 /** A node identified on the graph, carrying the extra fields a person has when
