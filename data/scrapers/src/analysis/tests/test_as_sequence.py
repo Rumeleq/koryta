@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from analysis.article_person_mentions import _display_name
 from analysis.utils import as_sequence
 
 EMPLOYMENT = [{"employed_krs": "0000000110", "employed_start": "2020-01-01"}]
@@ -49,3 +50,23 @@ def test_a_pandas_series_is_a_sequence():
 def test_the_result_is_a_plain_list_whatever_went_in():
     for value in (np.array([1, 2]), (1, 2), [1, 2], pd.Series([1, 2])):
         assert type(as_sequence(value)) is list
+
+
+def test_a_persons_name_is_read_off_a_fresh_frame_too():
+    """`_display_name` reads `base_full_name`, which is a DuckDB list column.
+
+    PeopleMerged hands it over as an ndarray on the run that built it, and
+    the name then fell through to the title-cased first+last rather than to
+    what the register spells - silently, because that is a perfectly
+    ordinary-looking name.
+    """
+    row = {
+        "base_full_name": np.array(["jan maria rokita"], dtype=object),
+        "base_first_name": "jan",
+        "base_last_name": "rokita",
+    }
+    assert _display_name(row) == "jan maria rokita"
+    assert _display_name({**row, "base_full_name": ["jan maria rokita"]}) == (
+        "jan maria rokita"
+    )
+    assert _display_name({**row, "base_full_name": None}) == "Jan Rokita"

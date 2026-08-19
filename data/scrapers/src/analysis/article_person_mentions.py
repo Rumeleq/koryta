@@ -28,6 +28,7 @@ from typing import Any
 import pandas as pd
 from tqdm import tqdm
 
+from analysis.utils import as_sequence
 from entities.article import ArticlePersonMentioned, ProofSignal
 from scrapers.article.parse import date_iso_from_ld_json, title_from_ld_json
 from scrapers.article.pipelines.common import (

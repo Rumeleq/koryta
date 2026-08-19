@@ -14,7 +14,6 @@ downloaded*
 versioned*
 models
 
-# JSON credentials
 !src/**/*.json
 !**/service_account.json
 !**/config.json
@@ -23,3 +22,9 @@ models
 !src/**/*.identity.json
 !src/stores/*.json
 !src/entities/*.json
+
+# from pytest-fast-first
+.pytest-runtimes
+
+# The nightly's expected row counts and column coverage - tracked on purpose
+!src/tests/e2e/baseline.json
