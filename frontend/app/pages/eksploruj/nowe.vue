@@ -339,10 +339,14 @@ const apiQuery = computed(
 
 // Same as /eksploruj/tabela: the template is a single <ClientOnly>, so nothing
 // this returns is rendered on the server.
+// Which city each employer sits in, so the search suggestions below can put
+// the person in their local context.
+const { companyLocations } = useCompanyLocations();
+
 const { tableItems, totalItems, pending } = await useListWithStats(
   apiQuery,
   "nowe-data",
-  { server: false },
+  { server: false, companyLocations },
 );
 
 const focusedPerson = computed<PersonRich | undefined>(

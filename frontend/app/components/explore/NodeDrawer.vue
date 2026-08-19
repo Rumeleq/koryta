@@ -22,6 +22,7 @@
       :person="person"
       :region="region"
       :company="company"
+      :work-locations="workLocations"
     />
     <v-card v-else class="ma-2" flat>
       <v-card-title class="text-wrap text-h5">
@@ -62,6 +63,7 @@ import { computed } from "vue";
 import { generateEntityUrl } from "~/composables/slugs";
 import type { EdgeNode } from "~/composables/edges";
 import type { NodeMaybeRich, PersonRich } from "~~/shared/model";
+import { employmentPlaceIds, workLocationNames } from "~/utils/companyLocation";
 
 const props = withDefaults(
   defineProps<{
@@ -74,13 +76,30 @@ const props = withDefaults(
     /** Context for the search suggestions, where the caller has any. */
     region?: [string, string];
     company?: [string, string];
+    /** Region name per company node id, from `useCompanyLocations`. Turns the
+     * employers in `edges` into the cities to search the person in - the drawer
+     * works them out here rather than reading `person.workLocations`, so that a
+     * node opened straight from an id, as the note queues do, is covered too. */
+    companyLocations?: Record<string, string>;
   }>(),
-  { node: undefined, edges: () => [], region: undefined, company: undefined },
+  {
+    node: undefined,
+    edges: () => [],
+    region: undefined,
+    company: undefined,
+    companyLocations: undefined,
+  },
 );
 
 const open = defineModel<boolean>({ required: true });
 
 const person = computed(() =>
   props.node?.type === "person" ? (props.node as PersonRich) : undefined,
+);
+
+const workLocations = computed(() =>
+  props.companyLocations
+    ? workLocationNames(employmentPlaceIds(props.edges), props.companyLocations)
+    : undefined,
 );
 </script>

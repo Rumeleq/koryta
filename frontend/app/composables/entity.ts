@@ -21,6 +21,13 @@ export type UseEntitiesOptions = {
    * markup on the server, every one of those bytes is shipped for nothing.
    */
   server?: boolean;
+  /** Share one request between callers that want the same collection.
+   *
+   * `useFetch` keys on the url when nothing else is given, and a second call
+   * for that key aborts the first - so two components asking for the same
+   * collection cancel each other. Naming the key makes them one request
+   * instead. */
+  key?: string;
 };
 
 export function useEntities<N extends NodeType>(

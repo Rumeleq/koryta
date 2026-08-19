@@ -54,4 +54,28 @@ test.describe("Explore Person", () => {
       ).toBeVisible();
     }
   });
+
+  test("offers a search in the city the person worked in", async ({ page }) => {
+    // Jan Kowalski is employed at Orlen, which Województwo Pomorskie owns - so
+    // the seat of the employer, not any election, is what names the city here.
+    await page.goto("/eksploruj/tabela");
+    await expect(page.locator(".v-main")).toBeVisible();
+    await expect(page.locator(".v-data-table__progress")).not.toBeVisible();
+
+    await page
+      .locator("tbody tr", { hasText: "Jan Kowalski" })
+      .first()
+      .locator(".text-primary.cursor-pointer")
+      .first()
+      .click();
+
+    const drawer = page.locator(".v-navigation-drawer--active");
+    await expect(drawer).toBeVisible();
+
+    await expect(
+      drawer.locator(".v-btn", {
+        hasText: /^Jan Kowalski Województwo Pomorskie$/,
+      }),
+    ).toBeVisible({ timeout: 15000 });
+  });
 });
