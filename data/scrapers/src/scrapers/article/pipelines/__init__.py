@@ -3,10 +3,9 @@
 The pipeline classes are exposed lazily (module ``__getattr__``) so that
 importing a leaf submodule — e.g. ``scrapers.article.pipelines.incremental``
 or ``...parsed_pipeline``, which ``ArticlePersonMentions`` (analysis layer)
-imports — does not eagerly pull in ``facts_pipeline``. ``ArticleExtractedFacts``
-chains on ``ArticlePersonMentions`` as a pipeline source, so an eager import
-here would form a cycle: analysis → pipelines.incremental → (this package) →
-facts_pipeline → analysis.
+imports — does not eagerly pull in ``verified_facts_pipeline``/``facts_pipeline``.
+An eager import here would form a cycle: analysis → pipelines.incremental →
+(this package) → facts_pipeline → analysis.
 """
 
 from importlib import import_module

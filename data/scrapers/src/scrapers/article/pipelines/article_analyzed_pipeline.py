@@ -27,6 +27,10 @@ _FACTS_FILE = (
     / "article_facts_verified"
     / "article_facts_verified.jsonl"
 )
+# Mentions are an OPTIONAL enrichment: ArticleAnalyzed reads article_person_mentions
+# by path when present. Declaring it as a pipeline source would make the runner
+# auto-rebuild it whenever it looks stale (its sources are refreshed often) —
+# an expensive, hours-long job that would clobber a good file mid-run.
 _MENTIONS_FILE = (
     Path(VERSIONED_DIR)
     / "article_person_mentions"

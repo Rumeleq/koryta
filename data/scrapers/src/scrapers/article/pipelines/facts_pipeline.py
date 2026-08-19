@@ -312,6 +312,11 @@ class ArticleExtractedFacts(IncrementalJsonlPipeline[ArticleFacts]):
             _SCORES_FILE,
             mentioned,
         )
+        # Must be a real gate: with the flag set, extract only articles with at
+        # least one confirmed mention, so downstream koryta_ids are never empty
+        # for an analyzed record.
+        if require_mentions:
+            records = _filter_to_mentioned(records, mentioned)
         min_score = article_facts_min_koryciarski_score()
         asyncio.run(
             _extract_records(
@@ -384,6 +389,14 @@ def _mentioned_people_by_url(path: Path) -> dict[str, list[tuple[str, str]]]:
                 (person.strip(), str(row.get("person_id") or ""))
             )
     return by_url
+
+
+def _filter_to_mentioned(
+    records: list[dict[str, Any]],
+    mentioned: dict[str, list[tuple[str, str]]],
+) -> list[dict[str, Any]]:
+    """Keep only records whose URL has at least one confirmed mention."""
+    return [r for r in records if r["url"] in mentioned]
 
 
 def _extractable_records(

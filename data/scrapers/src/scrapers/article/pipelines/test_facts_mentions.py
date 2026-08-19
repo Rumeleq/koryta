@@ -8,6 +8,7 @@ import pytest
 from scrapers.article.pipelines.article_analyzed_pipeline import _koryta_ids_by_url
 from scrapers.article.pipelines.facts_pipeline import (
     _extractable_records,
+    _filter_to_mentioned,
     _mentioned_people_by_url,
 )
 
@@ -150,4 +151,13 @@ def test_extractable_records_mentions_add_hint_without_gate(tmp_path):
     assert set(urls) == {"a.pl/1", "b.pl/2"}
     assert urls["a.pl/1"]["people_mentioned"] == []
     assert urls["b.pl/2"]["people_mentioned"] == ["Jan Kowalski"]
+
+
+def test_filter_to_mentioned_is_a_real_gate():
+    # The --article-facts-require-mentions behavior: only mentioned URLs survive.
+    records = [{"url": "a.pl/1"}, {"url": "b.pl/2"}, {"url": "c.pl/3"}]
+    mentioned = {"b.pl/2": [("Jan Kowalski", "k1")]}
+    filtered = _filter_to_mentioned(records, mentioned)
+    # A URL only exists as a key once it has at least one confirmed (yes) row.
+    assert [r["url"] for r in filtered] == ["b.pl/2"]
 
