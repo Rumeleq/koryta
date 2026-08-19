@@ -194,6 +194,19 @@
           >
             Dodaj powiązanie
           </v-btn>
+          <!-- The claim is often already in the base, made from some other
+               article; then the thing to add is this article behind it, not a
+               second copy of the relation. -->
+          <v-btn
+            color="primary"
+            variant="text"
+            size="small"
+            :prepend-icon="mdiLinkVariantPlus"
+            data-testid="article-cite-existing-edge"
+            @click="openCiteExisting()"
+          >
+            Powołaj się na istniejące
+          </v-btn>
         </div>
         <ArticleSourcedEdgeList
           :edges="sourcedEdges"
@@ -205,6 +218,14 @@
         <ArticleAddSourcedEdgeDialog
           v-if="article"
           v-model="addEdgeOpen"
+          :article-id="nodeId"
+          :article-name="article.name"
+          @added="refreshSourced()"
+        />
+
+        <ArticleCiteExistingEdgeDialog
+          v-if="article"
+          v-model="citeExistingOpen"
           :article-id="nodeId"
           :article-name="article.name"
           @added="refreshSourced()"
@@ -259,6 +280,7 @@ import { computed, ref } from "vue";
 import {
   mdiChevronDown,
   mdiChevronUp,
+  mdiLinkVariantPlus,
   mdiOpenInNew,
   mdiPlus,
   mdiRefresh,
@@ -498,6 +520,15 @@ function openAddEdge() {
     return;
   }
   addEdgeOpen.value = true;
+}
+
+const citeExistingOpen = ref(false);
+function openCiteExisting() {
+  if (!user.value) {
+    handleLoginRedirect();
+    return;
+  }
+  citeExistingOpen.value = true;
 }
 
 const detaching = ref<string | null>(null);
