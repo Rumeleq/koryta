@@ -209,7 +209,7 @@
               data-testid="article-cite-existing-edge"
               @click="openCiteExisting()"
             >
-              Powołaj się na istniejące
+              Istniejące powiązanie
             </v-btn>
           </div>
           <ArticleSourcedEdgeList
