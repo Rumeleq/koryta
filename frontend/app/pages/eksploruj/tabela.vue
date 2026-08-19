@@ -13,18 +13,7 @@
         {{ entityName }}
       </h1>
 
-      <v-row v-if="selectedCompaniesData.length > 0" class="mb-4 mt-2">
-        <v-col
-          v-for="companyData in selectedCompaniesData"
-          :key="companyData.id"
-          cols="12"
-        >
-          <CardCompanySummary
-            :company="companyData"
-            :location="companyData.location"
-          />
-        </v-col>
-      </v-row>
+      <ExploreSelectedCompanies :companies="selectedCompaniesData" />
 
       <v-alert
         v-if="region && !company"
