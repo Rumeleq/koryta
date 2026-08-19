@@ -148,6 +148,29 @@ def drop_duplicates(df, *cols):
     return df
 
 
+def as_sequence(value) -> list:
+    """A column that should hold a list of things, as a list.
+
+    Which type it actually holds depends on where the frame came from. Straight
+    out of DuckDB a LIST column is a `numpy.ndarray`, because that is what
+    `.df()` makes of one; read back from the pipeline's own jsonl it is a
+    `list`, because that is what a JSON array parses to. So
+    ``isinstance(value, list)`` is true on a run that read the cache and false
+    on a run that rebuilt it, and code guarded that way does nothing at all on
+    the second - `Extract` scored every person 0 and emitted nobody.
+
+    Anything else, a null included, is no items rather than an error: these
+    columns are aggregates, and a person with no employment has no employment.
+    """
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, (list, tuple)):
+        return list(value)
+    if isinstance(value, pd.Series):
+        return value.tolist()
+    return []
+
+
 def empty_list_if_nan(value):
     if isinstance(value, (np.ndarray, list)):
         return value
