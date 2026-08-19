@@ -16,7 +16,7 @@ from entities.person import RejestrIOKey
 from scrapers.koryta.download import KorytaPeople, KorytaVotes
 from scrapers.krs.censored import KRSCensoredPeople
 from scrapers.krs.columns import normalise
-from scrapers.krs.coverage import RejestrIOCoverage
+from scrapers.krs.coverage import PersonFeedCoverage, RejestrIOCoverage
 from scrapers.krs.data import CompaniesHardcoded, PeopleRejestrIOHardcoded
 from scrapers.krs.graph import CompanyGraph
 from scrapers.krs.list import CompaniesKRS, PeopleKRS
@@ -369,14 +369,22 @@ OSOBY_QUERY_BY_PATH = {
 }
 
 
-def get_osoby_scraped(ctx: Context) -> dict[str, set[QueryType]]:
-    """Person endpoints that already have a response in the bucket.
+def get_osoby_scraped(
+    ctx: Context, stale: typing.Collection[str] = ()
+) -> dict[str, set[QueryType]]:
+    """Person endpoints that already have a response worth keeping.
 
     Keyed by the rejestr.io person id as a string, the spelling RejestrIOKey
-    uses. A person is fetched once and never refreshed: nothing in the free
-    feeds says when their connections changed -- the KRS bulletin covers
-    companies, which is what KRSNeedsRefresh is for -- so a refresh would mean
-    paying for every person on every run to find out.
+    uses. A person is otherwise fetched once and never refreshed, because the
+    KRS bulletin covers companies and there is no equivalent feed of "this
+    person's connections changed".
+
+    But there is a free signal, and this used to say there was not: every
+    organisation inside a person feed carries rejestr.io's own count of how
+    many times the register has written to that company's entry, and api-krs
+    publishes the same count. `PersonFeedCoverage` compares them, and the
+    people it finds were bought while rejestr.io was behind are dropped here
+    so their queries are issued again.
     """
     osoby_scraped: dict[str, set[QueryType]] = {}
     for blob_name in ctx.io.list_files(CloudStorage(prefix="hostname=rejestr.io")):
@@ -387,6 +395,9 @@ def get_osoby_scraped(ctx: Context) -> dict[str, set[QueryType]]:
             continue
 
         person_id = split[1].split("/", 1)[0]
+        if person_id in stale:
+            # Held, so save_org_connections asks for them again.
+            continue
         for path_marker, query in OSOBY_QUERY_BY_PATH.items():
             if path_marker in blob_name.url:
                 osoby_scraped.setdefault(person_id, set()).add(query)
@@ -518,6 +529,7 @@ class ScrapeRejestrIO(Pipeline[RejestrIOQuery]):
     people_all: PeopleMerged
     koryta_votes: KorytaVotes
     koryta_people: KorytaPeople
+    person_coverage: PersonFeedCoverage
 
     @property
     def output_class(self):
@@ -659,7 +671,9 @@ class ScrapeRejestrIO(Pipeline[RejestrIOQuery]):
         for url in save_org_connections(
             already_scraped_krs=self.already_scraped.latest_scrapes(ctx),
             needs_refresh_krs=self.needs_refresh.read_or_process(ctx),
-            already_scraped_people=get_osoby_scraped(ctx),
+            already_scraped_people=get_osoby_scraped(
+                ctx, self.person_coverage.people_to_refetch(ctx)
+            ),
             connections=self.companies_to_scrape(ctx),
             names=self.companies_without_names(ctx),
             people=self.people_to_scrape(ctx),

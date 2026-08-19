@@ -51,6 +51,9 @@ from scrapers.stores.file import split_crawl_date
 #: today". The historic one is not comparable: it lists people who have left.
 CURRENT_CONNECTIONS_SUFFIX = "krs-powiazania/aktualnosc_aktualne"
 
+#: Where a person's own connections live, as opposed to a company's.
+PERSON_CONNECTIONS_MARKER = "/osoby/"
+
 #: How long to wait before re-querying a company whose stored response came
 #: back short. rejestr.io needs about four business days to pick a change up
 #: (see `analysis/update_rate`), so a retry inside a week buys the same answer
@@ -111,6 +114,52 @@ def days_in(start: str, end: str) -> list[str]:
         out.append(first.isoformat())
         first += timedelta(days=1)
     return out
+
+
+def parse_person_connections_url(url: str) -> tuple[str, str] | None:
+    """``(rejestr.io person id, crawl date)`` for a person-connections blob."""
+    path, crawl_date = split_crawl_date(url)
+    if PERSON_CONNECTIONS_MARKER not in path or "krs-powiazania" not in path:
+        return None
+    person = path.split(PERSON_CONNECTIONS_MARKER, 1)[1].split("/", 1)[0]
+    if not person.isdigit():
+        return None
+    return person, crawl_date
+
+
+def companies_behind(response, entry_numbers, fetched: str) -> list[dict]:
+    """Companies in a person feed whose register entry had moved past it.
+
+    Every organisation in the feed carries ``krs_wpisy.najnowszy_numer`` -
+    rejestr.io's view of how many times the register has written to that entry.
+    api-krs publishes the same count as ``numerOstatniegoWpisu``, for free. If
+    rejestr.io's is the lower of the two at the moment we bought the feed, it
+    had not caught up, and what we bought is the company as it used to be.
+
+    Only api-krs snapshots at or before the fetch count: a snapshot taken later
+    may have moved on for reasons the feed could not have known about.
+    """
+    behind = []
+    for entry in response if isinstance(response, list) else []:
+        if not isinstance(entry, dict) or entry.get("typ") != "organizacja":
+            continue
+        krs = str((entry.get("numery") or {}).get("krs") or "").zfill(10)
+        theirs = (entry.get("krs_wpisy") or {}).get("najnowszy_numer")
+        known = entry_numbers.get(krs) or {}
+        earlier = [d for d in sorted(known) if d <= fetched]
+        if not krs or theirs is None or not earlier:
+            continue
+        ours = known[earlier[-1]]
+        if int(theirs) < ours:
+            behind.append(
+                {
+                    "krs": krs,
+                    "rejestrio_entry_no": int(theirs),
+                    "register_entry_no": ours,
+                    "api_date": earlier[-1],
+                }
+            )
+    return behind
 
 
 @dataclass(frozen=True)
@@ -324,4 +373,123 @@ class RejestrIOCoverage(Pipeline):
             delay = retry_delay_days(misses)
             if date.fromisoformat(last_scrape) + timedelta(days=delay) <= today:
                 due.append(krs)
+        return sorted(due)
+
+
+class PersonFeedCoverage(Pipeline):
+    """Person feeds bought while rejestr.io was behind the register.
+
+    `get_osoby_scraped` fetches a person's connections once and never again,
+    on the reasoning that nothing free says when one has gone stale. That is
+    not true. Every organisation inside a person feed carries rejestr.io's own
+    count of how many times the register has written to that company's entry,
+    and api-krs publishes the same count for nothing. Where rejestr.io's was
+    the lower of the two when we bought the feed, it had not caught up, and
+    the connections we hold for that person are the old ones.
+
+    One row per (person, crawl date). The comparison needs no bulletin gate
+    and no name matching: it is two integers describing the same thing, and
+    only api-krs snapshots at or before the fetch are used.
+    """
+
+    filename = "rejestrio_person_coverage"
+
+    censored_people: KRSCensoredPeople
+
+    def process(self, ctx: Context) -> pd.DataFrame:
+        entry_numbers = self.censored_people.entry_numbers(ctx)
+
+        rows = []
+        for name, blob in tqdm(
+            ctx.io.read_many(CloudStorage(prefix="hostname=rejestr.io")),
+            desc="Reading rejestr.io person feeds",
+        ):
+            parsed_url = parse_person_connections_url(name)
+            if parsed_url is None:
+                continue
+            person, crawl_date = parsed_url
+            try:
+                body = json.loads(blob.read_string())
+            except Exception:
+                continue
+            behind = companies_behind(body, entry_numbers, crawl_date)
+            companies = (
+                sum(
+                    1
+                    for entry in body
+                    if isinstance(entry, dict) and entry.get("typ") == "organizacja"
+                )
+                if isinstance(body, list)
+                else 0
+            )
+            rows.append(
+                {
+                    "person": person,
+                    "rejestr_date": crawl_date,
+                    "n_companies": companies,
+                    "n_behind": len(behind),
+                    "behind": behind,
+                    "worst_lag": max(
+                        (
+                            c["register_entry_no"] - c["rejestrio_entry_no"]
+                            for c in behind
+                        ),
+                        default=0,
+                    ),
+                }
+            )
+
+        if not rows:
+            return pd.DataFrame(
+                columns=[
+                    "person",
+                    "rejestr_date",
+                    "n_companies",
+                    "n_behind",
+                    "behind",
+                    "worst_lag",
+                ]
+            )
+        return pd.DataFrame(rows).sort_values(["person", "rejestr_date"])
+
+    def stale(self, ctx: Context) -> pd.DataFrame:
+        df = normalise(self.read_or_process(ctx), "rejestr_date")
+        return df if df.empty else df[df["n_behind"] > 0]
+
+    def people_to_refetch(self, ctx: Context, today: date | None = None) -> list[str]:
+        """People whose feed is known stale and whose backoff has run out.
+
+        The same backoff as the company path: a person rejestr.io simply has
+        no better answer for should not be re-bought every night.
+        """
+        today = today or date.today()
+        df = normalise(self.read_or_process(ctx), "rejestr_date")
+        if df.empty:
+            return []
+
+        # Per day, not per blob: the two feeds a person has - current and
+        # historic connections - are bought together, so they are one
+        # observation of how far behind rejestr.io was, not two.
+        per_day = (
+            df.groupby(["person", "rejestr_date"], as_index=False)
+            .agg({"n_behind": "sum"})
+            .sort_values("rejestr_date")
+        )
+
+        due = []
+        for person, group in per_day.groupby("person"):
+            counts = group["n_behind"].tolist()
+            if not counts or counts[-1] == 0:
+                continue
+            attempts = 0
+            for count in reversed(counts):
+                if count == 0:
+                    break
+                attempts += 1
+            last = str(group["rejestr_date"].iloc[-1])
+            if (
+                date.fromisoformat(last) + timedelta(days=retry_delay_days(attempts))
+                <= today
+            ):
+                due.append(str(person))
         return sorted(due)

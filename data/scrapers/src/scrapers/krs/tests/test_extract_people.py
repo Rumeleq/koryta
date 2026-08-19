@@ -483,3 +483,36 @@ def test_a_board_seat_alone_is_not_ownership():
 
 def test_an_entry_with_no_connections_is_not_owned():
     assert not is_owned_by_queried({"typ": "organizacja"})
+
+
+PERSON_FEED = (
+    "hostname=rejestr.io/api/v2/osoby/808738/krs-powiazania"
+    "/aktualnosc_aktualne/date=2026-07-19"
+)
+
+
+def test_a_persons_own_feed_contributes_nothing_here(context):
+    """It lists companies, not people, so it never could have.
+
+    4,198 such documents were being parsed for no rows at all. What is in them
+    is used elsewhere - to find companies worth crawling, and to tell whether
+    the feed itself has gone stale.
+    """
+    ctx, _ = context(
+        {PERSON_FEED: [{"typ": "organizacja", "numery": {"krs": "0000030563"}}]}
+    )
+
+    assert extract_people(ctx).empty
+
+
+def test_a_company_feed_alongside_one_is_still_read(context):
+    ctx, _ = context(
+        {
+            PERSON_FEED: [{"typ": "organizacja", "numery": {"krs": "0000030563"}}],
+            connections("0000030563", "aktualne", "2026-02-13"): [
+                seat("2007-10-16", None)
+            ],
+        }
+    )
+
+    assert len(extract_people(ctx)) == 1

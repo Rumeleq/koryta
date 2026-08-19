@@ -29,7 +29,7 @@ import pytest
 
 from conductor import setup_context
 from scrapers.krs.censored import KRSCensoredPeople
-from scrapers.krs.coverage import RejestrIOCoverage
+from scrapers.krs.coverage import PersonFeedCoverage, RejestrIOCoverage
 from scrapers.krs.names import ROLES_REJESTRIO_OMITS
 from scrapers.krs.people_parsing import PERSON_PATHS
 
@@ -184,4 +184,67 @@ def test_every_role_we_compare_is_one_rejestrio_actually_models(ctx, coverage):
     assert not unknown, f"missing people carry roles nothing declares: {unknown}"
     assert not (set(missing_roles) & ROLES_REJESTRIO_OMITS), (
         "a role in ROLES_REJESTRIO_OMITS reached the comparison"
+    )
+
+
+#: Person feeds whose most recent buy caught rejestr.io behind the register.
+#:
+#: 9 on 2026-08-19, of 432 people on file. A person's connections are bought
+#: once and never refreshed, so a buy made while rejestr.io was catching up is
+#: permanent until something notices - which is what this is.
+STALE_PERSON_BUDGET = 15
+
+#: Of every company inside a person feed, the share where rejestr.io's count of
+#: register entries was behind api-krs's at the moment we bought the feed.
+#: 0.8% on 2026-08-19 (139 of 18,069).
+PERSON_FEED_LAG_BUDGET = 0.02
+
+
+@pytest.fixture(scope="module")
+def person_coverage(ctx):
+    pipeline = PersonFeedCoverage()
+    return pipeline, pipeline.read_or_process(ctx)
+
+
+def test_person_feeds_are_checked_at_all(person_coverage):
+    _, df = person_coverage
+
+    assert not df.empty, "no person feed had an api-krs entry number to check"
+    assert df["n_companies"].sum() > 0
+
+
+def test_rejestrio_had_caught_up_when_we_bought_a_person_feed(person_coverage):
+    """Two integers describing the same thing: entries written to the register.
+
+    rejestr.io publishes its count as `krs_wpisy.najnowszy_numer` and api-krs
+    publishes the register's as `numerOstatniegoWpisu`. Where ours was the
+    higher of the two when we paid, we bought the company as it used to be.
+    """
+    _, df = person_coverage
+    checked = int(df["n_companies"].sum())
+    behind = int(df["n_behind"].sum())
+
+    assert behind / checked <= PERSON_FEED_LAG_BUDGET, (
+        f"{behind} of {checked} companies inside a person feed were behind the "
+        f"register when the feed was bought ({behind / checked:.2%}), over budget"
+    )
+
+
+def test_stale_person_feeds_stay_within_budget(ctx, person_coverage):
+    pipeline, df = person_coverage
+    per_day = df.groupby(["person", "rejestr_date"], as_index=False).agg(
+        {"n_behind": "sum"}
+    )
+    stale = {
+        person
+        for person, group in per_day.sort_values("rejestr_date").groupby("person")
+        if group["n_behind"].tolist()[-1] > 0
+    }
+
+    assert len(stale) <= STALE_PERSON_BUDGET, (
+        f"{len(stale)} people hold connections bought while rejestr.io was "
+        f"behind; budget is {STALE_PERSON_BUDGET}"
+    )
+    assert len(pipeline.people_to_refetch(ctx)) <= len(stale), (
+        "the backoff should hold some of them back, not queue every one"
     )

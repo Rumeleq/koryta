@@ -156,6 +156,14 @@ def extract_people(ctx: Context):
     for blob_name, blob in ctx.io.read_many(CloudStorage(prefix="hostname=rejestr.io")):
         if "aktualnosc_" not in blob_name:
             continue
+        if "/osoby/" in blob_name:
+            # A person's own feed answers "which companies is this person tied
+            # to", so it holds only `organizacja` entries and never yielded a
+            # row here - 4,198 documents parsed for nothing. What is in them is
+            # used, just elsewhere: `companies_to_scrape` reads them to find
+            # companies worth crawling, and `PersonFeedCoverage` reads the
+            # register entry numbers to tell whether the feed is stale.
+            continue
         subject, date = split_crawl_date(blob_name)
         seen = latest.get(subject)
         if seen is not None and seen[0] >= date:
