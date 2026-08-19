@@ -20,6 +20,7 @@ import pandas as pd
 
 from analysis.payloads.person import PeoplePayloads
 from analysis.scores.base import IS_PUBLIC_SCORE, PeopleScoreModel, Population
+from analysis.utils import as_sequence
 from scrapers.koryta.download import KorytaPeople, KorytaVotes
 from scrapers.stores import Context, Pipeline
 
@@ -114,20 +115,13 @@ class CompanyScores(Pipeline):
             if person_score == 0:
                 continue
 
-            companies = row.get("companies", [])
-            if (
-                isinstance(companies, list)
-                or isinstance(companies, pd.Series)
-                or hasattr(companies, "__iter__")
-            ):
-                for company in companies:
-                    krs = None
-                    if isinstance(company, dict):
-                        krs = company.get("krs")
-                    else:
-                        krs = getattr(company, "krs", None)
-                    if krs:
-                        records.append({"krs": krs, "score": person_score})
+            for company in as_sequence(row.get("companies")):
+                if isinstance(company, dict):
+                    krs = company.get("krs")
+                else:
+                    krs = getattr(company, "krs", None)
+                if krs:
+                    records.append({"krs": krs, "score": person_score})
 
         if not records:
             return pd.DataFrame(columns=["krs", "sum_score"])
