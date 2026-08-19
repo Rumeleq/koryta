@@ -107,6 +107,12 @@ class DownloadableFile(DataRef):
     complex_download: str | None = None
     download_lambda: typing.Callable | None = None
     binary: bool = True
+    #: How many bytes the object holds, when whatever produced this reference
+    #: already knew - a GCS listing carries it, so asking costs nothing. None
+    #: means unknown, which is not the same as empty and must not be read as
+    #: it: a crawl that failed is stored as a zero-byte object, and telling
+    #: those apart from real ones is otherwise a download each.
+    size: int | None = None
 
     @property
     def filename(self) -> str:

@@ -72,7 +72,9 @@ class Client:
             print(f"Failed to download gs://{CRAWLED_BUCKET}/{blob_name}: {e}")
             raise
 
-    def cached_storage(self, blob_name: str, binary: bool) -> DownloadableFile:
+    def cached_storage(
+        self, blob_name: str, binary: bool, size: int | None = None
+    ) -> DownloadableFile:
         filename = blob_name.replace("/", ".")
         return DownloadableFile(
             f"gs://{CRAWLED_BUCKET}/{blob_name}",
@@ -81,6 +83,7 @@ class Client:
                 blob_name, path, binary
             ),
             binary=binary,
+            size=size,
         )
 
     def list_blobs(self, ref: CloudStorage) -> Generator[DownloadableFile, None, None]:
@@ -125,7 +128,10 @@ class Client:
         print(f"Attempting bucket.list_blobs(prefix={prefix}, match_glob={glob})")
         blobs = bucket.list_blobs(prefix=prefix, match_glob=glob)
         for blob in blobs:
-            yield self.cached_storage(blob.name, ref.binary)
+            # blob.size comes from the listing response, so carrying it here
+            # costs no extra request and saves a caller a download each time
+            # it needs to tell a failed crawl from a real one.
+            yield self.cached_storage(blob.name, ref.binary, size=blob.size)
 
     def iterate_blobs(self, io: IO, ref: CloudStorage):
         """List blobs for a given hostname and yield their path and JSON data."""
