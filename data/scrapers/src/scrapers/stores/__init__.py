@@ -286,6 +286,17 @@ class LLMResponse:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    #: Why the model stopped. ``"stop"`` means it finished; ``"length"`` means
+    #: it hit max_tokens and the content is whatever it had said so far. That
+    #: prefix parses like any other answer, so without this a truncated
+    #: completion is indistinguishable from a short one - and gets cached as a
+    #: good result for ever.
+    finish_reason: str | None = None
+
+    @property
+    def truncated(self) -> bool:
+        """Whether the model ran out of budget rather than finishing."""
+        return self.finish_reason == "length"
 
 
 class LLMResponsePool(metaclass=ABCMeta):

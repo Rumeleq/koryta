@@ -675,6 +675,21 @@ def _facts_row(
     think_text = _think_text(response_text)
     think_chars, think_blocks = _think_stats_from_text(think_text)
     _add_run_think_stats(think_chars, think_blocks)
+    if getattr(response, "truncated", False):
+        # The model ran out of budget rather than finishing, so what came back
+        # is a prefix of its answer. It parses like any other list of facts -
+        # that is exactly the problem - and _cache_valid only re-runs rows
+        # marked "error", so accepting it would cache half an extraction for
+        # this article for ever.
+        return _error_row(
+            record,
+            model,
+            f"completion truncated at max_tokens ({MAX_TOKENS})",
+            response,
+            think_chars,
+            think_blocks,
+            think_text,
+        )
     try:
         facts = _normalize_markdown_response(
             str(record.get("url") or ""),
