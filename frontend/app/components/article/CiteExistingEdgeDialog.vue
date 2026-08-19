@@ -1,7 +1,7 @@
 <template>
   <v-dialog v-model="open" max-width="620" scrollable>
     <v-card data-testid="cite-existing-edge-dialog">
-      <v-card-title class="pb-1">Powołaj się na istniejące</v-card-title>
+      <v-card-title class="pb-1">Istniejące powiązanie</v-card-title>
       <v-card-subtitle class="pb-3 text-wrap">
         Źródłem będzie: <strong>{{ articleName }}</strong>
       </v-card-subtitle>
