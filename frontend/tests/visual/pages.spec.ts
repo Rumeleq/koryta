@@ -1,14 +1,18 @@
 import { test, expect } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
 /** `settled` is what has to be on the page before it is worth capturing, for
  * the pages that draw themselves from an api response rather than from the
  * document the server sent. `viewports` narrows a page to some of the projects,
- * for the ones a phone-sized shot says nothing about. */
+ * for the ones a phone-sized shot says nothing about. `act` is for state a
+ * visitor reaches by clicking rather than by url - it runs once the page has
+ * settled and before the capture. */
 const pages: {
   name: string;
   path: string;
   settled?: (string | RegExp)[];
   viewports?: string[];
+  act?: (page: Page) => Promise<void>;
 }[] = [
   { name: "home", path: "/" },
   { name: "login", path: "/login" },
@@ -53,9 +57,34 @@ const pages: {
     // identifiers behind it. It captures the overflow, not this page.
     viewports: ["visual-desktop"],
   },
+  {
+    // Three or more institutions fold into one card listing their names, so
+    // that a table filtered on a dozen of them still starts above the fold.
+    // The seed has exactly three places, which is the threshold.
+    name: "instytucje-zwiniete",
+    path: "/eksploruj/tabela?place=2&place=company-empty&place=chain-company",
+    settled: ["Wybrane firmy (3)"],
+    // Desktop only, for the reason the single institution above is.
+    viewports: ["visual-desktop"],
+  },
+  {
+    // The other half of that card: the summaries are not in the document at
+    // all until this button puts them there.
+    name: "instytucje-rozwiniete",
+    path: "/eksploruj/tabela?place=2&place=company-empty&place=chain-company",
+    settled: ["Wybrane firmy (3)"],
+    act: async (page) => {
+      await page.getByRole("button", { name: "Pokaż szczegóły" }).click();
+      await page
+        .getByText(/REGON:\s*123456785/)
+        .first()
+        .waitFor();
+    },
+    viewports: ["visual-desktop"],
+  },
 ];
 
-for (const { name, path, settled, viewports } of pages) {
+for (const { name, path, settled, viewports, act } of pages) {
   test(name, async ({ page }, testInfo) => {
     test.skip(
       !!viewports && !viewports.includes(testInfo.project.name),
@@ -66,6 +95,7 @@ for (const { name, path, settled, viewports } of pages) {
     for (const text of settled ?? []) {
       await page.getByText(text).first().waitFor({ timeout: 30_000 });
     }
+    await act?.(page);
     // Images below the fold are lazy-loaded, so a fullPage screenshot would
     // otherwise request them mid-capture and keep growing the page height
     // (see /o-nas). Scroll through the page to trigger them, then wait until
