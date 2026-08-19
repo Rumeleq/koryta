@@ -255,8 +255,9 @@
             />
           </div>
           <p class="text-caption text-medium-emphasis mt-2">
-            Pokazujemy osoby i instytucje wspomniane w tym artykule oraz
-            powiązania, dla których jest on źródłem.
+            Pokazujemy osoby i instytucje wspomniane w tym artykule, powiązania,
+            dla których jest on źródłem, oraz najbliższe otoczenie wspomnianych
+            osób.
           </p>
         </template>
 
