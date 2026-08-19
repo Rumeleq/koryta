@@ -261,6 +261,14 @@ def compute_refresh_cutoff_date(today: date, skip_days: int) -> str:
     return current.isoformat()
 
 
+#: The api-krs pair, which costs nothing. Everything else a needs-refresh
+#: frame can name is a rejestr.io call, and `RejestrIOQuery.cost` bills it.
+FREE_METHODS = (
+    QueryType.API_KRS_ODPIS_AKTUALNY_P.value,
+    QueryType.API_KRS_ODPIS_AKTUALNY_S.value,
+)
+
+
 #: The paid rejestr.io calls a company needs re-issued once its stored
 #: connections are known to be out of date. The api-krs pair is free and
 #: re-fetched every run anyway.
@@ -268,6 +276,44 @@ ORG_CONNECTION_METHODS = (
     QueryType.REJESTRIO_ORG_KRS_POWIAZANIA_AKTUALNE.value,
     QueryType.REJESTRIO_ORG_KRS_POWIAZANIA_HISTORYCZNE.value,
 )
+
+
+def filter_paid_by_people_changes(
+    needs_refresh: pd.DataFrame, changed_krs: dict[str, str]
+) -> pd.DataFrame:
+    """Hold back the paid queries whose company's people have not moved.
+
+    The censored people api-krs serves are the free evidence that a company
+    changed hands, and buying a rejestr.io response without them is buying
+    the response already on file. So the paid queries wait for that evidence.
+
+    The free api-krs queries in the same frame must not, and used to: the
+    only thing that can produce the evidence is a fresh api-krs snapshot,
+    which is exactly what those rows would fetch. A company whose snapshot
+    predates the change it is being asked about could therefore never be
+    asked again - TOMASZOWSKIE TBS (0000095675) last read the register on
+    2026-06-20, appointed a supervisor on 2026-08-11 with the bulletin
+    saying so, and stayed frozen because the 2026-06-20 snapshot naturally
+    said nothing about somebody appointed two months later.
+
+    They have already passed the bulletin's own test - the register moved
+    since we last looked - which is the whole of what a free query needs.
+    """
+    if needs_refresh.empty:
+        return needs_refresh
+
+    def has_recent_change(row):
+        krs = row["krs"]
+        if krs not in changed_krs:
+            return False
+        change_date = changed_krs[krs]
+        last_scrape = row["date"]
+        return change_date > last_scrape
+
+    # Named by what is free rather than by what is billed, so a rejestr.io
+    # method added later is held back by default rather than escaping.
+    free = needs_refresh["method"].isin(FREE_METHODS)
+    return needs_refresh[free | needs_refresh.apply(has_recent_change, axis=1)]
 
 
 class KRSNeedsRefresh(Pipeline):
@@ -330,20 +376,9 @@ class KRSNeedsRefresh(Pipeline):
             & (merged["update_date"] < self.refresh_cutoff_date)
         ]
 
-        # Pre-filter: only keep KRS where censored people changed
-        # after the last rejestr.io scrape date
         changed_krs = self.censored_people.krs_with_people_changes(ctx)
         before_count = len(needs_refresh)
-
-        def has_recent_change(row):
-            krs = row["krs"]
-            if krs not in changed_krs:
-                return False
-            change_date = changed_krs[krs]
-            last_scrape = row["date"]
-            return change_date > last_scrape
-
-        needs_refresh = needs_refresh[needs_refresh.apply(has_recent_change, axis=1)]
+        needs_refresh = filter_paid_by_people_changes(needs_refresh, changed_krs)
         print(
             f"Censored people pre-filter: {before_count} → "
             f"{len(needs_refresh)} KRS entries"
