@@ -3,6 +3,7 @@
 import collections
 import json
 
+import pandas as pd
 import pytest
 
 from scrapers.krs.list import extract_people, posts_held
@@ -316,3 +317,78 @@ def test_a_closed_post_is_measured_by_its_own_dates():
     )
 
     assert [p.years for p in posts] == ["1.60", "5.07"]
+
+
+# ─── the second person shape ───────────────────────────────
+
+
+def unidentified_seat(start: str, end: str | None) -> dict:
+    """A person rejestr.io holds no PESEL for: a name, and nothing else.
+
+    No `data_urodzenia`, no `plec` - which is exactly how the real entries
+    arrive, all 6,606 of them.
+    """
+    return {
+        "typ": "osoba-bez-pesel",
+        "id": 2906389,
+        "tozsamosc": {
+            "imie": "Jerzy",
+            "nazwisko": "Gibas",
+            "imiona_i_nazwisko": "Jerzy Gibas",
+            "drugie_imiona": "",
+        },
+        "krs_powiazania_kwerendowane": [
+            {"typ": "KRS_SUPERVISION", "data_start": start, "data_koniec": end}
+        ],
+    }
+
+
+def test_a_person_without_a_pesel_is_still_a_person(context):
+    """The bug this guards: 3,912 people held 6,227 seats nothing could see.
+
+    `people_to_scrape` reads this pipeline to decide whose rejestr.io feed to
+    buy, and `companies_without_names` reads it to find companies at all, so
+    dropping them hid both the people and their companies from the scraper.
+    """
+    ctx, _ = context(
+        {
+            connections("0000030563", "aktualne", "2026-02-13"): [
+                unidentified_seat("2007-10-16", None)
+            ]
+        }
+    )
+
+    people = extract_people(ctx)
+
+    assert len(people) == 1
+    assert people.iloc[0]["full_name"] == "Jerzy Gibas"
+    assert people.iloc[0]["rejestrio_type"] == "osoba-bez-pesel"
+
+
+def test_the_shape_is_recorded_rather_than_guessed_from_the_empty_fields(context):
+    ctx, _ = context(
+        {
+            connections("0000030563", "aktualne", "2026-02-13"): [
+                seat("2007-10-16", None),
+                unidentified_seat("2010-01-01", None),
+            ]
+        }
+    )
+
+    people = extract_people(ctx)
+
+    assert set(people["rejestrio_type"]) == {"osoba", "osoba-bez-pesel"}
+    unidentified = people[people["rejestrio_type"] == "osoba-bez-pesel"]
+    assert pd.isna(unidentified.iloc[0]["birth_date"])
+
+
+def test_an_organisation_is_still_not_a_person(context):
+    ctx, _ = context(
+        {
+            connections("0000030563", "aktualne", "2026-02-13"): [
+                {"typ": "organizacja", "id": 1, "numery": {"krs": "0000000001"}}
+            ]
+        }
+    )
+
+    assert extract_people(ctx).empty
