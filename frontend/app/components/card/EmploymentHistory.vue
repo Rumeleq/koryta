@@ -1,5 +1,5 @@
 <template>
-  <v-list class="px-2" variant="flat">
+  <v-list class="px-2" variant="flat" data-testid="relations-history">
     <div class="d-flex align-center justify-space-between mb-2">
       <h3 class="text-h6">Historia powiązań</h3>
       <v-btn
