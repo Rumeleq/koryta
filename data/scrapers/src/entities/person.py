@@ -34,6 +34,12 @@ class KRS:
     birth_date: str | None = None
     second_names: str | None = None
     sex: str | None = None
+    #: What rejestr.io called the entry this row came from: ``osoba``, or
+    #: ``osoba-bez-pesel`` for somebody it holds no PESEL for. The latter never
+    #: carries a birth date or a sex, which is why it is worth recording rather
+    #: than inferring from the empty fields. It is a property of the response
+    #: and not of the person - 59 ids in the crawl arrive as both.
+    rejestrio_type: str | None = None
 
     def __post_init__(self):
         """Ensures the person's ID is a string."""

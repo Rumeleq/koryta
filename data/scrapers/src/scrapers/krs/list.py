@@ -65,6 +65,19 @@ class Post:
         return f"{(end - datetime.fromisoformat(self.start)).days / 365:.2f}"
 
 
+#: The two shapes rejestr.io gives a person. ``osoba-bez-pesel`` is one it holds
+#: no PESEL for - a foreign national, or an entry old enough to predate the
+#: number - and it arrives with a name and nothing else: no birth date, no sex.
+#: Accepting only the first shape dropped 6,606 entries covering 3,912 people
+#: and 6,227 board, supervisory and proxy seats, so `people_to_scrape` could not
+#: see them and `companies_without_names` did not know their companies existed.
+#:
+#: They stop at `PeopleKRS`. `PeopleKRSMerged` selects
+#: ``WHERE birth_date IS NOT NULL`` (analysis/people_krs_merged.py:39), which
+#: none of them satisfy, so nothing published changes by admitting them here.
+PERSON_TYPES = frozenset({"osoba", "osoba-bez-pesel"})
+
+
 def posts_held(item: dict, unknown: typing.Counter[str] | None = None) -> list[Post]:
     """The posts one rejestr.io person entry says the person held.
 
@@ -157,7 +170,7 @@ def extract_people(ctx: Context):
         people: list[KrsPerson] = []
         try:
             for item in data:
-                if item.get("typ") == "osoba":
+                if item.get("typ") in PERSON_TYPES:
                     identity = item.get("tozsamosc", {})
                     for post in posts_held(item, unknown_relations):
                         people.append(
@@ -169,6 +182,7 @@ def extract_people(ctx: Context):
                                 birth_date=identity.get("data_urodzenia"),
                                 second_names=identity.get("drugie_imiona"),
                                 sex=identity.get("plec"),
+                                rejestrio_type=item.get("typ"),
                                 employed_krs=KRS.from_blob_name(blob_name).id,
                                 employed_start=post.start,
                                 employed_end=post.end,
