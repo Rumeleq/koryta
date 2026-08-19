@@ -55,15 +55,22 @@ import { toRef } from "vue";
 import type { PersonRich } from "~~/shared/model";
 import { usePersonSearch } from "~/composables/usePersonSearch";
 
-const props = defineProps<{
-  person: undefined | PersonRich;
-  region: undefined | [string, string];
-  company: undefined | [string, string];
-}>();
+const props = withDefaults(
+  defineProps<{
+    person: undefined | PersonRich;
+    region: undefined | [string, string];
+    company: undefined | [string, string];
+    /** Cities to search in alongside the ones on `person`, for a caller that
+     * derived them itself. */
+    workLocations?: string[];
+  }>(),
+  { workLocations: undefined },
+);
 
 const { queries, searchInGoogle } = usePersonSearch(
   toRef(props, "person"),
   toRef(props, "region"),
   toRef(props, "company"),
+  toRef(props, "workLocations"),
 );
 </script>

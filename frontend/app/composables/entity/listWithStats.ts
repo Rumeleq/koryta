@@ -1,6 +1,7 @@
 import type { ElectionRich, PersonRich, Person } from "~~/shared/model";
 import type { Edge, Node } from "~~/shared/graph/model";
 import type { Query } from "~~/server/api/nodes/index.get";
+import { workLocationNames } from "~/utils/companyLocation";
 
 import { useCurrentUser, useIsCurrentUserLoaded } from "vuefire";
 
@@ -8,6 +9,12 @@ export type UseListWithStatsOptions = {
   /** Set false where the result is only ever read behind a `<ClientOnly>`, so
    * the server does not fetch and serialise a payload nothing will render. */
   server?: boolean;
+  /** Region name per company node id, from `useCompanyLocations`.
+   *
+   * The subgraph reaches a person's employers but not the regions above them,
+   * so without this the cities they worked in cannot be worked out and
+   * `workLocations` is left absent. */
+  companyLocations?: MaybeRefOrGetter<Record<string, string>>;
 };
 
 export async function useListWithStats(
@@ -105,11 +112,19 @@ export async function useListWithStats(
   const subgraphEdges = computed(() => pageData.value?.subgraphEdges || []);
   const subgraphNodes = computed(() => pageData.value?.subgraphNodes || {});
 
+  /** Undefined until the caller supplies a lookup, which is what tells the
+   * difference between "no cities" and "nobody asked". */
+  const locations = computed(() =>
+    options.companyLocations ? toValue(options.companyLocations) : undefined,
+  );
+
   const tableItems = computed<PersonRich[]>(() => {
     return fetchedItems.value.map((person) => {
       // Reconstruct companies and elections from subgraph
       const companies = new Set<string>();
       const elections: ElectionRich[] = [];
+
+      const employerIds: string[] = [];
 
       const personEdges = subgraphEdges.value.filter(
         (e) => e.source === person.id || e.target === person.id,
@@ -122,6 +137,7 @@ export async function useListWithStats(
 
         if (edge.type === "employed" && otherNode?.entityType === "place") {
           companies.add(otherNode.name);
+          employerIds.push(otherNodeId);
         } else if (edge.type === "election") {
           const listYear =
             edge.start_date && typeof edge.start_date === "string"
@@ -161,6 +177,9 @@ export async function useListWithStats(
         elections,
         experience: Math.floor(exp * 10) / 10,
         latestEmploymentStart: latestEmpStr,
+        workLocations: locations.value
+          ? workLocationNames(employerIds, locations.value)
+          : undefined,
       };
     });
   });

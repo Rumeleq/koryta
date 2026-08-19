@@ -6,6 +6,7 @@
       :edges="focusedEdges"
       :region="region"
       :company="company"
+      :company-locations="companyLocations"
     />
     <div class="pa-4">
       <h1 class="text-h4 mb-4">
@@ -98,7 +99,6 @@ import type { Query } from "~~/server/api/nodes/index.get";
 import { useCurrentUser } from "vuefire";
 
 import { useEdges } from "~/composables/edges";
-import { regionNamesByPlaceId } from "~/utils/companyLocation";
 
 definePageMeta({ fullWidth: true, affineLink: "BYOEeL1iG0mvIR3yz2pOs" });
 useHead({
@@ -223,7 +223,9 @@ const hiddenCount = computed(() => {
 // serialised into __NUXT_DATA__, which is where most of an ~8 MB response came
 // from. Every reader waited on all of it before seeing anything.
 const { entities: places } = useEntities("place", {}, { server: false });
-const { entities: regions } = useEntities("region", {}, { server: false });
+// Shared with the drawer and the table rows, which need the region each company
+// sits in rather than the region nodes themselves.
+const { regions, companyLocations } = useCompanyLocations();
 
 const region = computed<[string, string] | undefined>(() => {
   const terytParam = route.query.teryt as string | undefined;
@@ -242,11 +244,6 @@ const company = computed<[string, string] | undefined>(() => {
   const place = id ? places.value?.[id] : undefined;
   return id && place ? [id, place.name] : undefined;
 });
-
-/** Region each company sits in, keyed by company node id. */
-const companyLocations = computed(() =>
-  regionNamesByPlaceId(regions.value ?? {}, user.value ? "all" : "approved"),
-);
 
 const selectedCompaniesData = computed(() => {
   if (!filterPlace.value || !places.value) return [];
@@ -348,7 +345,7 @@ const apiQuery = computed(
 const { tableItems, totalItems, pending } = await useListWithStats(
   apiQuery,
   "eksploruj-tabela-data",
-  { server: false },
+  { server: false, companyLocations },
 );
 
 const openDrawer = shallowRef(false);
