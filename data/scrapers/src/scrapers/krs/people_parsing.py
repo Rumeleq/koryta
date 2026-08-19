@@ -270,6 +270,24 @@ def unread_person_paths(data) -> set[str]:
     return found
 
 
+def last_entry_number(data) -> int | None:
+    """How many times the register has written to this entry, per api-krs.
+
+    ``numerOstatniegoWpisu`` counts entries, so it only ever goes up, and
+    rejestr.io publishes its own view of the same number as
+    ``krs_wpisy.najnowszy_numer``. Comparing the two says whether rejestr.io
+    had caught up when we asked it - exactly, and without matching a single
+    name.
+    """
+    if not is_odpis(data):
+        return None
+    number = data["odpis"]["naglowekA"].get("numerOstatniegoWpisu")
+    try:
+        return int(number)
+    except (TypeError, ValueError):
+        return None
+
+
 def is_odpis(data) -> bool:
     """Whether a parsed api-krs response actually carries a register entry.
 

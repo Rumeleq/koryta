@@ -15,6 +15,7 @@ from scrapers.krs.people_parsing import (
     CensoredPerson,
     extract_censored_people,
     is_odpis,
+    last_entry_number,
     unread_person_paths,
 )
 from scrapers.stores import CloudStorage, Context, Pipeline
@@ -54,6 +55,7 @@ class KRSCensoredPeople(Pipeline):
         # register, or a re-crawl - cannot become a second row.
         snapshots: dict[tuple[str, str], set[CensoredPerson]] = {}
         unread: dict[tuple[str, str], set[str]] = {}
+        entries: dict[tuple[str, str], int | None] = {}
 
         for blob_ref in tqdm(
             ctx.io.list_files(CloudStorage(prefix="hostname=api-krs.ms.gov.pl")),
@@ -88,6 +90,7 @@ class KRSCensoredPeople(Pipeline):
             if previous is None or len(people) > len(previous):
                 snapshots[(krs, date)] = people
                 unread[(krs, date)] = unread_person_paths(data)
+                entries[(krs, date)] = last_entry_number(data)
 
         if not snapshots:
             return pd.DataFrame(
@@ -98,6 +101,7 @@ class KRSCensoredPeople(Pipeline):
                     "n_people",
                     "people",
                     "unread_paths",
+                    "last_entry_no",
                 ]
             )
 
@@ -114,6 +118,12 @@ class KRSCensoredPeople(Pipeline):
                     # registers as one, which is what the prokurenci bug was;
                     # carrying it here turns that into a failing invariant.
                     "unread_paths": sorted(unread.get((krs, date), ())),
+                    # The register's own count of how many times this entry
+                    # has been written to. rejestr.io publishes its view of
+                    # the same number, so the two compare directly - an exact
+                    # answer to "was rejestr.io behind when we asked", with no
+                    # name matching in it.
+                    "last_entry_no": entries.get((krs, date)),
                 }
                 for (krs, date), people in snapshots.items()
             ]
@@ -137,6 +147,18 @@ class KRSCensoredPeople(Pipeline):
             by_krs.setdefault(str(krs), {})[str(date)] = [
                 CensoredPerson.from_row(r) for r in rows
             ]
+        return by_krs
+
+    def entry_numbers(self, ctx: Context) -> dict[str, dict[str, int]]:
+        """KRS → crawl date → the register's last-entry number on that date."""
+        df = self._rows(ctx)
+        if df.empty or "last_entry_no" not in df.columns:
+            return {}
+        by_krs: dict[str, dict[str, int]] = {}
+        for krs, date, number in zip(df["krs"], df["date"], df["last_entry_no"]):
+            if pd.isna(number):
+                continue
+            by_krs.setdefault(str(krs), {})[str(date)] = int(number)
         return by_krs
 
     def unread_paths(self, ctx: Context) -> dict[str, int]:

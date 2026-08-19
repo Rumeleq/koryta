@@ -10,14 +10,19 @@ from scrapers.krs.censored import KRSCensoredPeople
 from scrapers.krs.coverage import (
     RETRY_BACKOFF_DAYS,
     BulletinWindow,
+    PersonFeedCoverage,
     RejestrIOCoverage,
+    companies_behind,
     days_in,
     parse_current_connections_url,
+    parse_person_connections_url,
     retry_delay_days,
 )
 from scrapers.krs.people_parsing import CensoredPerson
+from scrapers.krs.scrape import get_osoby_scraped
 from scrapers.krs.updates import KRSUpdates
 from scrapers.stores import Context, ProcessPolicy
+from scrapers.stores.file import DownloadableFile
 from scrapers.test_tree import MockIO, MockNLP, MockRejestrIO, MockUtils, MockWeb
 
 KRS = "0000000110"
@@ -159,6 +164,10 @@ class BucketIO(MockIO):
     def read_many(self, path):
         for name, body in self.blobs.items():
             yield f"{BUCKET}/{name}", FakeFile(json.dumps(body))
+
+    def list_files(self, path):
+        for name in self.blobs:
+            yield DownloadableFile(f"{BUCKET}/{name}")
 
 
 def connections_blob(krs: str, day: str) -> str:
@@ -399,3 +408,143 @@ def test_a_company_that_caught_up_is_not_queued_again():
 
     assert coverage.consecutive_misses(ctx) == {}
     assert coverage.krs_to_rescrape(ctx, date(2027, 1, 1)) == []
+
+
+# ─── person feeds ──────────────────────────────────────────
+#
+# A person's connections are bought once. The claim that nothing free says
+# when one has gone stale is false: every organisation in the feed carries
+# rejestr.io's own count of register entries, and api-krs publishes the same
+# count. Two integers, no name matching, no bulletin gate.
+
+PERSON = "808738"
+
+
+def person_blob(person: str, day: str, kind: str = "aktualne") -> str:
+    return (
+        f"hostname=rejestr.io/api/v2/osoby/{person}/krs-powiazania"
+        f"/aktualnosc_{kind}/date={day}"
+    )
+
+
+def org(krs: str, entry_no: int) -> dict:
+    return {
+        "typ": "organizacja",
+        "numery": {"krs": krs},
+        "krs_wpisy": {"najnowszy_numer": entry_no, "najnowszy_data": "2026-06-01"},
+    }
+
+
+def test_parses_a_person_feed_url():
+    assert parse_person_connections_url(
+        f"{BUCKET}/{person_blob(PERSON, '2026-07-19')}"
+    ) == (
+        PERSON,
+        "2026-07-19",
+    )
+
+
+def test_a_company_feed_is_not_a_person_feed():
+    assert (
+        parse_person_connections_url(f"{BUCKET}/{connections_blob(KRS, '2026-07-19')}")
+        is None
+    )
+
+
+def test_a_company_the_register_has_moved_past_is_behind():
+    behind = companies_behind([org(KRS, 67)], {KRS: {"2026-07-05": 71}}, "2026-07-10")
+
+    assert [
+        (c["krs"], c["register_entry_no"] - c["rejestrio_entry_no"]) for c in behind
+    ] == [(KRS, 4)]
+
+
+def test_a_company_level_with_the_register_is_not_behind():
+    assert (
+        companies_behind([org(KRS, 71)], {KRS: {"2026-07-05": 71}}, "2026-07-10") == []
+    )
+
+
+def test_a_register_snapshot_taken_after_the_fetch_says_nothing():
+    """It may have moved on for reasons the feed could not have known."""
+    assert (
+        companies_behind([org(KRS, 67)], {KRS: {"2026-07-20": 71}}, "2026-07-10") == []
+    )
+
+
+def test_a_company_we_have_never_asked_api_krs_about_says_nothing():
+    assert companies_behind([org(KRS, 67)], {}, "2026-07-10") == []
+
+
+def build_person_coverage(blobs, entry_numbers):
+    ctx = Context(
+        io=BucketIO(blobs),
+        rejestr_io=MockRejestrIO(),
+        con=None,  # type: ignore[arg-type]
+        utils=MockUtils(),
+        web=MockWeb(),
+        nlp=MockNLP(),
+        refresh_policy=ProcessPolicy.with_default(),
+    )
+    coverage = PersonFeedCoverage()
+    censored = KRSCensoredPeople()
+    censored.entry_numbers = lambda _ctx: entry_numbers  # type: ignore[method-assign]
+    coverage.censored_people = censored
+    result = coverage.process(ctx)
+    coverage.read_or_process = lambda _ctx: result  # type: ignore[method-assign]
+    return coverage, ctx, result
+
+
+def test_a_feed_bought_while_rejestrio_was_behind_is_stale():
+    coverage, ctx, df = build_person_coverage(
+        {person_blob(PERSON, "2026-07-10"): [org(KRS, 67)]},
+        {KRS: {"2026-07-05": 71}},
+    )
+
+    assert df.iloc[0]["n_behind"] == 1
+    assert df.iloc[0]["worst_lag"] == 4
+    assert list(coverage.stale(ctx)["person"]) == [PERSON]
+
+
+def test_a_feed_bought_once_rejestrio_had_caught_up_is_not():
+    coverage, ctx, df = build_person_coverage(
+        {person_blob(PERSON, "2026-07-10"): [org(KRS, 71)]},
+        {KRS: {"2026-07-05": 71}},
+    )
+
+    assert df.iloc[0]["n_behind"] == 0
+    assert coverage.stale(ctx).empty
+    assert coverage.people_to_refetch(ctx, date(2027, 1, 1)) == []
+
+
+def test_a_stale_feed_waits_out_the_backoff_before_being_bought_again():
+    coverage, ctx, _ = build_person_coverage(
+        {
+            person_blob(PERSON, "2026-07-01"): [org(KRS, 67)],
+            person_blob(PERSON, "2026-07-10"): [org(KRS, 67)],
+        },
+        {KRS: {"2026-06-01": 71}},
+    )
+
+    assert coverage.people_to_refetch(ctx, date(2026, 7, 20)) == []
+    assert coverage.people_to_refetch(ctx, date(2026, 7, 24)) == [PERSON]
+
+
+def test_a_stale_person_is_no_longer_counted_as_already_scraped():
+    """Which is what makes save_org_connections ask for them again."""
+    blobs = {
+        person_blob(PERSON, "2026-07-10"): [],
+        person_blob(PERSON, "2026-07-10", "historyczne"): [],
+    }
+    ctx = Context(
+        io=BucketIO(blobs),
+        rejestr_io=MockRejestrIO(),
+        con=None,  # type: ignore[arg-type]
+        utils=MockUtils(),
+        web=MockWeb(),
+        nlp=MockNLP(),
+        refresh_policy=ProcessPolicy.with_default(),
+    )
+
+    assert set(get_osoby_scraped(ctx)) == {PERSON}
+    assert get_osoby_scraped(ctx, stale={PERSON}) == {}

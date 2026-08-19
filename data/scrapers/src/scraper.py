@@ -113,6 +113,7 @@ REFRESH_PIPELINES = {
     "CompaniesKRS",
     "KRSUpdates",
     "RejestrIOCoverage",
+    "PersonFeedCoverage",
 }
 
 
