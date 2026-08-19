@@ -435,11 +435,20 @@ class KRSNeedsRefresh(Pipeline):
         return rows
 
     def process(self, ctx):
-        """Lists updates for a KRS, filtered by actual people changes.
+        """Every query a company is owed, from three sources that disagree.
 
-        Uses KRSCensoredPeople to pre-filter: only include KRS entries
-        where the censored people list changed AFTER the last rejestr.io
-        scrape, avoiding re-processing of stale changes.
+        The bulletin says a company's entry moved since we last looked. That
+        alone justifies the free api-krs pair, and `filter_paid_by_people_-
+        changes` lets those through; the paid rejestr.io calls wait until the
+        censored people api-krs serves have actually moved, because otherwise
+        we are buying the response already on file.
+
+        `stale_coverage` adds paid calls that pass no such test, and should
+        not have to: those companies hold a response that provably disagrees
+        with the register, which is stronger evidence than a change the
+        censored list has yet to show. The whole point of it is the response
+        that was wrong when it was bought - nothing further has to happen to
+        that company for the copy we hold to be wrong.
         """
 
         latest_scrapes = self.already_scraped.latest_scrapes(ctx)
