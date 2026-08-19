@@ -1,5 +1,6 @@
 import argparse
 import atexit
+import contextlib
 import io
 import os
 import shutil
@@ -57,18 +58,33 @@ class Client:
             raise
 
     def download_from_gcs(self, blob_name: str, filename: str, binary: bool):
-        """Downloads a blob from GCS as a string."""
+        """Downloads a blob from GCS to a local path.
+
+        Written aside and renamed on success, as `stores.download` already does
+        for the wiki dumps and for the same reason: a transfer interrupted
+        part-way leaves a truncated file at the real path, and nothing looks at
+        a cached file again once it is there - `FileSource.downloaded()` asks
+        only whether the path exists. The truncation is then permanent, and
+        silent, because half a JSON document raises a parse error somewhere
+        else entirely.
+        """
         bucket = self.storage_client.bucket(CRAWLED_BUCKET)
         blob = bucket.blob(blob_name)
+        partial = f"{filename}.part"
         try:
             if not binary:
                 # TODO try removing it and just using download_to_filename
                 text = blob.download_as_text()
-                open(filename, "w").write(text)
+                with open(partial, "w") as out:
+                    out.write(text)
             else:
-                blob.download_to_filename(filename)
+                blob.download_to_filename(partial)
+            os.replace(partial, filename)
             return filename
         except Exception as e:
+            # Best effort: a leftover .part is inert, but it is still litter.
+            with contextlib.suppress(OSError):
+                os.remove(partial)
             print(f"Failed to download gs://{CRAWLED_BUCKET}/{blob_name}: {e}")
             raise
 
