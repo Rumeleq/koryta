@@ -132,6 +132,24 @@ class KRSSet:
         return key in self.entries
 
 
+def api_krs_register(url: str) -> QueryType:
+    """Which register an api-krs OdpisAktualny query asked for.
+
+    A company is in one register and not the other, so both are asked and one
+    answers 404. Recording both as the P query left the S query looking
+    unasked, so `save_org_connections` re-issued it for every company on every
+    run - and stored another empty object each time.
+
+    The oldest blobs carry no ``?rejestr=`` at all, from before the parameter
+    was sent; P is what those were.
+    """
+    return (
+        QueryType.API_KRS_ODPIS_AKTUALNY_S
+        if "rejestr=S" in url
+        else QueryType.API_KRS_ODPIS_AKTUALNY_P
+    )
+
+
 @dataclass
 class KRSScraped:
     krs: str
@@ -158,7 +176,7 @@ class KRSScraped:
             if "Biuletyn" in url:
                 return None
             krs = url.split("OdpisAktualny/", 1)[1].split("/", 1)[0]
-            return KRSScraped(krs, QueryType.API_KRS_ODPIS_AKTUALNY_P, date)
+            return KRSScraped(krs, api_krs_register(url), date)
         else:
             return None
 
@@ -180,36 +198,34 @@ class KRSAlreadyScraped(Pipeline):
     dtype = {"krs": str}
 
     def process(self, ctx: Context):
+        """Lists krs numbers along with the method and the date it was ran on.
+
+        A crawl that failed is stored as a zero-byte object rather than not
+        stored at all (see `scraper.scrape_krs_free`), so the object existing
+        is not the same as the query having been answered. Counting those as
+        scraped left 1,052 api-krs subjects - 402 companies with nothing from
+        either register - looking done and never retried.
+
+        Told apart by the size the listing already carries, so no body is read
+        here. A reference whose size is unknown is kept: unknown is not empty.
+        """
         output = []
-        success, fail = 0, 0
-        """lists krs numbers along with the method and the date it was ran on."""
-        for blob_name in tqdm(
-            ctx.io.list_files(CloudStorage(prefix="hostname=rejestr.io"))
-        ):
-            assert isinstance(blob_name, DownloadableFile)
-            r = KRSScraped.parse(blob_name.url)
-            if r:
-                success += 1
-                output.append(r)
-            else:
-                fail += 1
+        success, fail, empty = 0, 0, 0
 
-        print(f"Success: {success}, Fail: {fail}")
+        for prefix in ("hostname=rejestr.io", "hostname=api-krs.ms.gov.pl"):
+            for blob_name in tqdm(ctx.io.list_files(CloudStorage(prefix=prefix))):
+                assert isinstance(blob_name, DownloadableFile)
+                if blob_name.size == 0:
+                    empty += 1
+                    continue
+                r = KRSScraped.parse(blob_name.url)
+                if r:
+                    success += 1
+                    output.append(r)
+                else:
+                    fail += 1
+            print(f"{prefix}: success {success}, fail {fail}, failed crawls {empty}")
 
-        for blob_name in tqdm(
-            ctx.io.list_files(CloudStorage(prefix="hostname=api-krs.ms.gov.pl"))
-        ):
-            assert isinstance(blob_name, DownloadableFile)
-            r = KRSScraped.parse(blob_name.url)
-            if r:
-                success += 1
-                output.append(r)
-            else:
-                fail += 1
-
-        print(f"Success: {success}, Fail: {fail}")
-
-        print(len(output))
         return pd.DataFrame.from_records(
             [asdict(r, dict_factory=enum_dict_factory) for r in output]
         )
@@ -305,16 +321,10 @@ class KRSNeedsRefresh(Pipeline):
         if updates_df.empty:
             return self.stale_coverage(ctx)
 
-        latest_updates = (
-            updates_df.groupby(["krs"]).aggregate("max").reset_index()
-        )
-        latest_updates = latest_updates.rename(
-            columns={"date": "update_date"}
-        )
+        latest_updates = updates_df.groupby(["krs"]).aggregate("max").reset_index()
+        latest_updates = latest_updates.rename(columns={"date": "update_date"})
 
-        merged = pd.merge(
-            latest_scrapes, latest_updates, on="krs", how="inner"
-        )
+        merged = pd.merge(latest_scrapes, latest_updates, on="krs", how="inner")
         needs_refresh = merged[
             (merged["update_date"] > merged["date"])
             & (merged["update_date"] < self.refresh_cutoff_date)
@@ -333,9 +343,7 @@ class KRSNeedsRefresh(Pipeline):
             last_scrape = row["date"]
             return change_date > last_scrape
 
-        needs_refresh = needs_refresh[
-            needs_refresh.apply(has_recent_change, axis=1)
-        ]
+        needs_refresh = needs_refresh[needs_refresh.apply(has_recent_change, axis=1)]
         print(
             f"Censored people pre-filter: {before_count} → "
             f"{len(needs_refresh)} KRS entries"
@@ -345,9 +353,7 @@ class KRSNeedsRefresh(Pipeline):
             [needs_refresh, self.stale_coverage(ctx)], ignore_index=True
         ).drop_duplicates(subset=["krs", "method"], keep="first")
 
-        return needs_refresh.sort_values(
-            by=["update_date"], ascending=False
-        )
+        return needs_refresh.sort_values(by=["update_date"], ascending=False)
 
 
 PEOPLE_QUERIES = [
