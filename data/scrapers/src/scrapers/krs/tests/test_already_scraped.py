@@ -6,6 +6,7 @@ from scrapers.krs.scrape import (
     KRSAlreadyScraped,
     KRSScraped,
     QueryType,
+    ScrapeRejestrIO,
     api_krs_register,
 )
 from scrapers.stores import Context, ProcessPolicy
@@ -123,3 +124,56 @@ def test_a_rejestrio_response_is_read_the_same_way():
         QueryType.REJESTRIO_ORG_KRS_POWIAZANIA_AKTUALNE
     )
     assert scraped({blob: 0}).empty
+
+
+# ─── companies with connections but no register entry ──────
+
+
+def rejestrio(krs: str, day: str, kind: str = "aktualne") -> str:
+    return (
+        f"hostname=rejestr.io/api/v2/org/{krs}/krs-powiazania"
+        f"/aktualnosc_{kind}/date={day}"
+    )
+
+
+def missing_register_entries(blobs) -> set[str]:
+    ctx = Context(
+        io=ListingIO(blobs),
+        rejestr_io=MockRejestrIO(),
+        con=None,  # type: ignore[arg-type]
+        utils=MockUtils(),
+        web=MockWeb(),
+        nlp=MockNLP(),
+        refresh_policy=ProcessPolicy.with_default(),
+    )
+    scraped = KRSAlreadyScraped().process(ctx)
+    pipeline = ScrapeRejestrIO()
+    already = pipeline.already_scraped
+    already.read_or_process = lambda _ctx: scraped  # type: ignore[assignment]
+    return {krs.id for krs in pipeline.companies_without_register_entry(ctx)}
+
+
+def test_a_company_met_only_through_rejestrio_is_asked_for_its_entry():
+    """Nothing can check a response with no register entry to check against."""
+    assert missing_register_entries({rejestrio(KRS, "2026-07-19"): 4096}) == {KRS}
+
+
+def test_a_company_we_already_have_an_entry_for_is_not_asked_again():
+    assert (
+        missing_register_entries(
+            {rejestrio(KRS, "2026-07-19"): 4096, odpis("P", "2026-07-18"): 4096}
+        )
+        == set()
+    )
+
+
+def test_a_company_whose_entry_query_only_ever_failed_is_asked_again():
+    """The empty marker is not an entry, so it does not count as one."""
+    assert missing_register_entries(
+        {rejestrio(KRS, "2026-07-19"): 4096, odpis("P", "2026-07-18"): 0}
+    ) == {KRS}
+
+
+def test_a_company_with_only_a_register_entry_is_not_queued_for_a_paid_query():
+    """That direction is 1,642 companies and 164 PLN - a decision, not a fix."""
+    assert missing_register_entries({odpis("P", "2026-07-18"): 4096}) == set()

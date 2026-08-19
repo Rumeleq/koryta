@@ -603,6 +603,33 @@ class ScrapeRejestrIO(Pipeline[RejestrIOQuery]):
 
         return to_scrape
 
+    def companies_without_register_entry(self, ctx: Context) -> KRSSet:
+        """Companies we hold rejestr.io connections for and no api-krs entry.
+
+        `companies_to_scrape` subtracts every company that has any blob at all,
+        so a company first met through a rejestr.io response - the usual way,
+        since that is how the graph is walked - never gets asked for its
+        register entry. 1,993 of the 8,301 companies on file are in that state.
+
+        Nothing can check those. `RejestrIOCoverage` compares a rejestr.io
+        response against what the register said, and for these there is no what
+        the register said, so however stale the response is it will never show.
+        Asking costs nothing: these go out through the free channel, which
+        `scrape_krs_free` issues and `RejestrIOQuery.cost` prices at zero. The
+        reverse - buying rejestr.io connections for every company we happen to
+        have a register entry for - is 1,642 companies and 164 PLN, and is a
+        decision rather than a repair.
+        """
+        scraped = self.already_scraped.latest_scrapes(ctx)
+        if scraped.empty:
+            return KRSSet()
+        method = scraped["method"].astype(str)
+        from_rejestrio = set(scraped.loc[method.str.startswith("rejestrio_org"), "krs"])
+        from_register = set(scraped.loc[method.str.startswith("api_krs"), "krs"])
+        missing = from_rejestrio - from_register
+        print(f"Companies with connections but no register entry: {len(missing)}")
+        return KRSSet(KRS(id=str(krs).zfill(10)) for krs in missing)
+
     def companies_without_names(self, ctx: Context) -> KRSSet:
         encountered_companies = self.series_to_set(
             self.people.read_or_process(ctx)["employed_krs"]
@@ -675,7 +702,8 @@ class ScrapeRejestrIO(Pipeline[RejestrIOQuery]):
                 ctx, self.person_coverage.people_to_refetch(ctx)
             ),
             connections=self.companies_to_scrape(ctx),
-            names=self.companies_without_names(ctx),
+            names=self.companies_without_names(ctx)
+            | self.companies_without_register_entry(ctx),
             people=self.people_to_scrape(ctx),
         ):
             ctx.io.output_entity(url)
