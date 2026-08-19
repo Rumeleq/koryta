@@ -2,14 +2,23 @@ import { computed, unref } from "vue";
 import type { Ref } from "vue";
 import type { PersonRich } from "~~/shared/model";
 
+/** How many location-qualified queries a person is worth. See
+ * `uniqueLocations`. */
+const MAX_LOCATION_QUERIES = 6;
+
 export const usePersonSearch = (
   person: Ref<PersonRich | undefined> | PersonRich | undefined,
   region?: Ref<[string, string] | undefined> | [string, string] | undefined,
   company?: Ref<[string, string] | undefined> | [string, string] | undefined,
+  /** Cities to search alongside the ones the person carries, for a caller that
+   * worked them out itself - the drawer derives them from the edges it already
+   * fetched, which covers nodes that never went through the table. */
+  extraLocations?: Ref<string[] | undefined> | string[] | undefined,
 ) => {
   const personRef = computed(() => unref(person));
   const regionRef = computed(() => unref(region));
   const companyRef = computed(() => unref(company));
+  const extraLocationsRef = computed(() => unref(extraLocations));
 
   const getQueryParts = () => {
     const parts = [personRef.value?.name];
@@ -34,12 +43,25 @@ export const usePersonSearch = (
     return nameWithoutMiddle;
   });
 
+  /** Every place a person is tied to, in the order a searcher would try them.
+   *
+   * Where they stood for election first - that is the town they asked to
+   * represent - then where they have worked, which is what puts a local paper's
+   * coverage of a spółka komunalna within reach of the same name. The two
+   * overlap often enough to be worth deduplicating: a councillor employed by
+   * their own gmina would otherwise get the same query twice.
+   *
+   * Capped, because `searchAll` opens a browser tab per query and a long career
+   * across a województwo would otherwise open a dozen at once - past which the
+   * browser starts blocking them anyway.
+   */
   const uniqueLocations = computed(() => {
-    if (!personRef.value?.elections) return [];
-    const locations = personRef.value.elections
-      .map((e) => e.location)
-      .filter(Boolean) as string[];
-    return Array.from(new Set(locations));
+    const locations = [
+      ...(personRef.value?.elections ?? []).map((e) => e.location),
+      ...(personRef.value?.workLocations ?? []),
+      ...(extraLocationsRef.value ?? []),
+    ].filter(Boolean) as string[];
+    return Array.from(new Set(locations)).slice(0, MAX_LOCATION_QUERIES);
   });
 
   const queries = computed(() => {
@@ -108,6 +130,8 @@ export const executeSearchAll = (
   region?: [string, string],
   company?: [string, string],
 ) => {
+  // The cities come off `person.workLocations`, which the table's rows carry -
+  // there are no edges to derive them from at this call site.
   const { searchAll } = usePersonSearch(person, region, company);
   searchAll();
 };
