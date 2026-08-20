@@ -77,7 +77,9 @@ export async function ensureArticleNode(
     type: "article",
     sourceURL: article.url,
     meta: article.meta,
-    publishedDate: parseArticleDate(article.publishedDate),
+    // Fallback timestamp, because /zrodla sorts on it and a Firestore `orderBy`
+    // skips the documents that lack the field entirely.
+    publishedDate: parseArticleDate(article.publishedDate) ?? Timestamp.now(),
   };
 
   createRevisionTransaction(db, batch, user, articleRef, revisionData, {
