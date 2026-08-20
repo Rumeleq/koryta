@@ -29,7 +29,7 @@ class FromBytesIO(File):
 
     def read_dataframe(
         self,
-        fmt: Literal["jsonl", "csv", "parquet"],
+        fmt: Literal["jsonl", "csv", "parquet", "json"],
         csv_sep=",",
         dtype: dict[str, Any] | None = None,
     ) -> pd.DataFrame:
@@ -119,7 +119,7 @@ class FromPath(FromBytesIO):
 
     def read_dataframe(
         self,
-        fmt: Literal["jsonl", "csv", "parquet"],
+        fmt: Literal["jsonl", "csv", "parquet", "json"],
         csv_sep=",",
         dtype: dict[str, Any] | None = None,
     ) -> pd.DataFrame:

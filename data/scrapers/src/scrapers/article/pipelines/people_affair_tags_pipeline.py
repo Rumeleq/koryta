@@ -14,7 +14,6 @@ or ``prokuratura`` are filtered out.
 
 import json
 import re
-import unicodedata
 from collections import defaultdict
 from typing import Any
 
@@ -23,15 +22,14 @@ from tqdm import tqdm
 
 from analysis.article_person_mentions import ArticlePersonMentions
 from entities.article import AffairTag, PersonAffairTags
+from scrapers.article.pipelines.common import normalize_text
 from scrapers.article.pipelines.incremental import IncrementalJsonlPipeline
 from scrapers.stores import Context
 
 
 def _normalize(token: str) -> str:
     """Lowercase a token with diacritics stripped (``Ząbek`` -> ``zabek``)."""
-    decomposed = unicodedata.normalize("NFKD", token)
-    stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
-    return stripped.lower().strip()
+    return normalize_text(token).strip()
 
 
 # Curated allowlist of interesting tags, one per line. Each line is normalized
@@ -162,11 +160,13 @@ class PeopleAffairTags(IncrementalJsonlPipeline[PersonAffairTags]):
                 ]
                 if not interesting:
                     continue
+                if row.get("verdict") != "yes":
+                    continue
                 date = row.get("date")
-                for person in row.get("people_mentioned") or []:
-                    bucket = per_person[person]
-                    for tag in interesting:
-                        bucket[tag].append(date)
+                person = row.get("person")
+                bucket = per_person[person]
+                for tag in interesting:
+                    bucket[tag].append(date)
 
         emitted = 0
         for person, buckets in per_person.items():

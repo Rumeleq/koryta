@@ -1,6 +1,6 @@
 """Data classes representing individuals from various data sources."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -13,6 +13,9 @@ class Koryta:
     data: dict
     is_public: bool = False
     votes_interesting: int | None = None
+    rejestrIo: str | None = None
+    teryt_wojewodztwo: list[str] = field(default_factory=list)
+    teryt_powiat: list[str] = field(default_factory=list)
 
 
 @dataclass

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -154,12 +154,31 @@ class ArticleAnalyzedRecord:
 
 
 @dataclass
-class ArticlePeopleMentioned:
-    """A parsed article and the known people mentioned in it.
+class ProofSignal:
+    """A single rule-based signal confirming a person appears in an article.
 
-    One record per article: carries the URL together with the title, date and
-    tags recovered from the article's ld+json metadata, and the people matched
-    in its text, so a later pass can summarize the articles per person.
+    ``type`` is one of ``region``/``party``/``organization``; ``value`` is what
+    matched in the article (the region level, the party term, or the org
+    stems). ``matched`` is always True for emitted signals - the row only
+    lists signals that actually matched.
+    """
+
+    type: str
+    value: str
+    matched: bool = True
+
+
+@dataclass
+class ArticlePersonMentioned:
+    """A known person mentioned in one parsed article.
+
+    One record per (article, person) pair that passed the proof gate: the
+    article's URL together with the person's display name and stable identity
+    (``person_id``), which rule-based proof signals matched (``proof`` - a list
+    of :class:`ProofSignal`), and the LLM judge's ``verdict`` (yes/no/unknown)
+    with its ``justification``. Only pairs with at least one proof signal are
+    sent to the LLM; a ``yes`` verdict marks a genuine mention of the known
+    person.
     """
 
     __output_path__: ClassVar[Path] = Path(
@@ -167,11 +186,15 @@ class ArticlePeopleMentioned:
     )
 
     url: str
+    person: str
+    person_id: str
     domain: str
     title: str | None
     date: str | None
     tags: list[str]
-    people_mentioned: list[str]
+    proof: list[ProofSignal] = field(default_factory=list)
+    verdict: str = "unknown"
+    justification: str = ""
 
 
 @dataclass

@@ -22,6 +22,7 @@ from scrapers.article.pipelines import (
     ArticleKoryciarskiScores,
     ArticleParsed,
 )
+from scrapers.article.pipelines.domain_to_region_pipeline import DomainToRegion
 from scrapers.article.pipelines.people_affair_tags_pipeline import PeopleAffairTags
 from scrapers.cru.dump import CruDump
 from scrapers.cru.umowy import CruUmowy
@@ -50,6 +51,7 @@ PIPELINES = [
     ArticleAnalyzed,
     ArticlePersonMentions,
     PeopleAffairTags,
+    DomainToRegion,
     CompaniesKRS,
     Companies,
     CompaniesKMGP,

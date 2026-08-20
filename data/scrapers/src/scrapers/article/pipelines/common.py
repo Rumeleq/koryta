@@ -1,11 +1,40 @@
 import hashlib
 import mimetypes
+import re
+import unicodedata
 from typing import Any
 
 from entities.article import ParsedArticleRecord
 from scrapers.stores import DoneUrl
 
 PARSER_VERSION = 2
+
+
+def normalize_text(text: str) -> str:
+    """Lowercase a token with diacritics stripped (``Ząbek`` -> ``zabek``)."""
+    decomposed = unicodedata.normalize("NFKD", text)
+    stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
+    return stripped.lower()
+
+
+# Characters NFKD does not decompose (Polish ``ł``/``Ł``), mapped by hand.
+_ASCII_MAP = str.maketrans({"ł": "l", "Ł": "L"})
+
+
+def ascii_lower(text: str) -> str:
+    """ASCII lowercased text: NFKD-strips accents and maps ``ł`` -> ``l``."""
+    return normalize_text(text).translate(_ASCII_MAP)
+
+
+_THINK_RE = re.compile(r"<think>.*?</think>", flags=re.DOTALL)
+# Also drop an unclosed <think> block (truncated before </think>).
+_THINK_OPEN_RE = re.compile(r"<think>.*", flags=re.DOTALL)
+
+
+def strip_think_blocks(text: str) -> str:
+    """Remove the ``<think>...</think>`` reasoning block Qwen emits."""
+    cleaned = _THINK_RE.sub("", text or "")
+    return _THINK_OPEN_RE.sub("", cleaned)
 
 
 def hash_text(text: str) -> str:

@@ -215,6 +215,36 @@ class FirestoreCollection(Pipeline):
         return pd.DataFrame.from_records(output)
 
 
+def _teryt_from_edges(data: dict) -> tuple[list[str], list[str]]:
+    """Extract woj/powiat TERYT codes from a person's edge targets.
+
+    A person's ``stats.edges.all.targetNodeIds`` links them to ``teryt*``
+    nodes whose suffix is the TERYT code: 2 digits = województwo, 4 =
+    powiat, 7 = gmina (woj is the first 2 digits, powiat the first 4). The
+    codes are collected across all edges, deduplicated, and split into the
+    same ``teryt_wojewodztwo``/``teryt_powiat`` shape people_merged uses.
+    """
+    woj: set[str] = set()
+    powiat: set[str] = set()
+    for node_id in (
+        data.get("stats", {}).get("edges", {}).get("all", {}).get("targetNodeIds", [])
+        or []
+    ):
+        suffix = str(node_id)
+        if not suffix.startswith("teryt"):
+            continue
+        code = suffix[len("teryt") :]
+        if len(code) == 2:
+            woj.add(code)
+        elif len(code) == 4:
+            powiat.add(code)
+            woj.add(code[:2])
+        elif len(code) == 7:
+            powiat.add(code[:4])
+            woj.add(code[:2])
+    return sorted(woj), sorted(powiat)
+
+
 class KorytaPeople(Pipeline[Person]):
     date: str
 
@@ -241,6 +271,7 @@ class KorytaPeople(Pipeline[Person]):
             votes_interesting = (
                 data.get("stats", {}).get("votes", {}).get("interesting", None)
             )
+            teryt_wojewodztwo, teryt_powiat = _teryt_from_edges(data)
             outputs.append(
                 Person(
                     full_name=data.get("name", ""),
@@ -249,6 +280,9 @@ class KorytaPeople(Pipeline[Person]):
                     data={},  # data,
                     is_public=data.get("stats", {}).get("isApproved", False),
                     votes_interesting=votes_interesting,
+                    rejestrIo=data.get("rejestrIo"),
+                    teryt_wojewodztwo=teryt_wojewodztwo,
+                    teryt_powiat=teryt_powiat,
                 )
             )
 

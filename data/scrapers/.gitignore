@@ -15,16 +15,11 @@ versioned*
 models
 
 # JSON credentials
-koryta-pl*.json
-
-.ipynb_checkpoints
-# Allow for test_data
-!src/scrapers/article/test_data/*
-# The nightly's expected row counts and column coverage - tracked on purpose
-!src/tests/e2e/baseline.json
-crawler_output
-logs/
-node_modules/
-
-# from pytest-fast-first
-.pytest-runtimes
+!src/**/*.json
+!**/service_account.json
+!**/config.json
+!**/firebase.json
+!src/**/patch.json
+!src/**/*.identity.json
+!src/stores/*.json
+!src/entities/*.json
