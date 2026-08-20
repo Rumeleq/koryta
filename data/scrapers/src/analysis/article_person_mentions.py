@@ -494,8 +494,36 @@ def _person_id(row: dict[str, Any]) -> str:
     return str(row.get("id") or "")
 
 
+def _one_name(value: Any) -> str:
+    """A name column as a single string, whether it holds one name or a list.
+
+    `full_name` is a scalar on a KorytaPeople row and a DuckDB LIST column on a
+    PeopleMerged one, so a column that reads as a plain string on one frame is
+    an ndarray on another; `as_sequence` flattens both to a list.
+    """
+    items = as_sequence(value)
+    if items:
+        value = items[0]
+    return str(value or "").strip()
+
+
 def _display_name(row: dict[str, Any]) -> str:
-    return str(row.get("full_name") or "").strip()
+    """What the person is called, in the register's own spelling where we have it.
+
+    `base_full_name` is a LIST column, so on the run that rebuilt PeopleMerged
+    it arrives as an ndarray rather than the `list` it is when read back from
+    jsonl. Reading it through `as_sequence` is what stops it falling through to
+    the title-cased first + last, which is a perfectly ordinary-looking name and
+    so said nothing about being a fallback.
+    """
+    name = _one_name(row.get("full_name")) or _one_name(row.get("base_full_name"))
+    if name:
+        return name
+    parts = (
+        _one_name(row.get("base_first_name")),
+        _one_name(row.get("base_last_name")),
+    )
+    return " ".join(part.title() for part in parts if part)
 
 
 def _krs_name_map() -> dict[str, str]:

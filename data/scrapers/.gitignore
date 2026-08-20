@@ -23,6 +23,9 @@ models
 !src/stores/*.json
 !src/entities/*.json
 
+# Jupyter's autosaves next to the tracked notebooks under src/analysis
+.ipynb_checkpoints
+
 # from pytest-fast-first
 .pytest-runtimes
 
