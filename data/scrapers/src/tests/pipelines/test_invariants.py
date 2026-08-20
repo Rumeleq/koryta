@@ -36,7 +36,10 @@ from scrapers.koryta.snapshot import is_reference, reference_id
 pytestmark = pytest.mark.e2e
 
 # Node and edge types the frontend knows how to render, from `shared/model.ts`.
-NODE_TYPES = {"person", "place", "article", "region"}
+# `topic` is the newest and the reason `nodeTypes` there is a tuple the zod
+# enums derive from: four handlers had written the list out by hand and none of
+# them was found by the compiler when it was added.
+NODE_TYPES = {"person", "place", "article", "region", "topic"}
 EDGE_TYPES = {"employed", "connection", "mentions", "owns", "comment", "election"}
 
 # Which node types an edge type may join, from `app/composables/useEdgeTypes.ts`,
@@ -235,6 +238,18 @@ def extractions(snapshot):
 @pytest.fixture(scope="session")
 def notes(snapshot):
     return snapshot.collection("notes")
+
+
+@pytest.fixture(scope="session")
+def articles(nodes) -> list[dict]:
+    """The article nodes, which /zrodla is a list of.
+
+    They are the one node type nothing edits by hand: `ensureArticleNode` writes
+    them from whatever `getPageMeta` could read off the page, approves them on
+    the spot and never comes back. So a field it failed to fill stays empty, and
+    the tests below are about the fields the site then needs.
+    """
+    return [document for document in nodes if document.get("type") == "article"]
 
 
 @pytest.fixture(scope="session")
@@ -609,6 +624,99 @@ def test_every_node_has_a_name(nodes):
     assert len(nameless) <= NAMELESS, (
         f"{len(nameless)} nodes have no name ({dict(by_type)}), up from the "
         f"{NAMELESS} known ones. Sample IDs: {sample(nameless)}"
+    )
+
+
+def test_every_article_has_a_publication_date(articles):
+    """An article with no `publishedDate` is not in /zrodla at all.
+
+    The page asks for its rows with `sortBy=publishedDate`, which reaches the
+    paginated branch of `/api/nodes` and becomes a Firestore `orderBy
+    publishedDate`. An `orderBy` does not return documents that lack the field
+    - so an undated article is not sorted last, it is absent, for readers and
+    editors alike. Nothing says so: the page renders, one row shorter.
+
+    `ensureArticleNode` wrote `publishedDate: parseArticleDate(...)`, which is
+    `undefined` whenever the scraped meta carried no date, and `undefined` is
+    dropped on the way to Firestore rather than stored as a blank. `getPageMeta`
+    reads only the *first* ld+json block on the page and no
+    `article:published_time` meta tag at all, so on the outlets that lead with
+    an Organization block that was every article they published.
+    """
+    # 185 of the 317 articles in the export of 2026-08-20, and the count was
+    # still climbing - 184 on 2026-08-11 - because the ingest kept adding to it.
+    # `ensureArticleNode` now falls back to the time the article was added, so
+    # nothing new joins them, and
+    # `frontend/scripts/migrate/backfill-article-dates.ts` re-reads the date off
+    # each page to clear the ones already stored. This goes to zero when it has
+    # been run against production.
+    UNDATED = 185
+
+    undated = [
+        document["id"]
+        for document in articles
+        if not has_date(document, "publishedDate")
+    ]
+
+    assert len(undated) <= UNDATED, (
+        f"{len(undated)} articles have no publishedDate and so appear nowhere "
+        f"in /zrodla, up from the {UNDATED} the backfill knows about. "
+        f"Sample IDs: {sample(undated)}"
+    )
+
+
+def test_every_article_says_where_it_came_from(articles):
+    """`sourceURL` is the article's identity, not one of its details.
+
+    `findArticleNodeId` is the only thing standing between the site and a second
+    copy of every article: both ingest paths look the url up, exactly first and
+    then normalized across every article node, and create one only when that
+    misses. A node with no url matches neither query, so it can never be found
+    again - the next person to paste that link gets a new node, and the notes,
+    topics and `mentions` edges hanging off the old one stay on the copy nobody
+    reaches. It is also what the title in the listing links out to.
+    """
+    # Five in the export of 2026-08-20, all of them among the 24 that were never
+    # approved - they look like rows typed straight into the database rather
+    # than anything /api/ingest/article wrote, since that path cannot run
+    # without a url.
+    URL_LESS = 5
+
+    unsourced = [
+        document["id"] for document in articles if not document.get("sourceURL")
+    ]
+
+    assert len(unsourced) <= URL_LESS, (
+        f"{len(unsourced)} articles have no sourceURL, so nothing can find them "
+        f"again and the next paste of that link makes a second copy - up from "
+        f"the {URL_LESS} known ones. Sample IDs: {sample(unsourced)}"
+    )
+
+
+def test_every_article_has_an_approved_revision(articles):
+    """An article node is published the moment it is created, or never.
+
+    Articles are the one type with no review step: `ensureArticleNode` calls
+    `createRevisionTransaction` with `approve: true, published: true`, so a
+    normally ingested article has a `revision_id` and is live before anyone
+    looks at it. One without a `revision_id` therefore did not come from the
+    ingest, and nothing will ever approve it either - the admin queue lists
+    nodes with pending revisions, and these have no revisions at all.
+
+    They are stuck: `/api/nodes/publish` refuses to publish a node with no
+    `revision_id`, which is the right rule and leaves no way out from the UI.
+    """
+    # 24 in the export of 2026-08-20, unchanged since 2026-08-11 - the ingest
+    # does not add to this one. `backfill-article-dates.ts --publish` writes
+    # them an approved revision and puts them live.
+    UNAPPROVED = 24
+
+    stuck = [document["id"] for document in articles if not document.get("revision_id")]
+
+    assert len(stuck) <= UNAPPROVED, (
+        f"{len(stuck)} articles have no approved revision, so they are invisible "
+        f"and there is no way to approve them from the UI - up from the "
+        f"{UNAPPROVED} known ones. Sample IDs: {sample(stuck)}"
     )
 
 
