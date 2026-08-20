@@ -10,7 +10,6 @@ from typing import Any
 import pandas as pd
 from tqdm import tqdm
 
-from analysis.article_person_mentions import ArticlePersonMentions
 from entities.article import ArticleFacts
 from entities.facts import (
     AffairInvolvementFact,
@@ -27,12 +26,13 @@ from scrapers.article.pipelines.koryciarski_scores_pipeline import (
 from scrapers.article.pipelines.pipeline_utils import (
     article_facts_max_tokens,
     article_facts_min_koryciarski_score,
+    article_facts_require_mentions,
     article_facts_text_limit,
     llm_model,
 )
 from scrapers.stores import LLM, VERSIONED_DIR, Context, LLMRequest
 
-PROMPT_VERSION = 24
+PROMPT_VERSION = 26
 TEXT_LIMIT = 100000
 MAX_TOKENS = 20000
 TEMPERATURE = 0.1
@@ -49,6 +49,9 @@ _SCORES_FILE = (
 )
 _FINAL_OUTPUT_FILE = Path(VERSIONED_DIR) / "article_facts" / "article_facts.jsonl"
 _TEMP_OUTPUT_FILE = Path(VERSIONED_DIR) / "article_facts" / "article_facts.jsonl.tmp"
+_MENTIONS_FILE = (
+    Path(VERSIONED_DIR) / "article_person_mentions" / "article_person_mentions.jsonl"
+)
 _THINK_BLOCK_RE = re.compile(r"<think>(.*?)</think>", flags=re.DOTALL)
 _RUN_RESPONSE_THINK_CHARS = 0
 _RUN_RESPONSE_THINK_BLOCKS = 0
@@ -272,7 +275,6 @@ class ArticleExtractedFacts(IncrementalJsonlPipeline[ArticleFacts]):
     interrupt_note = "will save partial facts"
 
     koryciarski_scores: ArticleKoryciarskiScores
-    mentions: ArticlePersonMentions
     llm: LLM
 
     @property
@@ -292,15 +294,29 @@ class ArticleExtractedFacts(IncrementalJsonlPipeline[ArticleFacts]):
         )
         self.prepare_temp_output()
         model = llm_model()
-        mentions_path = self.mentions.final_output_path
-        if not mentions_path.exists():
-            raise FileNotFoundError(mentions_path)
-        mentioned = _mentioned_people_by_url(mentions_path)
+        # Mentions are an optional enrichment: they only add the people hint
+        # (and, downstream, koryta_ids). Fact extraction itself works from the
+        # parsed articles + koryciarski scores alone, so a missing mentions
+        # file must not gate the run. The --article-facts-require-mentions flag
+        # restores the old mentched-corpus-only behavior for targeted runs.
+        require_mentions = article_facts_require_mentions()
+        if require_mentions and not _MENTIONS_FILE.exists():
+            raise FileNotFoundError(_MENTIONS_FILE)
+        mentioned = (
+            _mentioned_people_by_url(_MENTIONS_FILE)
+            if _MENTIONS_FILE.exists()
+            else {}
+        )
         records = _extractable_records(
             _PARSED_FILE,
             _SCORES_FILE,
             mentioned,
         )
+        # Must be a real gate: with the flag set, extract only articles with at
+        # least one confirmed mention, so downstream koryta_ids are never empty
+        # for an analyzed record.
+        if require_mentions:
+            records = _filter_to_mentioned(records, mentioned)
         min_score = article_facts_min_koryciarski_score()
         asyncio.run(
             _extract_records(
@@ -340,10 +356,15 @@ def _existing_facts_cache_from_files(*paths: Path) -> dict[str, dict[str, Any]]:
     return cache
 
 
-def _mentioned_people_by_url(path: Path) -> dict[str, list[str]]:
-    """URLs of articles that mention at least one known person, plus the
-    people matched in each article's text."""
-    by_url: dict[str, list[str]] = {}
+def _mentioned_people_by_url(path: Path) -> dict[str, list[tuple[str, str]]]:
+    """URLs of articles with a confirmed mention, plus ``(name, koryta id)``.
+
+    ArticlePersonMentions emits one row per (article, person) pair with an LLM
+    ``verdict``; only pairs the judge confirmed (``verdict == 'yes'``) count,
+    so the facts extractor's people hint lists genuine mentions of known
+    people rather than name-coincidence false hits.
+    """
+    by_url: dict[str, list[tuple[str, str]]] = {}
     with path.open("r", encoding="utf-8") as handle:
         for line in tqdm(handle, desc="Reading person mentions", unit="row"):
             raw = line.strip()
@@ -353,18 +374,35 @@ def _mentioned_people_by_url(path: Path) -> dict[str, list[str]]:
                 row = json.loads(raw)
             except Exception:
                 continue
-            url = row.get("url")
-            if not isinstance(url, str) or not url:
+            if row.get("verdict") != "yes":
                 continue
-            people = row.get("people_mentioned") or []
-            by_url[url] = [str(p) for p in people if str(p).strip()]
+            url = row.get("url")
+            person = row.get("person")
+            if (
+                not isinstance(url, str)
+                or not url
+                or not isinstance(person, str)
+                or not person.strip()
+            ):
+                continue
+            by_url.setdefault(url, []).append(
+                (person.strip(), str(row.get("person_id") or ""))
+            )
     return by_url
+
+
+def _filter_to_mentioned(
+    records: list[dict[str, Any]],
+    mentioned: dict[str, list[tuple[str, str]]],
+) -> list[dict[str, Any]]:
+    """Keep only records whose URL has at least one confirmed mention."""
+    return [r for r in records if r["url"] in mentioned]
 
 
 def _extractable_records(
     parsed_path: Path,
     scores_path: Path,
-    mentioned: dict[str, list[str]],
+    mentioned: dict[str, list[tuple[str, str]]],
 ) -> list[dict[str, Any]]:
     article_scores = _article_scores_by_url(scores_path)
     latest: dict[str, dict[str, Any]] = {}
@@ -380,8 +418,6 @@ def _extractable_records(
             url = row.get("url")
             if not isinstance(url, str) or url not in article_scores:
                 continue
-            if url not in mentioned:
-                continue
             if row.get("parse_status") != "ok":
                 continue
             content_hash = row.get("article_content_hash")
@@ -393,13 +429,14 @@ def _extractable_records(
             ):
                 # Keep only the fields fact extraction needs — dropping
                 # outbound_urls (63% of the row) and other columns keeps memory
-                # bounded on the 20GB parsed file.
+                # bounded on the 20GB parsed file. people_mentioned is an
+                # optional hint, empty when the url has no confirmed mentions.
                 latest[url] = {
                     "url": url,
                     "article_content_hash": content_hash,
                     "article_content": content,
                     "koryciarski_llm_score": article_scores[url],
-                    "people_mentioned": mentioned[url],
+                    "people_mentioned": [name for name, _ in mentioned.get(url, [])],
                 }
     return list(latest.values())
 
