@@ -22,11 +22,21 @@
       </template>
     </v-alert>
 
-    <v-card class="mb-4 pa-3">
+    <v-card class="mb-4 pa-3 d-flex flex-wrap ga-3">
       <v-select
         v-model="filterStatus"
         :items="statusOptions"
         label="Status"
+        density="compact"
+        variant="outlined"
+        hide-details
+        clearable
+        style="max-width: 20rem"
+      />
+      <v-select
+        v-model="filterType"
+        :items="typeOptions"
+        label="Typ"
         density="compact"
         variant="outlined"
         hide-details
@@ -79,6 +89,7 @@ import { ref, watch } from "vue";
 import { useCurrentUser, useIsCurrentUserLoaded } from "vuefire";
 import { useRoute } from "vue-router";
 import { useQueryFilters } from "~/composables/queryFilters";
+import { nodeTypes, type NodeType } from "~~/shared/model";
 
 // No `fullWidth`: five columns do not need the whole window, and edge to edge
 // they left the reader tracking a row across a monitor. The list sits in the
@@ -107,6 +118,13 @@ const itemsPerPage = ref(
 );
 const page = ref(parseInt((route.query.page as string) || "1"));
 const filterStatus = ref<string | null>((route.query.status as string) || null);
+// Checked against the tuple rather than cast: an unknown `?type=` in the url
+// would otherwise reach the api, which rejects it, and the table would come
+// back empty with only the console to say why.
+const queryType = route.query.type;
+const filterType = ref<NodeType | null>(
+  nodeTypes.includes(queryType as NodeType) ? (queryType as NodeType) : null,
+);
 
 // Phrased by what is left to do rather than by the field name: the column says
 // "Zaakceptowane" and `has_unapproved` says the opposite, so naming either one
@@ -114,6 +132,17 @@ const filterStatus = ref<string | null>((route.query.status as string) || null);
 const statusOptions = [
   { title: "Oczekujące na akceptację", value: "unapproved" },
   { title: "W pełni zaakceptowane", value: "approved" },
+];
+
+// Written out rather than mapped over `nodeTypes`, because the select needs a
+// Polish name per type and the raw values are the ones the api takes - they are
+// what ends up in the url too, so the two lists have to agree.
+const typeOptions: { title: string; value: NodeType }[] = [
+  { title: "Osoba", value: "person" },
+  { title: "Firma", value: "place" },
+  { title: "Artykuł", value: "article" },
+  { title: "Region", value: "region" },
+  { title: "Temat", value: "topic" },
 ];
 
 const sortBy = ref<{ key: string; order: "asc" | "desc" }[]>(
@@ -207,6 +236,7 @@ const fetchData = async () => {
         sortBy: sortParam,
         sortDesc: apiSortDesc,
         status: filterStatus.value || undefined,
+        type: filterType.value || undefined,
       },
       headers: headersInit,
     });
@@ -225,6 +255,7 @@ const fetchData = async () => {
       sortBy: sortParam,
       sortDesc: sortDescParam,
       status: filterStatus.value || undefined,
+      type: filterType.value || undefined,
     });
   } catch (err) {
     console.error(err);
@@ -238,7 +269,7 @@ const formatDate = (dateString?: string | null) => {
   return new Date(dateString).toLocaleString("pl-PL");
 };
 
-watch(filterStatus, () => {
+watch([filterStatus, filterType], () => {
   page.value = 1;
   fetchData();
 });
