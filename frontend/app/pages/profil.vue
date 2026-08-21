@@ -72,6 +72,10 @@
           </v-card-text>
         </v-card>
 
+        <!-- What happened to the proposals comes before the switches that
+             control the mail about them. -->
+        <ProfileMyRevisions />
+
         <v-card class="mb-4" rounded="lg">
           <v-card-title>Powiadomienia o Twoich zmianach</v-card-title>
           <v-card-subtitle class="text-wrap">
