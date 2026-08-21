@@ -197,9 +197,13 @@ export function createRevisionTransaction(
     revision.review_time = timestamp;
   }
 
-  if (automatic) {
-    revision.update_automatic = true;
-  }
+  // Written whichever way it goes, not only when true. An absent field cannot
+  // be matched by any Firestore filter, so while this wrote nothing for a human
+  // proposal, the relations readers add through the edge dialogs were invisible
+  // to every query that asks for human work - including the review queue at
+  // /admin/rewizje/kolejka. Every reader of this field tests `=== true` or
+  // `!== true`, so writing `false` changes nothing for them.
+  revision.update_automatic = automatic;
 
   batch.set(revisionRef, revision);
 
@@ -398,7 +402,8 @@ export function proposeRevisionTransaction(
     collection: targetRef.parent.id === "edges" ? "edges" : "nodes",
     status: "pending",
   };
-  if (options.automatic) revision.update_automatic = true;
+  // Unconditionally, for the reason given in `createRevisionTransaction`.
+  revision.update_automatic = options.automatic === true;
 
   batch.set(revisionRef, revision);
 
