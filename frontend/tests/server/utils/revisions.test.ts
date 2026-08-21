@@ -3,11 +3,13 @@ import {
   applyRevision,
   getRevisionsForNodes,
   createRevisionTransaction,
+  INTERNAL_FIELDS,
   proposalId,
   proposeRevisionTransaction,
   sanitizeFirestoreData,
   withoutInternalFields,
 } from "../../../server/utils/revisions";
+import { skippedChangeFields } from "../../../shared/revisionChanges";
 import type {
   Firestore,
   WriteBatch,
@@ -641,5 +643,15 @@ describe("the update_automatic invariant", () => {
 
     const [, revision] = vi.mocked(batch.set).mock.calls[0]!;
     expect(revision).toMatchObject({ update_automatic: true });
+  });
+  it("partitions a document the same way the diff does", () => {
+    // `revisionChanges` skips the fields a document owns rather than states,
+    // because a revision written before the ingest stripped them still carries
+    // them inside its own `data` - `revision_id` among them, which decodes to a
+    // DocumentReference with no readable rendering at all. The two lists have
+    // to agree or those fields come back as changes on one side only.
+    for (const field of INTERNAL_FIELDS) {
+      expect(skippedChangeFields.has(field), `${field} is diffed`).toBe(true);
+    }
   });
 });
