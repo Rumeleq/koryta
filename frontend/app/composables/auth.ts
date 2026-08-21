@@ -7,10 +7,12 @@ import {
 import { computedAsync } from "@vueuse/core";
 import {
   useCurrentUser,
+  useFirebaseApp,
   useFirebaseAuth,
   useIsCurrentUserLoaded,
 } from "vuefire";
-import { collection, doc } from "firebase/firestore";
+import { collection, doc, getFirestore } from "firebase/firestore";
+import type { NotificationPreferences } from "~~/shared/notifications";
 
 export type NewsletterPreferences = {
   /** Notify about recently found people. */
@@ -23,11 +25,22 @@ export type UserConfig = {
   photoURL?: string;
   displayName?: string;
   newsletter?: NewsletterPreferences;
+  /** Mail about what happened to this user's own contributions. Separate from
+   * `newsletter`, which is broadcast to whoever asked for it: these default to
+   * on and are read by the server before it queues anything. */
+  notifications?: NotificationPreferences;
 };
 
 export function useAuthState() {
   const router = useRouter();
-  const db = useFirestore();
+  // Named explicitly, like every other client call site (votes.ts, notes.ts,
+  // useMyContributions.ts). `useFirestore()` is `getFirestore(app)` with no
+  // database id, i.e. `(default)` - a database this project does not use, whose
+  // rules are not deployed, and which the emulator plugin never connects. The
+  // server reads this same document to decide whether to email somebody
+  // (server/utils/notifications.ts), so a config written to the wrong database
+  // is an opt-out that silently does nothing.
+  const db = getFirestore(useFirebaseApp(), "koryta-pl");
 
   const user = useCurrentUser();
   const isAdmin = computedAsync(

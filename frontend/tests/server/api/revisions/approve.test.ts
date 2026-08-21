@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { requireAdmin } from "../../../../server/utils/auth";
+import { notifyRevisionReviewed } from "../../../../server/utils/revisionNotifications";
 import handler from "../../../../server/api/revisions/approve.post";
 
 const mockBatchSet = vi.fn();
@@ -57,6 +58,10 @@ vi.mock("firebase-admin/app", () => ({ getApp: vi.fn() }));
 
 vi.mock("../../../../server/utils/auth", () => ({
   requireAdmin: vi.fn().mockResolvedValue({ uid: "admin-uid", admin: true }),
+}));
+
+vi.mock("../../../../server/utils/revisionNotifications", () => ({
+  notifyRevisionReviewed: vi.fn(async () => "sent"),
 }));
 
 const { mockReadValidatedBody } = vi.hoisted(() => {
@@ -135,6 +140,44 @@ describe("api/revisions/approve", () => {
       review_user: "admin-uid",
     });
     expect(result).toMatchObject({ id: "node-1", collection: "nodes" });
+  });
+
+  it("tells the author, and whether the page went live", async () => {
+    // Approving does not publish, so "accepted" and "visible" are two different
+    // answers and the message has to carry which one this was.
+    stored["revisions/rev-1"] = {
+      node_id: "node-1",
+      collection: "nodes",
+      data: { name: "Sylwia Sobolewska", type: "person" },
+      update_user: "author-uid",
+    };
+    stored["nodes/node-1"] = { name: "Sylwia Sobolewski", published: false };
+
+    await handler({} as never);
+
+    expect(notifyRevisionReviewed).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        decision: "approved",
+        published: false,
+        revisionId: "rev-1",
+        reviewerUid: "admin-uid",
+      }),
+    );
+  });
+
+  it("does not notify about an approval it refused to make", async () => {
+    // The unpublished endpoint check throws before anything is written; a
+    // message about a change that did not happen is worse than none.
+    storeEdgeRevision({ source: "person-1", target: "place-1" });
+    stored["nodes/person-1"] = { name: "Jan", published: false };
+    stored["nodes/place-1"] = { name: "Firma", published: true };
+    requestApproval({ publish: true });
+
+    await expect(handler({} as never)).rejects.toMatchObject({
+      statusCode: 400,
+    });
+    expect(notifyRevisionReviewed).not.toHaveBeenCalled();
   });
 
   it("files who approved it, in the same batch as the approval", async () => {

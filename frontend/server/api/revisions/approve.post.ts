@@ -3,6 +3,7 @@ import type { DocumentReference, Firestore } from "firebase-admin/firestore";
 import { getApp } from "firebase-admin/app";
 import { requireAdmin } from "~~/server/utils/auth";
 import { applyRevision, revisionTargetRef } from "~~/server/utils/revisions";
+import { notifyRevisionReviewed } from "~~/server/utils/revisionNotifications";
 import { resolveEdgeEndpoints } from "~~/server/utils/edgePublication";
 import type { Edge, Revision } from "~~/shared/model";
 import { z } from "zod";
@@ -109,6 +110,16 @@ export default defineEventHandler(async (event) => {
   // The node and entity endpoints are cached per handler, so a page approved
   // now would otherwise keep serving its previous answer.
   await useStorage("cache").clear("nitro:handlers");
+
+  await notifyRevisionReviewed(db, {
+    decision: "approved",
+    revisionId: body.revision_id,
+    revision,
+    targetRef,
+    published,
+    reviewerUid: user.uid,
+    siteUrl: useRuntimeConfig(event).public.siteUrl,
+  });
 
   return {
     revision_id: body.revision_id,

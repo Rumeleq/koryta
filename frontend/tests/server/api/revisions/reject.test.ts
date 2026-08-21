@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { requireAdmin } from "../../../../server/utils/auth";
+import { notifyRevisionReviewed } from "../../../../server/utils/revisionNotifications";
 import handler from "../../../../server/api/revisions/reject.post";
 
 const mockUpdate = vi.fn();
@@ -44,6 +45,10 @@ vi.mock("firebase-admin/app", () => ({ getApp: vi.fn() }));
 
 vi.mock("../../../../server/utils/auth", () => ({
   requireAdmin: vi.fn().mockResolvedValue({ uid: "admin-uid", admin: true }),
+}));
+
+vi.mock("../../../../server/utils/revisionNotifications", () => ({
+  notifyRevisionReviewed: vi.fn(async () => "sent"),
 }));
 
 const { mockReadValidatedBody } = vi.hoisted(() => {
@@ -100,6 +105,42 @@ describe("api/revisions/reject", () => {
       }),
     );
     expect(mockCommit).toHaveBeenCalled();
+  });
+
+  it("tells the author, with the reason", async () => {
+    // A rejection leaves no trace on any page the author can see, so this is
+    // the only way they learn what happened or why.
+    stored["revisions/rev-1"] = {
+      node_id: "node-1",
+      data: { name: "X" },
+      update_user: "author-uid",
+    };
+    stored["nodes/node-1"] = { name: "Y" };
+
+    await handler({} as never);
+
+    expect(notifyRevisionReviewed).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        decision: "rejected",
+        reason: "brak źródła",
+        revisionId: "rev-1",
+        reviewerUid: "admin-uid",
+      }),
+    );
+  });
+
+  it("does not notify about a rejection it refused to make", async () => {
+    stored["revisions/rev-1"] = { node_id: "node-1", data: { name: "X" } };
+    stored["nodes/node-1"] = {
+      name: "X",
+      revision_id: { path: "revisions/rev-1" },
+    };
+
+    await expect(handler({} as never)).rejects.toMatchObject({
+      statusCode: 409,
+    });
+    expect(notifyRevisionReviewed).not.toHaveBeenCalled();
   });
 
   it("refuses to reject the revision the page is serving", async () => {

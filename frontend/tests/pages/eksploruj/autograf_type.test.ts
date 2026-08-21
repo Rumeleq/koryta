@@ -49,9 +49,18 @@ vi.mock("~/composables/entity/listWithStats", () => ({
 vi.mock("vuefire", () => ({
   useCurrentUser: vi.fn(() => ref(null)),
   useFirestore: vi.fn(() => ({})),
+  useFirebaseApp: vi.fn(() => ({ name: "[DEFAULT]" })),
   useFirebaseAuth: vi.fn(() => ({})),
   useDocument: vi.fn(() => ref(null)),
 }));
+
+// `useAuthState` names the database it wants (`getFirestore(app, "koryta-pl")`)
+// rather than taking vuefire's default-database handle, so the stub above is no
+// longer enough on its own - the real `getFirestore` would reject the fake app.
+vi.mock("firebase/firestore", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("firebase/firestore")>();
+  return { ...actual, getFirestore: vi.fn(() => ({})) };
+});
 
 vi.stubGlobal("useEntities", (type: string) => {
   if (type === "place") {
