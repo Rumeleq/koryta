@@ -271,6 +271,7 @@ import { ref, onMounted } from "vue";
 import {
   mdiGraphOutline,
   mdiHistory,
+  mdiInboxArrowDown,
   mdiVectorPolyline,
   mdiNoteEditOutline,
   mdiTextBoxSearchOutline,
@@ -294,6 +295,12 @@ useHead({
 });
 
 const subpages = [
+  {
+    title: "Kolejka zmian",
+    to: "/admin/rewizje/kolejka",
+    icon: mdiInboxArrowDown,
+    desc: "Propozycje od ludzi czekające na decyzję — wpisy i powiązania razem.",
+  },
   {
     title: "Rewizje",
     to: "/admin/rewizje",

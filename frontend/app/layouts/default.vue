@@ -75,6 +75,14 @@
         </v-btn>
         <v-btn
           v-if="isAdmin"
+          :prepend-icon="mdiInboxArrowDown"
+          variant="text"
+          to="/admin/rewizje/kolejka"
+        >
+          Kolejka
+        </v-btn>
+        <v-btn
+          v-if="isAdmin"
           :prepend-icon="mdiNoteTextOutline"
           variant="text"
           to="/admin/notatki"
@@ -115,6 +123,7 @@
 <script lang="ts" setup>
 import {
   mdiAccount,
+  mdiInboxArrowDown,
   mdiLightningBolt,
   mdiShieldAccount,
   mdiViewList,
