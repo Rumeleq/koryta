@@ -73,7 +73,37 @@
         </v-card>
 
         <v-card class="mb-4" rounded="lg">
-          <v-card-title>Powiadomienia email</v-card-title>
+          <v-card-title>Powiadomienia o Twoich zmianach</v-card-title>
+          <v-card-subtitle class="text-wrap">
+            Wysyłamy je na adres, którym się logujesz — tylko wtedy, gdy ktoś
+            zajmie się czymś, co zaproponowałeś.
+          </v-card-subtitle>
+          <v-card-text>
+            <v-alert
+              v-if="user && !user.emailVerified"
+              type="warning"
+              variant="tonal"
+              density="compact"
+              class="mb-4"
+              text="Dopóki nie potwierdzisz adresu email, nie wyślemy na niego żadnej wiadomości."
+            />
+            <v-switch
+              v-for="kind in notificationKinds"
+              :key="kind"
+              v-model="notificationPrefs[kind]"
+              color="primary"
+              :label="notificationLabels[kind].title"
+              :hint="notificationLabels[kind].hint"
+              persistent-hint
+              :disabled="!notificationsLoaded"
+              :loading="savingNotifications || !notificationsLoaded"
+              @update:model-value="saveNotifications"
+            />
+          </v-card-text>
+        </v-card>
+
+        <v-card class="mb-4" rounded="lg">
+          <v-card-title>Newsletter</v-card-title>
           <v-card-subtitle class="text-wrap">
             Newsletter jest w przygotowaniu — wybierz już teraz, co chcesz
             otrzymywać, a odezwiemy się, gdy ruszy.
@@ -132,8 +162,16 @@
 <script lang="ts" setup>
 import { mdiCheckCircle, mdiAlertCircle } from "@mdi/js";
 import { updateProfile, sendEmailVerification } from "firebase/auth";
-import { doc, setDoc } from "firebase/firestore";
+import { doc, getFirestore, setDoc } from "firebase/firestore";
+import { useFirebaseApp } from "vuefire";
 import { useAuthState } from "@/composables/auth";
+import {
+  notificationDefaults,
+  notificationEnabled,
+  notificationKinds,
+  notificationLabels,
+  type NotificationKind,
+} from "~~/shared/notifications";
 
 definePageMeta({
   middleware: "auth",
@@ -144,7 +182,9 @@ useHead({
 });
 
 const { user, userConfig, logout } = useAuthState();
-const firestore = useFirestore();
+// The database `useAuthState` reads the same document from, and the one the
+// server checks before sending mail. See the note in composables/auth.ts.
+const firestore = getFirestore(useFirebaseApp(), "koryta-pl");
 
 const photoURL = computed(
   () => userConfig?.data?.value?.photoURL || user.value?.photoURL,
@@ -207,6 +247,58 @@ const saveProfile = async () => {
     notify("Nie udało się zapisać zmian. Spróbuj ponownie.", "error");
   } finally {
     savingProfile.value = false;
+  }
+};
+
+// Notifications about this user's own contributions. Unlike the newsletter
+// these are live: the server reads the same document before queueing a mail,
+// and every kind defaults to on, so an untouched switch must start there too.
+const notificationPrefs = reactive<Record<NotificationKind, boolean>>(
+  Object.fromEntries(
+    notificationKinds.map((kind) => [kind, notificationDefaults[kind]]),
+  ) as Record<NotificationKind, boolean>,
+);
+const savingNotifications = ref(false);
+
+/** Whether the stored config has arrived.
+ *
+ * Saving writes every kind at once, and the switches start at the defaults -
+ * both on - so a toggle made before the document loads would write those
+ * defaults over whatever the user had turned off. vuefire leaves the ref
+ * `undefined` while the read is in flight and `null` for a user who has never
+ * saved anything, so only the former is "not yet known". The switches stay
+ * disabled until then; /profil is what the emails link to for opting out, so
+ * it is reached cold more often than not.
+ */
+const notificationsLoaded = computed(
+  () => userConfig?.data?.value !== undefined,
+);
+
+watch(
+  () => userConfig?.data?.value?.notifications,
+  (prefs) => {
+    for (const kind of notificationKinds) {
+      notificationPrefs[kind] = notificationEnabled(kind, prefs);
+    }
+  },
+  { immediate: true },
+);
+
+const saveNotifications = async () => {
+  if (!user.value) return;
+  savingNotifications.value = true;
+  try {
+    await setDoc(
+      doc(firestore, "users", user.value.uid),
+      { notifications: { ...notificationPrefs } },
+      { merge: true },
+    );
+    notify("Zapisano preferencje powiadomień.");
+  } catch (err) {
+    console.error("Failed to save notification preferences:", err);
+    notify("Nie udało się zapisać preferencji.", "error");
+  } finally {
+    savingNotifications.value = false;
   }
 };
 

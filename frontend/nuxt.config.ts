@@ -10,6 +10,10 @@ const isLocal =
   process.env.NODE_ENV === "development";
 const useProdProject = process.env.USE_PROD_PROJECT === "true";
 const ssr = process.env.SSR !== "false";
+// Both the canonical url the SEO module advertises and the one the notification
+// emails link to. They have to agree, or a message sent from the emulator walks
+// the reader onto production.
+const siteUrl = isLocal ? "http://localhost:3000" : "https://koryta.pl";
 console.log(
   "Nuxt Config - isLocal:",
   isLocal,
@@ -86,6 +90,7 @@ export default defineNuxtConfig({
        * token to. Empty until it is listed, which the page says out loud
        * rather than failing silently. */
       extensionId: process.env.NUXT_PUBLIC_EXTENSION_ID || "",
+      siteUrl,
     },
   },
 
@@ -104,7 +109,7 @@ export default defineNuxtConfig({
   ],
 
   site: {
-    url: isLocal ? "http://localhost:3000" : "https://koryta.pl",
+    url: siteUrl,
     name: "Koryta.pl",
     description: "Największy, niezależny agregator koryciarstwa",
     defaultLocale: "pl",

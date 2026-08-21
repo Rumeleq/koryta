@@ -153,3 +153,43 @@ OS-specific (the `linux` baselines are the source of truth, compared in CI on
 every PR). After an intentional UI change, regenerate them on Linux with
 `npm run test:visual:update` and commit the updated PNGs; on failure CI uploads
 a `playwright-visual-report` artifact with the image diffs.
+
+## Email notifications
+
+The site writes to a contributor when a reviewer acts on something they
+proposed. Nothing in this repo talks to an SMTP server: `notifyUser`
+(`server/utils/notifications.ts`) appends a document to the `mail` collection,
+and the Firebase **Trigger Email from Firestore** extension delivers it and
+writes the result back onto the same document. Retries, bounces and the SMTP
+credentials are the extension's problem.
+
+- **What is sent** — `shared/notifications.ts` holds one entry per kind: the
+  default, the label the profile page shows, and the copy. Adding a kind is a
+  member of `notificationKinds`, an entry in `notificationDefaults` and
+  `notificationLabels`, and a branch of `renderNotification`.
+- **Who gets it** — `users/{uid}.notifications`, edited on `/profil`. Kinds
+  about the user's own contributions default to on; an unverified email address
+  is never written to, because anybody can register with anybody's address.
+- **Locally** — the extension is not installed in the emulator, so the queue
+  just fills up. Read it in the emulator UI under the `mail` collection to see
+  exactly what production would have sent.
+
+Installing the extension (once, per project):
+
+```bash
+firebase ext:install firebase/firestore-send-email --project koryta-pl
+```
+
+Answer its prompts with the collection this app writes to and the database the
+rest of the app uses — they are not the defaults:
+
+| Parameter          | Value                                    |
+| ------------------ | ---------------------------------------- |
+| Firestore instance | `koryta-pl` (**not** `(default)`)        |
+| Email documents    | `mail`                                   |
+| Cloud Functions    | `europe-west1`                           |
+| Default FROM       | an address on a domain with SPF and DKIM |
+
+`firestore.rules` denies every client read and write on `mail`; the documents
+pair an address with a message and only the admin SDK and the extension have
+any business there.

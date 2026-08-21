@@ -2,6 +2,7 @@ import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { getApp } from "firebase-admin/app";
 import { requireAdmin } from "~~/server/utils/auth";
 import { revisionTargetRef } from "~~/server/utils/revisions";
+import { notifyRevisionReviewed } from "~~/server/utils/revisionNotifications";
 import { recordAudit } from "~~/server/utils/audit";
 import { approvedRevisionId } from "~~/shared/model";
 import { z } from "zod";
@@ -68,6 +69,18 @@ export default defineEventHandler(async (event) => {
     batch,
   );
   await batch.commit();
+
+  // A rejection is the one verdict the author cannot discover by looking at the
+  // page, so the reason only reaches them if it is sent.
+  await notifyRevisionReviewed(db, {
+    decision: "rejected",
+    revisionId: body.revision_id,
+    revision,
+    targetRef,
+    reason: body.reason,
+    reviewerUid: user.uid,
+    siteUrl: useRuntimeConfig(event).public.siteUrl,
+  });
 
   return { revision_id: body.revision_id, status: "rejected" };
 });

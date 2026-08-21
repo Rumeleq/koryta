@@ -55,6 +55,7 @@ vi.mock("firebase/firestore", () => ({
 // Mock vuefire to prevent initialization errors and provide useDocument
 vi.mock("vuefire", () => ({
   useFirebaseAuth: () => mockAuth,
+  useFirebaseApp: vi.fn(() => ({ name: "[DEFAULT]" })),
   useFirestore: vi.fn(),
   useDocument: mockUseDocumentSpy,
   useIsCurrentUserLoaded: () => ref(true),
@@ -84,6 +85,10 @@ mockNuxtImport("useCurrentUser", () => {
 
 mockNuxtImport("useFirestore", () => {
   return () => undefined;
+});
+
+mockNuxtImport("useFirebaseApp", () => {
+  return () => ({ name: "[DEFAULT]" });
 });
 
 describe("useAuthState", () => {
