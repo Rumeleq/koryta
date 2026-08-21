@@ -598,3 +598,48 @@ describe("getRevisionsForNodes", () => {
     ]);
   });
 });
+
+describe("the update_automatic invariant", () => {
+  /** `createRevisionTransaction` used to write the field only when it was true,
+   * which left a human proposal carrying nothing at all - and Firestore matches
+   * no equality against an absent field, so every relation a reader added was
+   * invisible to the review queue that exists to find it. */
+  it("records that a human made the change, not only that a pipeline did", () => {
+    const batch = { set: vi.fn() } as unknown as WriteBatch;
+    const targetRef = {
+      id: "node-1",
+      parent: { id: "nodes" },
+    } as unknown as DocumentReference;
+
+    createRevisionTransaction(
+      mockDb as unknown as Firestore,
+      batch,
+      { uid: "human" },
+      targetRef,
+      { name: "Jan Kowalski", type: "person" },
+    );
+
+    const [, revision] = vi.mocked(batch.set).mock.calls[0]!;
+    expect(revision).toMatchObject({ update_automatic: false });
+  });
+
+  it("still marks a pipeline write as automatic", () => {
+    const batch = { set: vi.fn() } as unknown as WriteBatch;
+    const targetRef = {
+      id: "node-2",
+      parent: { id: "nodes" },
+    } as unknown as DocumentReference;
+
+    createRevisionTransaction(
+      mockDb as unknown as Firestore,
+      batch,
+      { uid: "pipeline" },
+      targetRef,
+      { name: "Jan Kowalski", type: "person" },
+      { automatic: true },
+    );
+
+    const [, revision] = vi.mocked(batch.set).mock.calls[0]!;
+    expect(revision).toMatchObject({ update_automatic: true });
+  });
+});

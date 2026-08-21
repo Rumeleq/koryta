@@ -176,10 +176,12 @@ async function collectNoteSources(
 
 /** Manually proposed changes.
  *
- * `update_automatic` is written only when it is true (see
- * `createRevisionTransaction`), so an absent field means a human made the
- * change and the filter has to be "not true" rather than "equals false" — which
- * is also why it cannot be pushed into the query. */
+ * `createRevisionTransaction` now writes `update_automatic` whichever way it
+ * goes, but it wrote nothing at all for a human change until 2026-08-21, and
+ * 1,760 revisions in production still carry no flag. An absent field therefore
+ * still means a human made the change, and the filter has to stay "not true"
+ * rather than "equals false" — which is also why it cannot be pushed into the
+ * query. `/api/revisions/queue` draws the same line and explains what it costs. */
 async function collectRevisions(
   db: Firestore,
   sinceIso: string,
