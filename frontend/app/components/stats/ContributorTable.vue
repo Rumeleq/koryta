@@ -64,14 +64,15 @@
                 {{ index + 1 }}
               </td>
               <td>
-                <UserChip
-                  :uid="row.uid"
-                  :user="{
-                    displayName: row.displayName,
-                    email: row.email,
-                    photoURL: row.photoURL,
-                  }"
-                />
+                <NuxtLink
+                  v-if="identified && row.uid"
+                  :to="proposalsTo(row.uid)"
+                  class="contributors__link"
+                  title="Zobacz, co ta osoba zaproponowała"
+                >
+                  <UserChip :uid="row.uid" :user="chipUser(row)" />
+                </NuxtLink>
+                <UserChip v-else :uid="row.uid" :user="chipUser(row)" />
               </td>
               <td>
                 <div
@@ -98,7 +99,20 @@
                 class="text-right stats-numeric d-none d-md-table-cell"
                 :class="{ 'text-disabled': row.counts[kind] === 0 }"
               >
-                {{ row.counts[kind] }}
+                <NuxtLink
+                  v-if="
+                    identified &&
+                    kind === 'revision' &&
+                    row.uid &&
+                    row.counts.revision > 0
+                  "
+                  :to="proposalsTo(row.uid)"
+                  class="contributors__link"
+                  title="Zobacz, co ta osoba zaproponowała"
+                >
+                  {{ row.counts[kind] }}
+                </NuxtLink>
+                <template v-else>{{ row.counts[kind] }}</template>
               </td>
               <td class="text-right font-weight-medium stats-numeric">
                 {{ row.total }}
@@ -158,6 +172,18 @@ const topTotal = computed(() =>
 const mixWidth = (row: ActivityContributor) =>
   `${Math.max(6, (row.total / topTotal.value) * 100)}%`;
 
+const chipUser = (row: ActivityContributor) => ({
+  displayName: row.displayName,
+  email: row.email,
+  photoURL: row.photoURL,
+});
+
+/** The review queue narrowed to one person, with both filters off: the
+ * per-author path sees their whole history, including the older revisions that
+ * carry no `update_automatic` flag and so never show up in the aggregate list. */
+const proposalsTo = (uid: string) =>
+  `/admin/rewizje/kolejka?author=${encodeURIComponent(uid)}&status=all&automatic=all`;
+
 const mixLabel = (row: ActivityContributor) =>
   activityKinds
     .filter((kind) => row.counts[kind] > 0)
@@ -197,5 +223,17 @@ const mixLabel = (row: ActivityContributor) =>
 
 .stats-numeric {
   font-variant-numeric: tabular-nums;
+}
+
+/* A ranking table, not a nav: the links take the colour of the cell they sit in
+   and only underline once pointed at. */
+.contributors__link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.contributors__link:hover,
+.contributors__link:focus-visible {
+  text-decoration: underline;
 }
 </style>

@@ -2,6 +2,26 @@
   <v-container>
     <h1 class="text-h4 mb-4">Administracja - Rewizje</h1>
 
+    <!-- Gated on `isAdmin`, not on the page's own middleware: this page is
+         `middleware: "auth"`, so any signed-in reader reaches it, while the
+         queue it points at is admin-only and would answer them with a 403. -->
+    <v-alert
+      v-if="isAdmin"
+      type="info"
+      variant="tonal"
+      density="compact"
+      class="mb-4"
+    >
+      Ta lista pokazuje węzły wraz ze wszystkimi ich rewizjami — także tymi,
+      które wprowadził pipeline. Propozycje zmian od ludzi czekają w osobnej
+      kolejce.
+      <template #append>
+        <v-btn variant="text" size="small" to="/admin/rewizje/kolejka">
+          Przejdź do kolejki
+        </v-btn>
+      </template>
+    </v-alert>
+
     <v-card class="mb-4 pa-3">
       <v-select
         v-model="filterStatus"
@@ -73,6 +93,7 @@ useHead({
 
 const user = useCurrentUser();
 const isAuthReady = useIsCurrentUserLoaded();
+const { isAdmin } = useAuthState();
 
 const route = useRoute();
 const { setQuery } = useQueryFilters();
