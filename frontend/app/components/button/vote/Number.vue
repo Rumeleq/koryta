@@ -1,6 +1,6 @@
 <template>
   <client-only>
-    <div class="d-inline-flex align-center ga-2">
+    <div class="d-inline-flex flex-column align-center ga-1">
       <div
         class="d-inline-flex align-center bg-surface border rounded-pill overflow-hidden shadow-sm transition-all"
         style="border-color: rgba(var(--v-theme-on-surface), 0.12) !important"
@@ -56,7 +56,7 @@
 
       <span
         v-if="showLabel && currentLabel"
-        class="text-caption text-medium-emphasis text-wrap"
+        class="text-caption text-medium-emphasis text-wrap text-center"
       >
         {{ currentLabel }}
       </span>
@@ -73,7 +73,7 @@ import { useVotes, voteLevelLabel } from "~/composables/votes";
 const { id, category, showLabel } = defineProps<{
   id: string;
   category: VoteCategory;
-  /** Spell the current step out beside the pill, where there is room for it. */
+  /** Spell the current step out under the pill, where there is room for it. */
   showLabel?: boolean;
 }>();
 
