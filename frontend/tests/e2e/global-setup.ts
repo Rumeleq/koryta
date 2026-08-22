@@ -50,6 +50,8 @@ const LOGGED_IN_ROUTES = [
   // The id does not have to resolve; the route's own chunk is what we want
   // compiled before a spec follows a revision link into it.
   "/admin/rewizje/warmup",
+  // The QA changelog, whose spec starts writing a verdict as soon as it lands.
+  "/qa",
   // The edit form, in both the shapes the specs open it in. It is the worst
   // offender: `string-similarity` is only reachable from AlreadyExisting.vue,
   // so the first spec to open the form makes vite discover a new dependency

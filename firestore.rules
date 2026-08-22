@@ -16,6 +16,23 @@ service cloud.firestore {
       allow read, write: if request.auth.uid == userId;
     }
 
+    // What a contributor concluded about one entry of the QA changelog
+    // (frontend/shared/qa.ts). Readable to anyone signed in, because the point
+    // of the page is seeing what somebody else already reported; writable only
+    // as yourself. The document id spells out which entry and whose verdict it
+    // is, so - as with votes - one person cannot file a verdict under another
+    // person's name, and cannot hold two verdicts on the same entry.
+    match /qaChecks/{checkId} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+          && checkId == request.resource.data.itemId + '_' + request.auth.uid
+          && request.resource.data.userUid == request.auth.uid;
+      // A verdict is changed by writing the other status, never removed - a
+      // reported problem should not be able to disappear without someone
+      // saying it works now.
+      allow delete: if false;
+    }
+
     match /revisions/{revisionId} {
       allow read: if true;
       // `update_user` has to be the caller's own uid. It is not decoration: it

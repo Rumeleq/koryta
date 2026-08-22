@@ -120,6 +120,34 @@ npm run quick-check
 npm run quick-check:failsafe
 ```
 
+## QA changelog
+
+Every user visible change gets an entry at the top of `shared/qa.ts`, in the
+same commit as the change itself:
+
+```ts
+{
+  id: "person-places-map",       // never renamed or reused - stored verdicts point at it
+  date: "2026-08-22",
+  title: "Mapa miejsc osoby w panelu bocznym",
+  description: "Co się zmieniło, w języku osoby korzystającej ze strony.",
+  steps: ["Wejdź na /eksploruj/tabela", "Kliknij wiersz z osobą"],
+  link: "/eksploruj/tabela",     // optional
+  area: "public",                // public | contributor | admin
+}
+```
+
+Logged in users work through that list at `/qa`: an entry they have not been
+through shows up under "Do sprawdzenia" with its instructions open, and they
+answer "Działa" or "Coś nie działa" with a note. Those verdicts live in the
+`qaChecks` firestore collection, one document per entry and person
+(`${itemId}_${userUid}`).
+
+Verification is **per person**: somebody else's verdict never checks an entry
+off for you - the value of the page is the second pair of eyes. What another
+reader found is still shown on the card, and an entry they reported a problem
+with is flagged, so you know what to look for before you start.
+
 ## Scripts reference
 
 | Script                        | Description                                             |

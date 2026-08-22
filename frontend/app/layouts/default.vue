@@ -89,6 +89,16 @@
         >
           Notatki
         </v-btn>
+        <v-btn :prepend-icon="mdiClipboardCheckOutline" variant="text" to="/qa">
+          QA
+          <v-badge
+            v-if="qaToCheck > 0"
+            class="ms-2"
+            inline
+            :color="qaIssues > 0 ? 'error' : 'grey-lighten-1'"
+            :content="qaToCheck"
+          />
+        </v-btn>
         <v-btn
           :prepend-icon="mdiLightningBolt"
           variant="text"
@@ -123,6 +133,7 @@
 <script lang="ts" setup>
 import {
   mdiAccount,
+  mdiClipboardCheckOutline,
   mdiInboxArrowDown,
   mdiLightningBolt,
   mdiShieldAccount,
@@ -135,6 +146,23 @@ import { useDisplay } from "vuetify";
 
 const { mdAndUp } = useDisplay();
 const { user, userConfig, logout, isAdmin } = useAuthState();
+// The toolbar is the only place that tells a contributor there is anything to
+// check, so the count is read once per session rather than listened to - see
+// composables/qa.ts.
+const { load: loadQa, counts: qaCounts, loaded: qaLoaded } = useQaChecks();
+// Zero until the verdicts are in, so the badge does not first claim that
+// everything needs checking and then count down.
+const qaToCheck = computed(() =>
+  qaLoaded.value ? qaCounts.value.unchecked + qaCounts.value.issue : 0,
+);
+const qaIssues = computed(() => qaCounts.value.issue);
+watch(
+  user,
+  (current) => {
+    if (current) loadQa();
+  },
+  { immediate: true },
+);
 const route = useRoute();
 const loginDialog = ref(false);
 const maxWidth = computed(() =>
