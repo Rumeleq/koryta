@@ -5,6 +5,8 @@ import {
   isInWojewodztwo,
   wojewodztwoLabel,
   regionFilterOptions,
+  powiatOf,
+  terytCoversPowiat,
 } from "../../shared/teryt";
 
 describe("isWojewodztwoTeryt", () => {
@@ -82,5 +84,40 @@ describe("regionFilterOptions", () => {
     ]);
     expect(options.map((o) => o.value)).not.toContain("");
     expect(options.map((o) => o.value)).not.toContain("1401");
+  });
+});
+
+describe("powiatOf", () => {
+  it("takes the first four digits of anything finer", () => {
+    expect(powiatOf("1465")).toBe("1465");
+    expect(powiatOf("1465011")).toBe("1465");
+  });
+
+  it("has no answer for a województwo or a non-code", () => {
+    expect(powiatOf("14")).toBeNull();
+    expect(powiatOf("")).toBeNull();
+    expect(powiatOf("mazowieckie")).toBeNull();
+  });
+});
+
+describe("terytCoversPowiat", () => {
+  it("colours the powiat a gmina sits in", () => {
+    expect(terytCoversPowiat("1465011", "1465")).toBe(true);
+    expect(terytCoversPowiat("1465011", "1425")).toBe(false);
+  });
+
+  it("colours every powiat of a województwo", () => {
+    expect(terytCoversPowiat("14", "1465")).toBe(true);
+    expect(terytCoversPowiat("14", "1425")).toBe(true);
+    expect(terytCoversPowiat("14", "1261")).toBe(false);
+  });
+
+  it("colours a powiat itself", () => {
+    expect(terytCoversPowiat("1261", "1261")).toBe(true);
+  });
+
+  it("colours nothing for a code we cannot read", () => {
+    expect(terytCoversPowiat("Kraków", "1261")).toBe(false);
+    expect(terytCoversPowiat("", "1261")).toBe(false);
   });
 });

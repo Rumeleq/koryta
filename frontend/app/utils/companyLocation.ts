@@ -13,7 +13,11 @@ type RegionWithTargets = {
   };
 };
 
-/** Region name for every company the loaded regions claim, keyed by place id.
+/** A region as the rest of the app needs it: what to call it, and the TERYT
+ * code that puts it on the map. */
+export type PlaceRegion = { name: string; teryt?: string };
+
+/** The region every company the loaded regions claim sits in, keyed by place id.
  *
  * A company's seat is an `owns` edge from the region to the company, which the
  * stats job folds into the *region's* target node ids. The lookup runs in that
@@ -26,11 +30,11 @@ type RegionWithTargets = {
  * ever claim one company, the more specific one wins - a powiat over the
  * województwo around it.
  */
-export function regionNamesByPlaceId(
+export function regionsByPlaceId(
   regions: Record<string, RegionWithTargets>,
   edgeScope: "all" | "approved",
-): Record<string, string> {
-  const names: Record<string, string> = {};
+): Record<string, PlaceRegion> {
+  const seats: Record<string, PlaceRegion> = {};
   const specificities: Record<string, number> = {};
 
   for (const region of Object.values(regions)) {
@@ -39,12 +43,29 @@ export function regionNamesByPlaceId(
 
     const specificity = region.teryt?.length ?? 0;
     for (const id of targets) {
-      if (id in names && specificities[id]! >= specificity) continue;
-      names[id] = region.name;
+      if (id in seats && specificities[id]! >= specificity) continue;
+      seats[id] = { name: region.name, teryt: region.teryt };
       specificities[id] = specificity;
     }
   }
 
+  return seats;
+}
+
+/** Region name for every company the loaded regions claim, keyed by place id.
+ *
+ * What `regionsByPlaceId` finds, for the callers that only ever spell the
+ * region out. */
+export function regionNamesByPlaceId(
+  regions: Record<string, RegionWithTargets>,
+  edgeScope: "all" | "approved",
+): Record<string, string> {
+  const names: Record<string, string> = {};
+  for (const [id, seat] of Object.entries(
+    regionsByPlaceId(regions, edgeScope),
+  )) {
+    names[id] = seat.name;
+  }
   return names;
 }
 
@@ -69,25 +90,36 @@ export function employmentPlaceIds(
   return ids;
 }
 
-/** The cities a person has worked in, from the places they were employed at.
+/** The regions a person has worked in, from the places they were employed at.
  *
- * `regionNames` is what `regionNamesByPlaceId` returns, so a company nobody has
- * linked to a region is simply absent - dropped rather than listed blank. The
- * same city is named once however many employers a person had in it, which is
- * common: a career inside one town's spółki komunalne is half a dozen edges
- * pointing at the same region.
+ * `seats` is what `regionsByPlaceId` returns, so a company nobody has linked to
+ * a region is simply absent - dropped rather than listed blank. The same region
+ * is named once however many employers a person had in it, which is common: a
+ * career inside one town's spółki komunalne is half a dozen edges pointing at
+ * the same region.
  */
+export function workLocationRegions(
+  placeIds: Iterable<string>,
+  seats: Record<string, PlaceRegion>,
+): PlaceRegion[] {
+  const regions: PlaceRegion[] = [];
+  const seen = new Set<string>();
+  for (const id of placeIds) {
+    const seat = seats[id];
+    if (!seat?.name || seen.has(seat.name)) continue;
+    seen.add(seat.name);
+    regions.push(seat);
+  }
+  return regions;
+}
+
+/** The cities a person has worked in, for a caller that wants them spelled out
+ * rather than drawn. */
 export function workLocationNames(
   placeIds: Iterable<string>,
   regionNames: Record<string, string>,
 ): string[] {
-  const names: string[] = [];
-  const seen = new Set<string>();
-  for (const id of placeIds) {
-    const name = regionNames[id];
-    if (!name || seen.has(name)) continue;
-    seen.add(name);
-    names.push(name);
-  }
-  return names;
+  const seats: Record<string, PlaceRegion> = {};
+  for (const [id, name] of Object.entries(regionNames)) seats[id] = { name };
+  return workLocationRegions(placeIds, seats).map((region) => region.name);
 }

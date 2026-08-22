@@ -6,7 +6,7 @@
       :edges="focusedEdges"
       :region="region"
       :company="company"
-      :company-locations="companyLocations"
+      :company-regions="companyRegions"
     />
     <div class="pa-4">
       <h1 class="text-h4 mb-4">
@@ -225,7 +225,7 @@ const hiddenCount = computed(() => {
 const { entities: places } = useEntities("place", {}, { server: false });
 // Shared with the drawer and the table rows, which need the region each company
 // sits in rather than the region nodes themselves.
-const { regions, companyLocations } = useCompanyLocations();
+const { regions, companyRegions, companyLocations } = useCompanyLocations();
 
 const region = computed<[string, string] | undefined>(() => {
   const terytParam = route.query.teryt as string | undefined;

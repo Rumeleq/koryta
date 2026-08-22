@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   employmentPlaceIds,
   regionNamesByPlaceId,
+  regionsByPlaceId,
   workLocationNames,
+  workLocationRegions,
 } from "~/utils/companyLocation";
 import type { Region } from "~~/shared/model";
 
@@ -134,5 +136,43 @@ describe("workLocationNames", () => {
     expect(workLocationNames(["orlen", "unknown"], regionNames)).toEqual([
       "Płock",
     ]);
+  });
+});
+
+describe("regionsByPlaceId", () => {
+  it("carries the code the map needs, not only the name", () => {
+    const regions = {
+      r1: region("Województwo Pomorskie", "22", { approved: ["c1"] }),
+    };
+    expect(regionsByPlaceId(regions, "approved")).toEqual({
+      c1: { name: "Województwo Pomorskie", teryt: "22" },
+    });
+  });
+
+  it("still lets the more specific region claim the company", () => {
+    const regions = {
+      woj: region("Województwo Mazowieckie", "14", { approved: ["c1"] }),
+      pow: region("Płock", "1462", { approved: ["c1"] }),
+    };
+    expect(regionsByPlaceId(regions, "approved").c1).toEqual({
+      name: "Płock",
+      teryt: "1462",
+    });
+  });
+});
+
+describe("workLocationRegions", () => {
+  it("names a region once, keeping its code", () => {
+    const seats = {
+      c1: { name: "Płock", teryt: "1462" },
+      c2: { name: "Płock", teryt: "1462" },
+    };
+    expect(workLocationRegions(["c1", "c2"], seats)).toEqual([
+      { name: "Płock", teryt: "1462" },
+    ]);
+  });
+
+  it("drops an employer no region claims", () => {
+    expect(workLocationRegions(["c1"], {})).toEqual([]);
   });
 });

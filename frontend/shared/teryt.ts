@@ -55,3 +55,26 @@ export function regionFilterOptions(
     a.title.localeCompare(b.title, "pl");
   return [...wojewodztwa.sort(byTitle), ...rest.sort(byTitle)];
 }
+
+/** The powiat a code belongs to, or null where it names something coarser.
+ *
+ * A gmina's code extends its powiat's, so the powiat is its first four digits -
+ * the trailing digits say which gmina and of what kind, and the map has no
+ * shape that fine anyway. Województwo codes have no powiat and give null.
+ */
+export function powiatOf(teryt: string): string | null {
+  return /^\d{4,}$/.test(teryt) ? teryt.slice(0, 4) : null;
+}
+
+/** Whether a place named by `teryt` shows up in `powiat` on the map.
+ *
+ * The codes a place carries are of every size - a person stands for election in
+ * a gmina, works for a spółka a województwo owns - while the map is drawn in
+ * powiaty. A województwo therefore covers every powiat inside it, and a gmina
+ * is drawn as the whole powiat around it: coarser than the truth, but the only
+ * shape there is to colour.
+ */
+export function terytCoversPowiat(teryt: string, powiat: string): boolean {
+  if (isWojewodztwoTeryt(teryt)) return isInWojewodztwo(powiat, teryt);
+  return powiatOf(teryt) === powiat;
+}
