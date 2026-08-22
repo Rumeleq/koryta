@@ -286,3 +286,76 @@ def test_an_agreeing_middle_name_wins_over_a_silent_one(ctx):
     )
 
     assert candidacy_years(result) == ["2014"]
+
+
+def test_a_year_only_biography_needs_the_first_name_exactly(ctx):
+    """The bug: Marzena Słomka's page carried Marek Słomka's biography.
+
+    `jaro_winkler_similarity('marzena', 'marek')` is 0.8533 - over the
+    threshold by three thousandths, on the strength of a shared "mar". A birth
+    year rules out almost nobody, so with the day unknown the first name is the
+    only thing left telling the two apart and an approximate one tells them
+    apart badly: nine of the ten year-only matches that leant on the threshold
+    were somebody else.
+    """
+    result = match(
+        ctx,
+        [krs_person("marzena", "słomka", "1971-05-22")],
+        [article("Marek Słomka", "1971-00-00")],
+    )
+
+    assert result["wiki_name"].isna().all()
+
+
+def test_a_dated_biography_still_forgives_a_misspelt_first_name(ctx):
+    """The other nine in ten, which the fuzzy match is there for.
+
+    KRS spells Józef Malec "Józedf", and a birth date agreeing to the day says
+    who he is regardless - so the tolerance stays where it is corroborated.
+    """
+    result = match(
+        ctx,
+        [krs_person("józedf", "malec", "1955-03-28")],
+        [article("Józef Jan Malec", "1955-03-28")],
+    )
+
+    assert list(result["wiki_name"]) == ["Józef Jan Malec"]
+
+
+def test_two_biographies_that_both_fit_decide_nothing(ctx):
+    """Robert Kwiatkowski the urzędnik and Robert Kwiatkowski the polityk.
+
+    Both were born on 1961-11-07 and there is nothing to choose between them
+    but the score, which would hang a stranger's biography on the page - the
+    same harm the PKW side refuses to risk, refused the same way.
+    """
+    result = match(
+        ctx,
+        [krs_person("robert", "kwiatkowski", "1961-11-07")],
+        [
+            article("Robert Kwiatkowski (urzędnik)", "1961-11-07"),
+            article("Robert Kwiatkowski (polityk)", "1961-11-07"),
+        ],
+    )
+
+    assert result["wiki_name"].isna().all()
+
+
+def test_a_namesake_the_first_name_rules_out_leaves_one_match(ctx):
+    """Refusing ambiguity must not refuse what is no longer ambiguous.
+
+    Dariusz Popławski drew two candidates: his own article and Mariusz
+    Popławski's, the latter on a shared birth year and the threshold alone.
+    With the year-only branch made exact that one is gone before the count is
+    taken, and the person keeps the biography that is actually his.
+    """
+    result = match(
+        ctx,
+        [krs_person("dariusz", "popławski", "1975-09-12")],
+        [
+            article("Dariusz Popławski (wicewojewoda)", "1975-09-12"),
+            article("Mariusz Popławski", "1975-00-00"),
+        ],
+    )
+
+    assert list(result["wiki_name"]) == ["Dariusz Popławski (wicewojewoda)"]
