@@ -281,6 +281,18 @@ export default defineNuxtConfig({
     experimental: {
       asyncContext: true,
     },
+
+    // Nothing between the browser and the container compresses: the Nitro
+    // server does not, and the Envoy in front of it does not either, so
+    // `_nuxt/*` went out raw - 741 KB for the entry chunk, 255 KB for the
+    // stylesheet, ~2.2 MB per page view against an audience that is 69%
+    // mobile. This emits `.gz`/`.br` siblings at build time, which the static
+    // handler serves - with a `Vary: Accept-Encoding` of its own - to clients
+    // that ask. Build-time rather than per-request because these are
+    // immutable and hashed: pay the cost once, at the best ratio, not on
+    // every cache miss. Rendered responses are the other half of this, in
+    // server/plugins/compression.ts.
+    compressPublicAssets: { gzip: true, brotli: true },
   },
   routeRules: {
     "/": { swr: 3600 },
