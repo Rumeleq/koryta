@@ -198,7 +198,7 @@ import {
   mdiTagOutline,
 } from "@mdi/js";
 import { useEntities } from "~/composables/entity";
-import { getPageMeta } from "~/composables/useFunctions";
+import { articlePayloadFor, ensureArticle } from "~/composables/articles";
 import { useCurrentUser } from "vuefire";
 import type { Timestamp } from "firebase-admin/firestore";
 import { useDomainIcon } from "~/composables/useDomainIcon";
@@ -315,31 +315,6 @@ async function onCaptureSubmitted() {
   await Promise.all([refreshArticles(), refreshCaptures()]);
 }
 
-type nestedRecord = {
-  [key: string]: string | nestedRecord;
-};
-
-function deepSearch(
-  obj: nestedRecord | string | undefined | null,
-  key: string,
-): string | undefined {
-  if (typeof obj !== "object" || obj === null) return undefined;
-
-  const val = obj[key];
-  if (typeof val === "string") {
-    return val;
-  }
-
-  for (const k in obj) {
-    const result = deepSearch(obj[k], key);
-    if (result !== undefined) {
-      return result;
-    }
-  }
-
-  return undefined;
-}
-
 async function addArticle() {
   if (!user.value) {
     return navigateTo({
@@ -355,31 +330,18 @@ async function addArticle() {
   isAdding.value = true;
   alertMessage.value = "";
   try {
-    const metaInfo = await getPageMeta(newArticleUrl.value);
-    if (metaInfo?.title) {
-      // TODO this should be moved to somewhere else - logic heavy
-      const publishedDate =
-        metaInfo.meta?.ldJson?.datePublished ||
-        metaInfo.meta?.ldJson?.dateModified ||
-        deepSearch(metaInfo.meta, "datePublished") ||
-        deepSearch(metaInfo.meta, "dateModified");
-      const token = await user.value.getIdToken();
-      const result = await $fetch("/api/ingest/article", {
-        method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        body: {
-          url: metaInfo.url || newArticleUrl.value,
-          name: metaInfo.title,
-          publishedDate,
-          meta: metaInfo.meta,
-        },
-      });
+    const payload = await articlePayloadFor(newArticleUrl.value);
+    if (payload.name) {
+      const result = await ensureArticle({ ...payload, name: payload.name });
       newArticleUrl.value = "";
       alertMessage.value = "Pomyślnie dodano artykuł.";
-      console.info(`Added article: ${metaInfo.title} (${result.nodeId})`);
+      console.info(`Added article: ${payload.name} (${result.nodeId})`);
       alertType.value = "success";
       await refreshArticles();
     } else {
+      // Added by hand, so the title is worth insisting on: whoever pasted the
+      // url is here to fix it. A source promoted out of a note has nobody
+      // watching and goes in under its address instead.
       alertMessage.value = "Nie udało się pobrać tytułu artykułu.";
       alertType.value = "warning";
     }

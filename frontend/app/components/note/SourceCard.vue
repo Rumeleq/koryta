@@ -91,6 +91,21 @@
         Dodaj URL
       </v-chip>
 
+      <!-- Where the url ended up: every source added to a note becomes an
+           article, and this is the way to the page that holds its tags, its
+           mentions and whatever else we know about it. -->
+      <v-chip
+        v-if="source.articleNodeId && !editingUrl"
+        :to="generateEntityUrl('article', source.articleNodeId)"
+        color="secondary"
+        variant="tonal"
+        class="mr-2"
+        size="small"
+      >
+        <v-icon start :icon="mdiFileDocumentOutline" />
+        Artykuł
+      </v-chip>
+
       <v-btn
         v-if="source.url && !editingUrl && isEditing"
         :icon="mdiPencil"
@@ -115,7 +130,15 @@
 </template>
 
 <script lang="ts" setup>
-import { mdiCheck, mdiDelete, mdiLink, mdiPencil, mdiPlus } from "@mdi/js";
+import {
+  mdiCheck,
+  mdiDelete,
+  mdiFileDocumentOutline,
+  mdiLink,
+  mdiPencil,
+  mdiPlus,
+} from "@mdi/js";
+import { generateEntityUrl } from "~/composables/slugs";
 import { noteKindConfig, noteKindOf } from "~/composables/notes";
 import type { NoteEntryKind, NoteSource } from "~~/shared/model";
 

@@ -86,7 +86,14 @@
 import { ref, toRaw, computed } from "vue";
 import { useNotes, noteKindConfig } from "~/composables/notes";
 import { useAuthState } from "~/composables/auth";
-import type { Note, NodeType, NoteEntryKind } from "~~/shared/model";
+import type {
+  Note,
+  NodeType,
+  NoteEntryKind,
+  NoteSource,
+} from "~~/shared/model";
+import { articlePayloadFor, ensureArticle } from "~/composables/articles";
+import { promoteNoteSources } from "~/utils/notePromotion";
 import { NoteSourceCard } from "#components";
 
 const props = withDefaults(
@@ -173,6 +180,46 @@ const removeSource = (index: number) => {
   formData.value.sources.splice(index, 1);
 };
 
+/** The article node for a url, made if this is the first time anyone cites it.
+ *
+ * A page that will not give up its title is still worth having, so it goes in
+ * under its own address - the same thing the article list does with the pieces
+ * that reached us without one. */
+const articleIdFor = async (url: string) => {
+  const payload = await articlePayloadFor(url);
+  const { nodeId } = await ensureArticle({
+    ...payload,
+    name: payload.name || payload.url,
+  });
+  return nodeId;
+};
+
+/** Promote the note's sources once it is stored.
+ *
+ * After the save rather than before it: promoting fetches every new url to
+ * read its title, which is seconds of somebody else's server, and nobody
+ * should watch a save spinner for that. The note is what the author came to
+ * write; the articles follow from it.
+ *
+ * Reads the entries back off the stored note, so an author who is already
+ * writing the next one does not have that entry dropped by this second write -
+ * falling back to what was just saved, for the first note on a node, where the
+ * collection has not caught up with its own new document yet.
+ */
+const promoteSources = async () => {
+  const saved = userNote.value?.sources?.length
+    ? userNote.value.sources
+    : formData.value.sources;
+  const stored = saved.map((source) => ({ ...source })) as NoteSource[];
+
+  try {
+    const promoted = await promoteNoteSources(stored, articleIdFor);
+    if (promoted) await saveNote({ sources: promoted });
+  } catch (error) {
+    console.error("Failed to promote note sources to articles", error);
+  }
+};
+
 const save = async () => {
   saving.value = true;
   try {
@@ -181,9 +228,12 @@ const save = async () => {
     emit("saved");
   } catch (error) {
     console.error("Failed to save note", error);
+    return;
   } finally {
     saving.value = false;
   }
+
+  await promoteSources();
 };
 
 // Automatically show editor if not created yet, wait, we have "startEditing" button for that
