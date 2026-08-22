@@ -18,8 +18,13 @@
           >
             Wróć na stronę główną
           </v-btn>
-          <v-btn v-if="isNotFound" variant="outlined" size="large" to="/lista">
-            Przeglądaj listę
+          <v-btn
+            v-if="isNotFound"
+            variant="outlined"
+            size="large"
+            to="/eksploruj/tabela"
+          >
+            Przeglądaj osoby
           </v-btn>
           <v-btn v-else variant="outlined" size="large" to="/pomoc">
             Zgłoś problem

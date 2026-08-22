@@ -36,20 +36,12 @@ test.describe("Suggest node edits", () => {
       { timeout: 15000 },
     );
 
-    // 5. Navigate to a page with people
-    await page.goto("/lista");
-
-    // Wait for the list of people to load
-    await page.waitForSelector(".v-card");
-
-    // Find the first person link and click it
-    const firstPersonCard = page
-      .locator(".v-card[href^='/entity/person/']")
-      .first();
-    // /admin/rewizje/:id is keyed on the node, so remember which one this is
-    // rather than going hunting for it in the list later.
-    const nodeId = (await firstPersonCard.getAttribute("href"))!.split("/")[3]!;
-    await firstPersonCard.click();
+    // 5. Open a person's page. This used to pick the first card off /lista;
+    // that page is gone, and no list left renders a person as a link - the
+    // table opens a drawer instead. Naming the seeded node is what the rest of
+    // the suite does anyway, and /admin/rewizje/:id in step 9 is keyed on it.
+    const nodeId = "1"; // Jan Kowalski, seeded as node 1
+    await page.goto(`/entity/person/${nodeId}`);
 
     // Wait to navigate to the person page (which might redirect to /osoba/...)
     await page.waitForSelector("h2.text-h5", { timeout: 15000 });

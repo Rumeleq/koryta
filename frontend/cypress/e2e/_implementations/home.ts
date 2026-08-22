@@ -9,9 +9,15 @@ describe("home", () => {
     cy.get(".v-card").should("have.length.at.least", 4);
   });
 
-  it("shows list when clicking the first card - chart", () => {
-    cy.contains(".v-card", "Łącznie").click();
-    cy.url().should("include", "/lista");
+  // Was "clicking the first card - chart", which clicked the "Łącznie" card and
+  // expected /lista. That card stopped being a link some time ago and /lista is
+  // gone; the browse entry point on the home page is this one.
+  it("shows the table when clicking the browse card", () => {
+    cy.contains("TABELA POWIĄZAŃ")
+      .closest(".v-card")
+      .should("have.attr", "href", "/eksploruj/tabela")
+      .click({ force: true });
+    cy.url().should("include", "/eksploruj/tabela");
   });
 
   it("shows correct number of people", () => {

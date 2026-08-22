@@ -5,7 +5,6 @@ import { authFetch, useAuthState } from "@/composables/auth";
 export type Filters = {
   party?: string;
   place?: string;
-  source?: string;
   // TODO unify with the limit class used in other places
   limit?: number;
   page?: number;

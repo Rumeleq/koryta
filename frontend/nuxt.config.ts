@@ -148,8 +148,6 @@ export default defineNuxtConfig({
       // has no indexable content to lose, and every entity URL 301s into it
       // with its own ?krs=/?teryt=. That is the bulk of the crawl budget.
       "/eksploruj/tabela",
-      // The bare page stays indexable; only the facet permutations are barred.
-      "/lista?",
     ],
   },
   plausible: {

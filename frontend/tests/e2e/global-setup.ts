@@ -18,7 +18,6 @@ import { chromium, type FullConfig, type Page } from "@playwright/test";
  */
 const PUBLIC_ROUTES = [
   "/",
-  "/lista",
   "/login",
   "/eksploruj/tabela",
   "/eksploruj/tabela?krs=0000357114",
