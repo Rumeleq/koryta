@@ -451,8 +451,14 @@ export type NoteSource = {
   url?: string;
   note: string;
   kind?: NoteEntryKind;
-  // TODO enable users associating with a source node.
-  // source_id: string;
+
+  /** The article node this url was promoted to, once it has been.
+   *
+   * Every source somebody adds to a note becomes an article, so that a url
+   * worth reading is in the list of them rather than only inside one person's
+   * note. Set after the note is stored, and what tells a later save that this
+   * entry has already been through it. */
+  articleNodeId?: string;
 
   // Admin triage of an individual source. Each source is reviewed separately.
   adminStatus?: NoteAdminStatus;
