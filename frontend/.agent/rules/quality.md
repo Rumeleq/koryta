@@ -10,5 +10,13 @@
    - After it passes run e2e tests using `npm run test:e2e`.
    - specific E2E testing patterns are documented in `.agent/skills/e2e-testing.md`.
 
+1. **Changelog for QA**:
+   Every change a user can see gets an entry at the top of `shared/qa.ts`, in
+   the same commit as the change. The entry says what changed and what to click
+   to see it - `/qa` is where contributors work through that list and report
+   what is broken, each on their own (one person's verdict does not check the
+   entry off for anybody else). An `id` is never renamed or reused: it is what
+   somebody's stored verdict points at.
+
 1. **Domain Knowledge**:
    - For working with Revisions and Edges, verify `.agent/skills/revisions.md`.

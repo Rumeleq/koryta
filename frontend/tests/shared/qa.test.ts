@@ -1,0 +1,110 @@
+import { describe, it, expect } from "vitest";
+import {
+  QA_ITEMS,
+  qaCheckId,
+  qaItemState,
+  qaReportedByOthers,
+  qaStateCounts,
+  type QaCheck,
+} from "../../shared/qa";
+
+const check = (
+  itemId: string,
+  status: QaCheck["status"],
+  userUid = "u1",
+): QaCheck => ({ itemId, userUid, status });
+
+describe("QA_ITEMS", () => {
+  it("has unique ids", () => {
+    const ids = QA_ITEMS.map((item) => item.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("uses ids that split back out of a check document id", () => {
+    for (const item of QA_ITEMS) {
+      expect(item.id).toMatch(/^[a-z0-9-]+$/);
+      expect(qaCheckId(item.id, "uid123").split("_")).toEqual([
+        item.id,
+        "uid123",
+      ]);
+    }
+  });
+
+  it("is ordered newest first", () => {
+    const dates = QA_ITEMS.map((item) => item.date);
+    expect(dates).toEqual([...dates].sort().reverse());
+  });
+
+  it("dates every entry and says how to check it", () => {
+    for (const item of QA_ITEMS) {
+      expect(item.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(item.title.length).toBeGreaterThan(0);
+      expect(item.description.length).toBeGreaterThan(0);
+      expect(item.steps.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("qaItemState", () => {
+  it("is unchecked when this reader has not looked", () => {
+    expect(qaItemState("a", [], "u1")).toBe("unchecked");
+    expect(qaItemState("a", [check("b", "ok")], "u1")).toBe("unchecked");
+  });
+
+  it("is whatever this reader concluded", () => {
+    expect(qaItemState("a", [check("a", "ok")], "u1")).toBe("ok");
+    expect(qaItemState("a", [check("a", "issue")], "u1")).toBe("issue");
+  });
+
+  it("stays unchecked for everybody else once one person checks it", () => {
+    const checks = [check("a", "ok", "u1"), check("a", "issue", "u2")];
+    expect(qaItemState("a", checks, "u1")).toBe("ok");
+    expect(qaItemState("a", checks, "u2")).toBe("issue");
+    // The page is worth having because of the second pair of eyes, so
+    // somebody else's verdict must not retire the entry.
+    expect(qaItemState("a", checks, "u3")).toBe("unchecked");
+  });
+
+  it("claims nothing when there is no reader", () => {
+    expect(qaItemState("a", [check("a", "ok")], undefined)).toBe("unchecked");
+  });
+});
+
+describe("qaReportedByOthers", () => {
+  it("is true only for a problem somebody else reported", () => {
+    const checks = [check("a", "issue", "u2"), check("b", "ok", "u2")];
+    expect(qaReportedByOthers("a", checks, "u1")).toBe(true);
+    // My own report is already on my card; it is not news.
+    expect(qaReportedByOthers("a", checks, "u2")).toBe(false);
+    expect(qaReportedByOthers("b", checks, "u1")).toBe(false);
+  });
+});
+
+describe("qaStateCounts", () => {
+  it("counts what this reader has left, not what anybody has", () => {
+    const items = [
+      { ...QA_ITEMS[0]!, id: "a" },
+      { ...QA_ITEMS[0]!, id: "b" },
+    ];
+    const checks = [check("a", "ok", "u2"), check("b", "issue", "u2")];
+    expect(qaStateCounts(items, checks, "u1")).toEqual({
+      unchecked: 2,
+      ok: 0,
+      issue: 0,
+    });
+  });
+
+  it("counts every item exactly once", () => {
+    const items = [
+      { ...QA_ITEMS[0]!, id: "a" },
+      { ...QA_ITEMS[0]!, id: "b" },
+      { ...QA_ITEMS[0]!, id: "c" },
+    ];
+    const counts = qaStateCounts(
+      items,
+      [check("a", "ok"), check("b", "issue")],
+      "u1",
+    );
+    expect(counts).toEqual({ unchecked: 1, ok: 1, issue: 1 });
+  });
+});
