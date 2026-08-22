@@ -170,22 +170,6 @@
         </template>
       </v-data-table-server>
     </v-col>
-
-    <v-col cols="12">
-      <a
-        href="https://www.flaticon.com/free-icons/pork"
-        title="pork icons"
-        class="zrodla-link"
-      >
-        Pork icons created by Freepik - Flaticon
-      </a>
-      <a
-        href="https://www.flaticon.com/free-icon/pig_3800575"
-        class="zrodla-link"
-      >
-        - link</a
-      >
-    </v-col>
   </v-row>
 </template>
 
