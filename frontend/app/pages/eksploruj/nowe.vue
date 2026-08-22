@@ -177,6 +177,13 @@
                 :person="focusedPerson"
                 :region="undefined"
                 :company="undefined"
+                :work-locations="workLocations"
+              />
+
+              <ChartPersonLocations
+                v-if="mapLocations.length"
+                :key="`map-${focusedPerson.id}`"
+                :locations="mapLocations"
               />
 
               <div class="pa-4 pt-0">
@@ -339,9 +346,9 @@ const apiQuery = computed(
 
 // Same as /eksploruj/tabela: the template is a single <ClientOnly>, so nothing
 // this returns is rendered on the server.
-// Which city each employer sits in, so the search suggestions below can put
-// the person in their local context.
-const { companyLocations } = useCompanyLocations();
+// Which region each employer sits in, so the search suggestions below can put
+// the person in their local context and the map can draw it.
+const { companyRegions, companyLocations } = useCompanyLocations();
 
 const { tableItems, totalItems, pending } = await useListWithStats(
   apiQuery,
@@ -359,6 +366,12 @@ const focusedEdges = computed(() => [
   ...(focusedSources.value || []),
   ...(focusedTargets.value || []),
 ]);
+
+const { workLocations, mapLocations } = usePersonPlaces(
+  focusedPerson,
+  focusedEdges,
+  companyRegions,
+);
 </script>
 
 <style scoped>

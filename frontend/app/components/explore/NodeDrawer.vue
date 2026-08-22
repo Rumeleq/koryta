@@ -70,11 +70,7 @@ import { generateEntityUrl } from "~/composables/slugs";
 import type { EdgeNode } from "~/composables/edges";
 import type { NodeMaybeRich, PersonRich } from "~~/shared/model";
 import type { PlaceRegion } from "~/utils/companyLocation";
-import {
-  employmentPlaceIds,
-  workLocationRegions,
-} from "~/utils/companyLocation";
-import { personLocations } from "~/utils/personLocations";
+import { usePersonPlaces } from "~/composables/personPlaces";
 
 const props = withDefaults(
   defineProps<{
@@ -109,20 +105,9 @@ const person = computed(() =>
   props.node?.type === "person" ? (props.node as PersonRich) : undefined,
 );
 
-const workRegions = computed(() =>
-  props.companyRegions
-    ? workLocationRegions(employmentPlaceIds(props.edges), props.companyRegions)
-    : undefined,
-);
-
-const workLocations = computed(() =>
-  workRegions.value?.map((region) => region.name),
-);
-
-/** Everywhere the person shows up, for the map. Elections come off the node the
- * caller focused, which only a view that built it from the subgraph has - a
- * node fetched by id carries none, and the map then shows the employers alone. */
-const mapLocations = computed(() =>
-  personLocations(person.value?.elections ?? [], workRegions.value ?? []),
+const { workLocations, mapLocations } = usePersonPlaces(
+  person,
+  () => props.edges,
+  () => props.companyRegions,
 );
 </script>
