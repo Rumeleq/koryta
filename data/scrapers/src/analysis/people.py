@@ -206,6 +206,53 @@ def people_merged(
             AND list_extract(p.teryt_wojewodztwo, 1) = names_count.teryt
 
     ),
+    wiki_candidates AS (
+        -- Every biography this KRS person could be.
+        --
+        -- Match on the day where the article gives one, and on the year where
+        -- it does not. Without the second branch a biography that says only
+        -- "ur. 1959" cannot match anybody: KRS knows every person's full date
+        -- of birth, so equality always fails. With the year dropped instead of
+        -- the day, it would match every namesake of any age.
+        --
+        -- How exact the first name has to be depends on which branch let the
+        -- row through, because the two carry very different weight. A full
+        -- date agreeing to the day is strong enough on its own that an
+        -- approximate name costs nothing and earns its keep on KRS typos
+        -- ("Józedf Jan Malec"), short forms (Alek/Aleksander) and
+        -- transliteration (Gennadij/Hennadij). A year alone rules out almost
+        -- nobody, so the first name is the only thing left telling two people
+        -- apart and it has to be exact. Marzena Słomka was given Marek
+        -- Słomka's article on the strength of a shared "mar":
+        -- jaro_winkler_similarity('marzena', 'marek') is 0.8533, over the
+        -- threshold by three thousandths. Nine of the ten year-only matches
+        -- that leant on the threshold were somebody else; of the seven with a
+        -- full date, none were.
+        SELECT
+            k.krs_row,
+            w.*
+        FROM krs_numbered k
+        JOIN wiki_people w
+            ON k.last_name = w.last_name
+            AND CASE
+                WHEN w.birth_date IS NOT NULL THEN
+                    k.birth_date = w.birth_date
+                    AND jaro_winkler_similarity(k.first_name, w.first_name) > 0.85
+                ELSE
+                    k.birth_year = w.birth_year
+                    AND k.first_name = w.first_name
+            END
+    ),
+    wiki_match AS (
+        -- Which of those to believe - and where more than one fits, none of
+        -- them. Two articles the join cannot tell apart are two people it
+        -- cannot tell apart, and there is nothing to choose between "Robert
+        -- Kwiatkowski (urzędnik)" and "Robert Kwiatkowski (polityk)" but the
+        -- score, which would hang a stranger's biography on the page. The same
+        -- harm `pkw_match` refuses to risk, refused the same way.
+        SELECT * FROM wiki_candidates
+        QUALIFY count(*) OVER (PARTITION BY krs_row) = 1
+    ),
     krs_pkw_wiki AS (
         SELECT
             kp.*,
@@ -214,19 +261,7 @@ def people_merged(
             w.is_polityk,
             w.wiki_score,
         FROM krs_pkw kp
-        LEFT JOIN wiki_people w
-            -- Match on the day where the article gives one, and on the year
-            -- where it does not. Without the second branch a biography that
-            -- says only "ur. 1959" cannot match anybody: KRS knows every
-            -- person's full date of birth, so equality always fails. With the
-            -- year dropped instead of the day, it would match every namesake
-            -- of any age.
-            ON (
-                kp.birth_date = w.birth_date
-                OR (w.birth_date IS NULL AND kp.birth_year = w.birth_year)
-            )
-            AND kp.base_last_name = w.last_name
-            AND jaro_winkler_similarity(kp.base_first_name, w.first_name) > 0.85
+        LEFT JOIN wiki_match w USING (krs_row)
     ),
     all_sources AS (
         SELECT
