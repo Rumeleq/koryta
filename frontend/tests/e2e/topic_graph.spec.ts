@@ -186,6 +186,12 @@ test.describe("Topic graph", () => {
       timeout: 60_000,
     });
 
+    // Everybody in the story arrives with the network they sit in, whether an
+    // article named them or a relation citing one brought them in. Anna is
+    // here for the relation above, and Orlen is her employer - nothing in this
+    // topic's articles mentions the company at all.
+    await expect(label(page, "Orlen").first()).toBeVisible({ timeout: 60_000 });
+
     // The article itself is not a node in the story - what a reader wants from
     // an affair is who is in it.
     await expect(label(page, "Artykuł bez krawędzi")).toHaveCount(0);

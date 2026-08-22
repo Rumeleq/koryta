@@ -14,7 +14,7 @@ import {
 } from "~~/server/utils/topics";
 import type { Edge, EdgeType, Person, Company, Region } from "~~/shared/model";
 
-/** The relation kinds worth drawing around somebody the article names.
+/** The relation kinds worth drawing around somebody in the story.
  *
  * A `mentions` or `tagged` edge has an article or a topic at its far end and
  * neither is drawn here, so following one would fetch a node only to throw it
@@ -42,31 +42,38 @@ const NEIGHBOUR_EDGE_TYPES: ReadonlySet<EdgeType> = new Set<EdgeType>([
  *
  * Unlike `/api/graph/local/[id]` there is no BFS. What the articles say *is*
  * the answer, so every node reached is wanted and nothing is reached by
- * traversal - except for the one hop `expandMentions` asks for, below.
+ * traversal - except for the one hop `expand` asks for, below.
  */
 export async function graphForArticles(
   db: Firestore,
   articleIds: string[],
   includeDrafts: boolean,
   options: {
-    /** Draw each named person's immediate connections around them.
+    /** Draw the immediate connections of the people in the story around them.
      *
-     * Somebody recorded as mentioned and nothing else is a dot on an empty
-     * canvas: the graph says they are in the story and nothing more. Their own
-     * relations are the context that makes the dot worth looking at - who they
-     * work for, who they sit on a board with - so a page about one article asks
-     * for them.
+     * Somebody in the graph and nothing else is a dot on an empty canvas: it
+     * says they are in the story and nothing more. Their own relations are the
+     * context that makes the dot worth looking at - who they work for, who they
+     * sit on a board with.
      *
-     * People only, and only those the article names. A place is the hub of an
-     * unbounded number of relations - a ministry has thousands - so expanding
-     * one would bury the article's own people in its staff list, and the second
-     * hop out from a person is where a local graph stops being local anyway.
+     * - `"mentions"` expands the people the articles *name*. What an article's
+     *   own page asks for: whoever is at the end of a relation drawn from the
+     *   article is already there with the relation that put them there.
+     * - `"people"` expands every person drawn, however they got in. What a
+     *   story asks for: across a dozen articles most people arrive through a
+     *   relation citing one of them, and under `"mentions"` those were the ones
+     *   left as bare dots.
      *
-     * A story's page does not ask: it already draws every article's people, so
-     * a hop out from each of them is that many times more of a graph that is
-     * usually crowded to begin with.
+     * People either way. A place is the hub of an unbounded number of relations
+     * - a ministry has thousands - so expanding one would bury the story's own
+     * people in its staff list, and the second hop out from a person is where a
+     * local graph stops being local anyway.
+     *
+     * A story pays for this in size: one hop from everybody in it is a much
+     * larger graph than the articles alone, and a crowded affair draws a
+     * crowded canvas.
      */
-    expandMentions?: boolean;
+    expand?: "mentions" | "people";
   } = {},
 ): Promise<GraphLayout> {
   const [cited, mentioned] = await Promise.all([
@@ -83,13 +90,18 @@ export async function graphForArticles(
   const nodesRaw = await fetchNodesByIds(fromArticles);
 
   let edgesRaw: (Edge & { id: string })[] = cited;
-  if (options.expandMentions) {
+  if (options.expand) {
     const named = new Set(mentioned);
-    const namedPeople = nodesRaw
-      .filter((node) => node.type === "person" && node.id && named.has(node.id))
+    const expanding = nodesRaw
+      .filter(
+        (node) =>
+          node.type === "person" &&
+          node.id &&
+          (options.expand === "people" || named.has(node.id)),
+      )
       .map((node) => node.id as string);
 
-    const neighbours = (await fetchEdgesClose(namedPeople)).filter(
+    const neighbours = (await fetchEdgesClose(expanding)).filter(
       (edge) =>
         NEIGHBOUR_EDGE_TYPES.has(edge.type) &&
         edge.deleted !== true &&
