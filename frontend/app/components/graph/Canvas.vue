@@ -42,6 +42,7 @@ import type { EventHandlers, NodeEvent } from "v-network-graph";
 import { useSimulationStore } from "@/stores/simulation";
 import type { NodeType } from "~~/shared/model";
 import type { Node as GraphNode, Edge } from "~~/shared/graph/model";
+import { wrapLabel } from "~/utils/graphLabel";
 
 const props = defineProps<{
   nodes: Record<string, GraphNode>;
@@ -115,10 +116,23 @@ const configs = reactive(
       },
       label: {
         color: "#000",
+        // Labels are drawn over whatever the layout put underneath them, and a
+        // dense graph puts a lot there: without a plate behind the text, a name
+        // crossing an edge or another name is unreadable rather than merely
+        // crowded.
+        background: {
+          visible: true,
+          color: "rgba(255, 255, 255, 0.82)",
+          padding: { vertical: 1, horizontal: 3 },
+          borderRadius: 3,
+        },
+        lineHeight: 1.1,
         text: (node) =>
-          node.stats?.people
-            ? `${node.name ?? ""} (${node.stats.people})`
-            : (node.name ?? ""),
+          wrapLabel(
+            node.stats?.people
+              ? `${node.name ?? ""} (${node.stats.people})`
+              : (node.name ?? ""),
+          ),
       },
     },
     edge: {

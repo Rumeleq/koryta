@@ -49,4 +49,34 @@ describe("GraphCanvas", () => {
 
     expect(configs.view.layoutHandler).toBeInstanceOf(ForceLayout);
   });
+  it("breaks a long name over several lines, on a plate of its own", async () => {
+    const component = await mountSuspended(GraphCanvas, {
+      props: {
+        nodes: {
+          c1: {
+            name: "Wojewódzki Fundusz Ochrony Środowiska w Krakowie",
+            type: "rect",
+            color: "#888",
+          },
+        },
+        edges: [],
+        ready: true,
+      },
+      global: { plugins: [vuetify] },
+    });
+
+    // v-network-graph draws one `tspan` per line, so the lines are the proof
+    // that the name was broken rather than left to run across the canvas.
+    const lines = component.findAll(".v-ng-node-label tspan");
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines.map((line) => line.text()).join(" ")).toBe(
+      "Wojewódzki Fundusz Ochrony Środowiska w Krakowie",
+    );
+
+    // And the plate behind it, which is what makes a label crossing an edge or
+    // another label readable.
+    expect(
+      component.find(".v-ng-node-label .v-ng-text-background").exists(),
+    ).toBe(true);
+  });
 });
