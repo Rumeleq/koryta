@@ -1,11 +1,31 @@
 import pandas as pd
+from pandas import DataFrame
 
+from entities.company import Company as KrsCompany
+from entities.company_categories import SPZOZ
 from scrapers.krs.list import (
+    CompaniesKRS,
+    company_from_api_krs,
     company_from_rejestrio,
     get_teryt,
     normalize_city,
     parse_activity_from_api_krs,
 )
+
+
+class StubTeryt:
+    """Just the one method `company_from_api_krs` reaches for.
+
+    The real `Teryt` is a `Pipeline` that downloads the TERC register, and
+    what these tests are about is which fields an odpis yields - the seat is
+    settled by `test_teryt.py` and by the `get_teryt` cases below.
+    """
+
+    def parse_siedziba(self, wojewodztwo: str, powiat: str, gmina: str) -> str:
+        return ""
+
+
+NO_TERYT = StubTeryt()
 
 # A random entry from api-krs data for a given company
 TEST_DZIAL3 = {
@@ -346,3 +366,125 @@ def test_company_from_rejestrio_reads_the_postal_code_it_is_given():
         POSTAL_CODES,
     )
     assert company.teryt_code == "061701"
+
+
+# ─── what a hospital is told apart by ──────────────────────
+#
+# A publicly owned hospital is either an SPZOZ, whose rada społeczna sits for
+# nothing, or a spółka, whose rada nadzorcza is as a rule paid. Neither the
+# form nor the organ used to leave this function, so on the site the two were
+# the same thing.
+
+# No postal codes: this exercises the fields the odpis carries, and get_teryt
+# answers "" for a town it cannot place, which is not what is under test.
+NO_POSTAL_CODES = DataFrame({"city": [], "postal_code": [], "teryt": []})
+
+
+# 86.10 Działalność szpitali - the code the site categorises hospitals by, and
+# the one an SPZOZ never has, because dzial3 exists only in RejP.
+HOSPITAL_PKD = {
+    "przedmiotDzialalnosci": {
+        "przedmiotPrzewazajacejDzialalnosci": [
+            {"kodDzial": "86", "kodKlasa": "10", "kodPodklasa": "Z"}
+        ]
+    }
+}
+
+
+def odpis(rejestr="RejS", forma=SPZOZ, dzial2=None, dzial3=None):
+    dane_podmiotu = {"nazwa": "SZPITAL POWIATOWY"}
+    if forma is not None:
+        dane_podmiotu["formaPrawna"] = forma
+    return {
+        "odpis": {
+            "naglowekA": {"numerKRS": "0000000110", "rejestr": rejestr},
+            "dane": {
+                "dzial1": {"danePodmiotu": dane_podmiotu},
+                "dzial2": dzial2 or {},
+                "dzial3": dzial3 or {},
+            },
+        }
+    }
+
+
+def organ(nazwa):
+    return {"organNadzoru": [{"nazwa": nazwa, "sklad": []}]}
+
+
+def test_an_spzoz_carries_its_legal_form_because_it_has_no_pkd():
+    """The only thing an SPZOZ can be categorised as a hospital by.
+
+    All 1,192 of them are in the associations register, and dzial3 - where the
+    PKD codes the site reads live - is only parsed for RejP.
+    """
+    company = company_from_api_krs(
+        NO_POSTAL_CODES, NO_TERYT, odpis(dzial2=organ("RADA SPOŁECZNA"))
+    )
+
+    assert company is not None
+    assert company.activity == []
+    assert company.form == SPZOZ
+    assert company.supervisory_organ == "rada_spoleczna"
+
+
+def test_a_hospital_spolka_carries_the_board_that_gets_paid():
+    company = company_from_api_krs(
+        NO_POSTAL_CODES,
+        NO_TERYT,
+        odpis(
+            rejestr="RejP",
+            forma="SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ",
+            dzial2=organ("RADA NADZORCZA"),
+            dzial3=HOSPITAL_PKD,
+        ),
+    )
+
+    assert company is not None
+    assert company.supervisory_organ == "rada_nadzorcza"
+    assert company.activity == ["86.10.Z"]
+
+
+def test_a_company_with_no_organ_registered_says_brak():
+    """Which is the usual case for an SPZOZ and says nothing about pay."""
+    company = company_from_api_krs(NO_POSTAL_CODES, NO_TERYT, odpis())
+
+    assert company is not None
+    assert company.supervisory_organ == "brak"
+
+
+def test_a_company_with_no_forma_prawna_carries_none():
+    company = company_from_api_krs(NO_POSTAL_CODES, NO_TERYT, odpis(forma=None))
+
+    assert company is not None
+    assert company.form is None
+
+
+def test_a_rejestrio_blob_read_first_does_not_pin_the_fields_empty():
+    """rejestr.io serves neither field, and a merge keeps the first answer."""
+    pipeline = CompaniesKRS()
+    pipeline.add_company(KrsCompany(krs="0000000110", name="SZPITAL POWIATOWY"))
+
+    pipeline.add_company(
+        company_from_api_krs(
+            NO_POSTAL_CODES, NO_TERYT, odpis(dzial2=organ("RADA SPOŁECZNA"))
+        )
+    )
+
+    merged = pipeline.companies["0000000110"]
+    assert merged.form == SPZOZ
+    assert merged.supervisory_organ == "rada_spoleczna"
+
+
+def test_a_later_blob_without_them_does_not_clear_them():
+    pipeline = CompaniesKRS()
+    pipeline.add_company(
+        company_from_api_krs(
+            NO_POSTAL_CODES, NO_TERYT, odpis(dzial2=organ("RADA SPOŁECZNA"))
+        )
+    )
+
+    pipeline.add_company(KrsCompany(krs="0000000110", city="racibórz"))
+
+    merged = pipeline.companies["0000000110"]
+    assert merged.form == SPZOZ
+    assert merged.supervisory_organ == "rada_spoleczna"

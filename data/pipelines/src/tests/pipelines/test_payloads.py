@@ -310,7 +310,7 @@ def test_the_treasury_travels_as_a_flag_not_as_an_owner(mock_ctx, monkeypatch):
     assert by_krs["0000076705"]["owner_skarb_panstwa"] is False
 
 
-def test_upload_payloads_carry_the_supervisory_organ(mock_ctx, monkeypatch):
+def test_upload_payloads_carry_the_supervisory_body(mock_ctx, monkeypatch):
     """An SPZOZ payload says its supervisory organ is a rada spoleczna.
 
     The whole reason the field exists is that the site cannot work this out: it
@@ -358,3 +358,57 @@ def test_upload_payloads_carry_the_supervisory_organ(mock_ctx, monkeypatch):
     assert by_krs["0000079907"]["categories"] == ["szpitale"]
     # The empty string, not a missing key: it is what clears a stored value.
     assert by_krs["0000076705"]["supervisory_body"] == ""
+
+
+def test_upload_payloads_carry_the_organ_the_register_names(mock_ctx, monkeypatch):
+    """The other supervisory field, and the one that is only ever reported.
+
+    `supervisory_body` above is derived from the form and always has an answer.
+    This one is transcribed from `dzial2.organNadzoru` by
+    `scrapers.krs.organs`, so a company whose odpis was never read carries no
+    key at all - and the ingest leaves the stored value alone rather than
+    clearing it. `legal_form` travels beside it for the same page.
+    """
+    pipeline = Pipeline.create(CompaniesPayloads)
+    pipeline.companies = MockPipeline(
+        [
+            {
+                "krs": "0000079907",
+                "name": "SP ZOZ Szpital Specjalistyczny nr I",
+                "city": "Bytom",
+                "activity": [],
+                "form": "SAMODZIELNY PUBLICZNY ZAKŁAD OPIEKI ZDROWOTNEJ",
+                "supervisory_organ": "rada_spoleczna",
+                "is_public": True,
+            },
+            {
+                # Never met through an api-krs odpis, so no organ was read.
+                "krs": "0000076705",
+                "name": "PKP Szybka Kolej Miejska w Trojmiescie",
+                "city": "Gdynia",
+                "activity": ["49.12.Z"],
+                "form": "SPÓŁKA AKCYJNA",
+                "is_public": True,
+            },
+        ]
+    )
+    monkeypatch.setattr(
+        "analysis.payloads.company.KorytaCompanies",
+        lambda *args, **kwargs: MockPipeline(
+            [{"krs": krs} for krs in ("0000079907", "0000076705")]
+        ),
+    )
+
+    by_krs = {
+        row["krs"]: row for row in pipeline.process(mock_ctx).to_dict(orient="records")
+    }
+
+    assert by_krs["0000079907"]["supervisory_organ"] == "rada_spoleczna"
+    assert (
+        by_krs["0000079907"]["legal_form"]
+        == "SAMODZIELNY PUBLICZNY ZAKŁAD OPIEKI ZDROWOTNEJ"
+    )
+    # No organ read means no key, which is what stops the ingest clearing one
+    # an earlier run stored. NaN is how `from_records` fills a column a row
+    # never set; `clean_payload` is not what drops it, `submit_payload` is.
+    assert pd.isna(by_krs["0000076705"]["supervisory_organ"])

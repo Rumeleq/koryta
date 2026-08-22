@@ -5,6 +5,8 @@ import type {
   Person,
   Topic,
 } from "./model";
+import type { SupervisoryOrgan } from "./companyOrgans";
+import { supervisoryOrgans } from "./companyOrgans";
 import {
   isValidNip,
   isValidRegon,
@@ -62,6 +64,31 @@ export const companyRequestSchema = z.object({
    * whether it is publicly traded. Only `true` is an assertion, see
    * `Company.isPublic`. */
   is_public: z.boolean().optional(),
+  /** `dzial1.danePodmiotu.formaPrawna`, verbatim - see `Company.legalForm`.
+   *
+   * Sent raw rather than as a category for the same reason `activity` is: the
+   * mapping is a judgement the site makes, and it is what lets an SPZOZ be
+   * recognised as a hospital at all, since those carry no PKD codes. */
+  legal_form: z.string().optional(),
+  /** Which organ `dzial2.organNadzoru` names, normalized upstream by
+   * `scrapers/krs/organs.py` - see `Company.supervisoryOrgan`.
+   *
+   * Distinct from `supervisory_body` above, and the two must not be conflated:
+   * that one reads the legal form and is what the site excludes an unpaid seat
+   * by; this one reports what the entry actually filed, and is `"brak"` for
+   * most SPZOZ.
+   *
+   * Snake_case here and camelCase on the node, as `is_public` and `teryt`
+   * already are: the name matches the scrapers' `Company.supervisory_organ`,
+   * which is the key `dataclasses.asdict` puts in the payload.
+   *
+   * An enum, unlike `supervisory_body` and `categories`, so a value the site
+   * does not understand is a 400 rather than a string nothing can filter on.
+   * That is safe only because the scrapers' normalisation is total - every
+   * unrecognised organ name folds to `"inny"`. Note the failure mode until both
+   * sides ship: `z.object` is not strict, so an unknown key is dropped silently
+   * with a 200, exactly as `committee` was below. */
+  supervisory_organ: z.enum(supervisoryOrgans).optional(),
 });
 
 export type CompanyRequest = {
@@ -75,6 +102,8 @@ export type CompanyRequest = {
   categories?: string[];
   supervisory_body?: string;
   is_public?: boolean;
+  legal_form?: string;
+  supervisory_organ?: SupervisoryOrgan;
 };
 
 const employmentRequestSchema = z.object({

@@ -87,6 +87,31 @@ export default defineEventHandler(async (event) => {
       revisionData.supervisoryBody = body.supervisory_body;
     }
   }
+  // `formaPrawna` verbatim, for display beside a hospital's board on
+  // /eksploruj/szpitale. Nothing on the site reads it and decides anything -
+  // what follows from the form about pay is `supervisoryBody` above, and about
+  // sector is `categories`, both worked out by the pipelines.
+  if (body.legal_form) revisionData.legalForm = body.legal_form;
+  // The organ the register itself names, as opposed to the one the form
+  // implies. Reported, never used as a rule: it is "brak" for most SPZOZ,
+  // whose rada społeczna is created by statute and never filed, so it can say
+  // a board is unpaid but never that one is paid. See `shared/companyOrgans.ts`
+  // for why that keeps it separate from `supervisoryBody`.
+  //
+  // No "a human answer wins" guard, unlike `isPublic` below, and the
+  // difference is where the value comes from. Ownership is something the
+  // scrapers *infer* and often cannot see at all, so a human's answer has to
+  // outrank theirs. The supervisory organ is something KRS publishes outright
+  // and the scrapers only transcribe: there is no form on the site that writes
+  // one, so there is no human answer to protect, and if the register is wrong
+  // the fix belongs in the register.
+  //
+  // What it does need is the presence check every ingest field needs: the
+  // revision is written to the node wholesale, so a payload from a pipeline
+  // that predates the field must leave what is stored alone rather than clear
+  // it.
+  if (body.supervisory_organ)
+    revisionData.supervisoryOrgan = body.supervisory_organ;
   // A human answer wins. KRS cannot see who owns a spółka akcyjna, so the
   // scrapers' `false` is "no evidence" rather than "privately owned", and
   // re-running an ingest must not undo somebody who knew better.

@@ -71,6 +71,17 @@ class Company:
     children: list[str] = field(default_factory=list)
     parents: list[Owner] = field(default_factory=list)
     is_public: bool = False
+    #: Which kind of organ supervises the company, normalised - see
+    #: `scrapers.krs.organs.SUPERVISION_KINDS`. None is "no odpis was read
+    #: for this company", which is not the same as its "brak", meaning the
+    #: odpis listed no supervisory organ at all.
+    #:
+    #: Distinct from `entities.company_bodies.supervisory_body`, which reads
+    #: the *legal form* and answers whether a seat is paid. This reads the
+    #: register's own `dzial2.organNadzoru`, which is finer but incomplete -
+    #: 719 of 1,192 SPZOZ file no organ at all - so it reports rather than
+    #: decides. See `scrapers.krs.organs`.
+    supervisory_organ: str | None = None
 
     def __post_init__(self):
         """Ensures the KRS ID is zero-padded to 10 digits."""

@@ -178,7 +178,7 @@ def test_every_role_we_compare_is_one_rejestrio_actually_models(ctx, coverage):
         for people in conclusive["missing"]
         for row in (people if isinstance(people, (list, tuple)) else ())
     )
-    checked_roles = {role for *_, role, _ in PERSON_PATHS}
+    checked_roles = {path.role for path in PERSON_PATHS}
     unknown = set(missing_roles) - checked_roles
 
     assert not unknown, f"missing people carry roles nothing declares: {unknown}"

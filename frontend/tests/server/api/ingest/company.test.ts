@@ -548,6 +548,96 @@ describe("api/ingest/company", () => {
     );
   });
 
+  it("stores the legal form and the organ the register names", async () => {
+    // Both are carried for display on /eksploruj/szpitale. Neither decides
+    // anything: what follows from the form about pay is `supervisoryBody`,
+    // which the pipelines send separately.
+    mockReadBody.mockResolvedValue({
+      krs: "12345",
+      name: "SZPITAL POWIATOWY W GRÓJCU",
+      legal_form: "SAMODZIELNY PUBLICZNY ZAKŁAD OPIEKI ZDROWOTNEJ",
+      supervisory_organ: "rada_spoleczna",
+    });
+    mockGet.mockResolvedValue({ empty: true, docs: [] });
+    mockDoc.mockReturnValue(mockRef);
+
+    await handler({} as any);
+
+    expect(createRevisionTransaction).toHaveBeenNthCalledWith(
+      1,
+      mockDb,
+      expect.anything(),
+      { uid: "test-user-id" },
+      mockRef,
+      {
+        name: "SZPITAL POWIATOWY W GRÓJCU",
+        type: "place",
+        krsNumber: "12345",
+        legalForm: "SAMODZIELNY PUBLICZNY ZAKŁAD OPIEKI ZDROWOTNEJ",
+        supervisoryOrgan: "rada_spoleczna",
+      },
+      { automatic: true, approve: true, published: true },
+    );
+  });
+
+  it("leaves a stored supervisory organ alone when the payload says nothing", async () => {
+    // A revision is written to the node wholesale, so a payload from a pipeline
+    // that predates the field must not clear what an earlier run stored.
+    mockReadBody.mockResolvedValue({
+      krs: "12345",
+      name: "Szpital sp. z o.o.",
+    });
+    const existingRef = { id: "existing-id" };
+    mockGet.mockResolvedValue({
+      empty: false,
+      docs: [
+        {
+          ref: existingRef,
+          data: () => ({
+            legalForm: "SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ",
+            supervisoryOrgan: "rada_nadzorcza",
+            published: true,
+          }),
+        },
+      ],
+    });
+
+    await handler({} as any);
+
+    expect(createRevisionTransaction).toHaveBeenNthCalledWith(
+      1,
+      mockDb,
+      expect.anything(),
+      { uid: "test-user-id" },
+      existingRef,
+      {
+        name: "Szpital sp. z o.o.",
+        type: "place",
+        krsNumber: "12345",
+        legalForm: "SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ",
+        supervisoryOrgan: "rada_nadzorcza",
+      },
+      expect.objectContaining({ automatic: true }),
+    );
+  });
+
+  it("rejects an organ name the site does not understand", async () => {
+    // An enum rather than a free string, so a value nothing can filter on is a
+    // 400 rather than a row that quietly never matches. Safe only because the
+    // scrapers' normalisation is total - every unrecognised name folds to
+    // "inny". `supervisory_body` beside it is deliberately *not* an enum, for
+    // the reason `categories` is not.
+    mockReadBody.mockResolvedValue({
+      krs: "12345",
+      name: "Test Company",
+      supervisory_organ: "RADA SPOŁECZNA",
+    });
+
+    await expect(handler({} as any)).rejects.toMatchObject({
+      statusCode: 400,
+    });
+  });
+
   it("should create edges for owned companies", async () => {
     mockReadBody.mockResolvedValue({
       krs: "12345",

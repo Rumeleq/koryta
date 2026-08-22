@@ -93,6 +93,9 @@ export const revisionFieldLabels: Record<string, string> = {
   isPublic: "w rękach publicznych",
   categories: "kategorie",
   activity: "kody PKD",
+  legalForm: "forma prawna",
+  supervisoryBody: "organ nadzoru",
+  supervisoryOrgan: "organ nadzoru w KRS",
   // article
   sourceURL: "adres źródła",
   shortName: "nazwa skrócona",

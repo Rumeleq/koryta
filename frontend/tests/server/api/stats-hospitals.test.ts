@@ -1,0 +1,163 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import handler from "../../../server/api/stats/hospitals.get";
+
+type QueryCall = {
+  collection: string;
+  wheres: unknown[][];
+  selects: string[];
+};
+
+const { queries, mockGetAll, nodeDocs, edgeDocs, personDocs } = vi.hoisted(
+  () => {
+    const globals = globalThis as Record<string, unknown>;
+    globals.defineEventHandler = (fn: unknown) => fn;
+
+    return {
+      queries: [] as QueryCall[],
+      mockGetAll: vi.fn(),
+      nodeDocs: [] as { id: string; data: () => unknown }[],
+      edgeDocs: [] as { id: string; data: () => unknown }[],
+      personDocs: [] as Record<string, unknown>[],
+    };
+  },
+);
+
+vi.mock("firebase-admin/firestore", () => {
+  const collection = (name: string) => {
+    const call: QueryCall = { collection: name, wheres: [], selects: [] };
+    queries.push(call);
+    const query: Record<string, unknown> = {
+      doc: (id: string) => ({ id }),
+      where: (...args: unknown[]) => {
+        call.wheres.push(args);
+        return query;
+      },
+      select: (...fields: string[]) => {
+        call.selects.push(...fields);
+        return query;
+      },
+      get: async () => ({ docs: name === "nodes" ? nodeDocs : edgeDocs }),
+    };
+    return query;
+  };
+  return { getFirestore: () => ({ collection, getAll: mockGetAll }) };
+});
+
+// The handler is wrapped in nitro's cache; here it runs straight through.
+vi.mock("~~/server/utils/handlers", () => ({
+  authCachedEventHandler: (fn: unknown) => fn,
+}));
+
+const call = () =>
+  (handler as unknown as (event: unknown) => Promise<never>)({});
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  queries.length = 0;
+  nodeDocs.length = 0;
+  edgeDocs.length = 0;
+  personDocs.length = 0;
+  mockGetAll.mockImplementation(async () =>
+    personDocs.map((data) => ({
+      id: data.id as string,
+      exists: true,
+      data: () => data,
+    })),
+  );
+});
+
+describe("/api/stats/hospitals", () => {
+  it("reads only what it needs, with queries the declared indexes serve", async () => {
+    nodeDocs.push(
+      {
+        id: "h1",
+        data: () => ({
+          name: "Szpital Powiatowy sp. z o.o.",
+          categories: ["szpitale"],
+          isPublic: true,
+          published: true,
+          supervisoryOrgan: "rada_nadzorcza",
+        }),
+      },
+      {
+        id: "w1",
+        data: () => ({
+          name: "Wodociągi",
+          categories: ["wodociagi"],
+          isPublic: true,
+          published: true,
+        }),
+      },
+    );
+    edgeDocs.push({
+      id: "e1",
+      data: () => ({
+        source: "p1",
+        target: "h1",
+        name: "Rada Nadzorcza",
+        published: true,
+      }),
+    });
+    personDocs.push({
+      id: "p1",
+      name: "Jan Kowalski",
+      parties: ["PiS"],
+      published: true,
+    });
+
+    const stats = await call();
+
+    const [places, edges] = queries;
+    // One equality on `type`, which Firestore serves from a single field index.
+    // The hospital filter itself cannot be a query: `categories` is stored as a
+    // numbered-key object and `array-contains` does not match those.
+    expect(places?.collection).toBe("nodes");
+    expect(places?.wheres).toEqual([["type", "==", "place"]]);
+    expect(places?.selects).toContain("supervisoryOrgan");
+    expect(places?.selects).not.toContain("content");
+
+    // `target` + `type`, which is the composite index already in
+    // firestore.indexes.json. Only the hospitals are asked for - reading the
+    // whole edges collection is one of the known cost sinks.
+    expect(edges?.collection).toBe("edges");
+    expect(edges?.wheres).toEqual([
+      ["target", "in", ["h1"]],
+      ["type", "==", "employed"],
+    ]);
+
+    // A person node carries a whole biography and this needs the party.
+    expect(mockGetAll).toHaveBeenCalledTimes(1);
+    const args = mockGetAll.mock.calls[0]!;
+    expect(args.at(-1)).toEqual({
+      fieldMask: ["name", "parties", "published", "deleted"],
+    });
+    expect(args.slice(0, -1)).toEqual([{ id: "p1" }]);
+
+    expect(stats).toMatchObject({
+      hospitals: 1,
+      paid: {
+        hospitals: 1,
+        seats: 1,
+        byParty: [{ party: "PiS", seats: 1, people: 1, hospitals: 1 }],
+      },
+    });
+  });
+
+  it("asks for no edges at all when nothing qualifies", async () => {
+    nodeDocs.push({
+      id: "h1",
+      // Published and tagged, but nothing says the public sector owns it.
+      data: () => ({
+        name: "Prywatna klinika",
+        categories: ["szpitale"],
+        published: true,
+      }),
+    });
+
+    const stats = await call();
+
+    expect(queries.map((q) => q.collection)).toEqual(["nodes"]);
+    expect(mockGetAll).not.toHaveBeenCalled();
+    expect(stats).toMatchObject({ hospitals: 0, paid: { seats: 0 } });
+  });
+});

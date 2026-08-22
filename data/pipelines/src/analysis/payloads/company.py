@@ -13,11 +13,35 @@ from scrapers.map.jst import SKARB_PANSTWA
 from scrapers.stores import Context, Pipeline
 
 
+def add_register_fields(payload: dict, form: str | None, organ) -> None:
+    """The two register fields the site holds for display and nothing else.
+
+    `legal_form` is `formaPrawna` verbatim; `supervisory_organ` is what
+    `dzial2.organNadzoru` names, normalised by `scrapers.krs.organs`. Neither
+    decides anything - `supervisory_body`, set beside them from `form`, is what
+    the site excludes an unpaid seat by. Kept apart deliberately: the organ is
+    finer, and can name a komisja rewizyjna, but it is absent for 719 of the
+    1,192 SPZOZ in the crawl, so it can say a board is unpaid and never that
+    one is paid.
+
+    Omitted rather than sent empty when KRS did not say. The ingest writes a
+    revision wholesale, so a key present and empty clears whatever the node
+    already holds, and for a company no odpis was ever read for that would be
+    a guess dressed as an answer. `supervisory_body` is the exception and
+    sends "" on purpose: it is derived, so it always has an answer.
+    """
+    if form:
+        payload["legal_form"] = form
+    if isinstance(organ, str) and organ.strip():
+        payload["supervisory_organ"] = organ.strip()
+
+
 class CompaniesPayloads(Pipeline):
     """Emits ingest payloads for companies already submitted to koryta.pl.
 
-    Joins the enriched `Companies` data (PKD `activity` + the `is_public`
-    spółka-publiczna flag) with the set of companies already on the site
+    Joins the enriched `Companies` data (PKD `activity`, the `is_public`
+    spółka-publiczna flag, the register's `form`, and the `supervisory_organ`
+    it names) with the set of companies already on the site
     (`KorytaCompanies`), so a migration re-submits only companies that already
     exist.
 
@@ -33,6 +57,15 @@ class CompaniesPayloads(Pipeline):
     243 SPZOZ hospitals are supervised by a rada spoleczna rather than a rada
     nadzorcza, and a seat on one is unpaid, so the site has to be able to tell
     those seats apart from the board seats it counts as employment.
+
+    Beside it, and not to be confused with it, go `legal_form` - the register's
+    `formaPrawna` verbatim - and `supervisory_organ`, the organ `dzial2` itself
+    names, normalised by `scrapers.krs.organs`. Those two are what
+    /eksploruj/szpitale reports a hospital's board by, and they are reporting
+    only: `supervisory_organ` is "brak" for 719 of the 1,192 SPZOZ in the
+    crawl, because a rada spoleczna is created by statute and often never
+    filed, so it can say a board is unpaid but never that one is paid. The
+    rule stays with `supervisory_body`, which reads the form and is total.
 
     The payloads carry `teryt_code`, which the uploader maps to the `teryt`
     field the ingest endpoint links a company to its region with. They also
@@ -132,6 +165,7 @@ class CompaniesPayloads(Pipeline):
                 "owner_teryts": owner_teryts,
                 "owner_skarb_panstwa": skarb_panstwa,
             }
+            add_register_fields(payload, form, row.get("supervisory_organ"))
 
             teryt_code = row.get("teryt_code")
             if isinstance(teryt_code, str) and teryt_code.strip():
@@ -167,6 +201,8 @@ class CompaniesPayloads(Pipeline):
                     "owner_teryts",
                     "owner_skarb_panstwa",
                     "teryt_code",
+                    "legal_form",
+                    "supervisory_organ",
                 ]
             )
         return pd.DataFrame.from_records(payloads)

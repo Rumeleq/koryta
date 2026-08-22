@@ -2,13 +2,15 @@
 // TODO remove this and fix the typing
 
 import { applyPartiesFilter, fetchNodes } from "~~/server/utils/fetch";
-import { isInWojewodztwo, isWojewodztwoTeryt } from "~~/shared/teryt";
-// `asArray` lives in `shared/model` rather than here: the edit form and the
-// migration scripts read the same fields off the same documents, and a second
-// copy of it is how one of them ends up not coping with the map shape. Still
-// re-exported, since every existing caller reaches for it through this module.
 import { asArray } from "~~/shared/model";
+import { isInWojewodztwo, isWojewodztwoTeryt } from "~~/shared/teryt";
 
+// Still exported from here, which is where every caller and half the comments
+// in the repo look for it. The definition moved to `shared/model` so that a
+// handler wanting nothing but the array can have it without importing this
+// module's Firestore cache - and so that the edit form and the migration
+// scripts, which read the same fields off the same documents, cannot end up
+// with a second copy that does not cope with the map shape.
 export { asArray };
 
 /** A node filter that can run either as a Firestore clause or in memory.
