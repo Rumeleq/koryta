@@ -104,16 +104,6 @@
   </HomeSection>
   <HomeSection>
     <v-row>
-      <v-col cols="12">
-        <HomeHeading
-          class="scroll-topic"
-          title="Zobacz źródła"
-          center
-          to="/zrodla"
-        />
-        <HomeSourceCards />
-      </v-col>
-
       <v-col cols="12" class="text-center">
         <CardCallToAction />
       </v-col>

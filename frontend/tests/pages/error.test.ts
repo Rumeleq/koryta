@@ -42,7 +42,7 @@ describe("ErrorPage", () => {
 
     expect(wrapper.text()).toContain("404");
     expect(wrapper.text()).toContain("Nie ma takiej strony");
-    expect(wrapper.html()).toContain('to="/lista"');
+    expect(wrapper.html()).toContain('to="/eksploruj/tabela"');
   });
 
   it("shows a generic message for server errors", () => {

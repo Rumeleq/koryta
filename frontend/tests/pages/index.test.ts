@@ -36,7 +36,6 @@ describe("IndexPage", () => {
           HomeHero: true,
           HomeIntro: true,
           HomeHeading: true,
-          HomeSourceCards: true,
           ChartPolandMap: true,
           HomeCard: {
             template: '<div><slot name="header"></slot><slot></slot></div>',
