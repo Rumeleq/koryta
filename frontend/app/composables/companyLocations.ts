@@ -1,6 +1,6 @@
 import { computed } from "vue";
 import { useAuthState } from "@/composables/auth";
-import { regionNamesByPlaceId } from "~/utils/companyLocation";
+import { regionsByPlaceId } from "~/utils/companyLocation";
 
 /** Where every company sits, keyed by its node id.
  *
@@ -28,12 +28,21 @@ export function useCompanyLocations() {
     { server: false, key: "company-locations-regions" },
   );
 
-  /** Region name for each company, scoped to what the reader may see: an editor
-   * gets seats asserted by edges nobody has approved yet, everyone else does
-   * not. */
-  const companyLocations = computed(() =>
-    regionNamesByPlaceId(regions.value ?? {}, user.value ? "all" : "approved"),
+  /** The region each company sits in, scoped to what the reader may see: an
+   * editor gets seats asserted by edges nobody has approved yet, everyone else
+   * does not. */
+  const companyRegions = computed(() =>
+    regionsByPlaceId(regions.value ?? {}, user.value ? "all" : "approved"),
   );
 
-  return { regions, companyLocations };
+  /** The same, for callers that only spell the region out and never draw it. */
+  const companyLocations = computed(() => {
+    const names: Record<string, string> = {};
+    for (const [id, region] of Object.entries(companyRegions.value)) {
+      names[id] = region.name;
+    }
+    return names;
+  });
+
+  return { regions, companyRegions, companyLocations };
 }

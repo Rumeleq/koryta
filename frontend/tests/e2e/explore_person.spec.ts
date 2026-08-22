@@ -78,4 +78,33 @@ test.describe("Explore Person", () => {
       }),
     ).toBeVisible({ timeout: 15000 });
   });
+  test("marks the województwo the person works in on the map", async ({
+    page,
+  }) => {
+    // Jan Kowalski's only employer is seated in Województwo Pomorskie, so the
+    // whole voivodeship is what the drawer can honestly colour - teryt 2261 is
+    // one of its powiaty.
+    await page.goto("/eksploruj/tabela");
+    await expect(page.locator(".v-main")).toBeVisible();
+    await expect(page.locator(".v-data-table__progress")).not.toBeVisible();
+
+    await page
+      .locator("tbody tr", { hasText: "Jan Kowalski" })
+      .first()
+      .locator(".text-primary.cursor-pointer")
+      .first()
+      .click();
+
+    const drawer = page.locator(".v-navigation-drawer--active");
+    const map = drawer.locator("svg.person-locations-map");
+    await expect(map).toBeVisible({ timeout: 15000 });
+
+    await expect(map.locator('path[data-teryt="2261"]')).toHaveClass(
+      /powiat--work/,
+      { timeout: 15000 },
+    );
+    await expect(map.locator('path[data-teryt="1261"]')).not.toHaveClass(
+      /powiat--/,
+    );
+  });
 });

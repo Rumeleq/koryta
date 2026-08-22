@@ -36,6 +36,12 @@
       </v-card-title>
     </v-card>
 
+    <ChartPersonLocations
+      v-if="person && mapLocations.length"
+      :key="`map-${person.id}`"
+      :locations="mapLocations"
+    />
+
     <div v-if="node" class="pa-4 pt-0">
       <ExploreProposeChange v-if="person" :key="person.id" :person="person">
         <ButtonVoteNumber
@@ -63,7 +69,12 @@ import { computed } from "vue";
 import { generateEntityUrl } from "~/composables/slugs";
 import type { EdgeNode } from "~/composables/edges";
 import type { NodeMaybeRich, PersonRich } from "~~/shared/model";
-import { employmentPlaceIds, workLocationNames } from "~/utils/companyLocation";
+import type { PlaceRegion } from "~/utils/companyLocation";
+import {
+  employmentPlaceIds,
+  workLocationRegions,
+} from "~/utils/companyLocation";
+import { personLocations } from "~/utils/personLocations";
 
 const props = withDefaults(
   defineProps<{
@@ -76,18 +87,19 @@ const props = withDefaults(
     /** Context for the search suggestions, where the caller has any. */
     region?: [string, string];
     company?: [string, string];
-    /** Region name per company node id, from `useCompanyLocations`. Turns the
-     * employers in `edges` into the cities to search the person in - the drawer
-     * works them out here rather than reading `person.workLocations`, so that a
-     * node opened straight from an id, as the note queues do, is covered too. */
-    companyLocations?: Record<string, string>;
+    /** The region each company node id sits in, from `useCompanyLocations`.
+     * Turns the employers in `edges` into the cities to search the person in
+     * and the shapes to colour on the map - the drawer works them out here
+     * rather than reading `person.workLocations`, so that a node opened
+     * straight from an id, as the note queues do, is covered too. */
+    companyRegions?: Record<string, PlaceRegion>;
   }>(),
   {
     node: undefined,
     edges: () => [],
     region: undefined,
     company: undefined,
-    companyLocations: undefined,
+    companyRegions: undefined,
   },
 );
 
@@ -97,9 +109,20 @@ const person = computed(() =>
   props.node?.type === "person" ? (props.node as PersonRich) : undefined,
 );
 
-const workLocations = computed(() =>
-  props.companyLocations
-    ? workLocationNames(employmentPlaceIds(props.edges), props.companyLocations)
+const workRegions = computed(() =>
+  props.companyRegions
+    ? workLocationRegions(employmentPlaceIds(props.edges), props.companyRegions)
     : undefined,
+);
+
+const workLocations = computed(() =>
+  workRegions.value?.map((region) => region.name),
+);
+
+/** Everywhere the person shows up, for the map. Elections come off the node the
+ * caller focused, which only a view that built it from the subgraph has - a
+ * node fetched by id carries none, and the map then shows the employers alone. */
+const mapLocations = computed(() =>
+  personLocations(person.value?.elections ?? [], workRegions.value ?? []),
 );
 </script>

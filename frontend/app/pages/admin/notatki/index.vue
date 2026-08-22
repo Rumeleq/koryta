@@ -4,7 +4,7 @@
       v-model="openDrawer"
       :node="focusedNode"
       :edges="focusedEdges"
-      :company-locations="companyLocations"
+      :company-regions="companyRegions"
     />
 
     <div class="d-flex align-center justify-space-between flex-wrap ga-3 mb-4">
@@ -536,7 +536,7 @@ const patchRow = async (
 // A node opened here comes straight from /api/nodes/[id], so it carries no
 // employment context of its own; the drawer derives the cities to search in
 // from the edges it is handed and this lookup.
-const { companyLocations } = useCompanyLocations();
+const { companyRegions } = useCompanyLocations();
 
 const openDrawer = shallowRef(false);
 const focusedNode = shallowRef<NodeMaybeRich | undefined>(undefined);
