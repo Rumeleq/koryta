@@ -13,6 +13,7 @@ from entities.company import Company as KrsCompany
 from entities.person import KRS as KrsPerson
 from scrapers.krs.data import CompaniesHardcoded
 from scrapers.krs.graph import QueryRelation
+from scrapers.krs.organs import supervision_kind
 from scrapers.map.jst import AMBIGUOUS, SKARB_PANSTWA, JstIndex
 from scrapers.map.postal_codes import PostalCodes
 from scrapers.map.teryt import Jst, Teryt, normalize_unit_name
@@ -273,6 +274,14 @@ class CompaniesKRS(Pipeline[KrsCompany]):
             existing.regon = existing.regon or company.regon
             existing.activity = existing.activity or company.activity
             existing.is_public = existing.is_public or company.is_public
+            # Only an api-krs odpis carries these two; a company first seen
+            # through rejestr.io arrives with both empty, and without these
+            # lines whichever blob was read first would pin them empty for
+            # good.
+            existing.form = existing.form or company.form
+            existing.supervisory_organ = (
+                existing.supervisory_organ or company.supervisory_organ
+            )
             for owner in company.parents:
                 if owner not in existing.parents:
                     existing.parents.append(owner)
@@ -609,6 +618,14 @@ def company_from_api_krs(  # noqa: PLR0915
         is_public = "organPodmiotZalozycielskiMinisterNadzorujacy" in dzial1
 
         form = dzial1.get("danePodmiotu", {}).get("formaPrawna")
+        # Which organ the register itself names, as opposed to the one the
+        # legal form implies. See `scrapers.krs.organs`: it is the finer
+        # answer, and the one /eksploruj/szpitale reports, but it is not the
+        # one anything decides pay on - "brak" is the register listing no
+        # organ, which for an SPZOZ is the usual case rather than evidence of
+        # a paid board. `entities.company_bodies` still rules on that, off
+        # `form`.
+        supervisory_organ = supervision_kind(dane.get("dzial2", {}))
 
         # `siedziba` is the register's own answer to which województwo,
         # powiat and gmina this company is in - three names rather than a code,
@@ -697,6 +714,7 @@ def company_from_api_krs(  # noqa: PLR0915
             activity=activity,
             form=form,
             is_public=is_public,
+            supervisory_organ=supervisory_organ,
         )
     except KeyError as e:
         raise ValueError(

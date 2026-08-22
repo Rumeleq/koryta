@@ -8,6 +8,9 @@
           ostatnio działo.
         </p>
       </div>
+      <v-btn to="/eksploruj/szpitale" variant="tonal">
+        Rady nadzorcze szpitali
+      </v-btn>
       <v-btn
         to="/eksploruj/nowe"
         color="primary"

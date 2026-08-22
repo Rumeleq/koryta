@@ -15,12 +15,61 @@ whose only change was to its proxies then never looked like it had changed at
 all, so nothing re-queried it. `unread_person_paths` walks a response looking
 for people outside the table, so a section the register adds later shows up as
 a failing invariant rather than as silence.
+
+A person's `role` is the table's word for the section, and after a colon
+whatever the register says in more detail - the function they hold, or, for a
+supervisory organ, which organ it is (see `scrapers.krs.organs`). That detail
+is part of what `censored.hash_people_set` hashes, so widening it rewrites the
+hash of every company that has one: 5,600 of the 7,840 in the crawl gained a
+"nadzor: rada_nadzorcza" or "nadzor: rada_spoleczna" where they used to say
+"nadzor". That is not a false change signal - `KRSCensoredPeople.process`
+rebuilds every (krs, date) row in one pass, so all of a company's dates move
+together and the diff between them is unchanged - but it does mean the output
+has to be regenerated wholesale, ``--refresh KRSCensoredPeople``, rather than
+compared against rows written before the change.
 """
 
+import typing
 from dataclasses import dataclass
 
-#: Where an OdpisAktualny keeps people, as
-#: ``(dzial, key, inner key or None, role, field naming the role in detail)``.
+from scrapers.krs.organs import organ_kind
+
+
+class PersonPath(typing.NamedTuple):
+    """One place an OdpisAktualny keeps people, and how to read a role there.
+
+    The register spells a role out in one of two places and it is not the same
+    place both times. For ``reprezentacja`` the detail is on the person -
+    33,129 of them carry a ``funkcjaWOrganie`` of "PREZES ZARZĄDU" or "CZŁONEK
+    ZARZĄDU" - and the organ around them has no ``nazwa`` at all. For
+    ``organNadzoru`` it is exactly the other way round: not one of the 52,146
+    supervisory members carries a ``funkcjaWOrganie``, and what tells them
+    apart - a paid rada nadzorcza from an unpaid rada społeczna - is the
+    organ's own ``nazwa``. Hence two fields rather than one: `role_field` reads
+    off the person, `organ_field` off the organ they sit in.
+
+    A row is a NamedTuple rather than a bare tuple so that every reader names
+    the field it wants. Two of them used to unpack from the *end* - ``{role
+    for *_, role, _ in PERSON_PATHS}`` - and a table that grew a column would
+    have gone on passing while they read `role_field` as the role.
+    """
+
+    dzial: str
+    key: str
+    #: The key inside a container that holds the people, or None where the
+    #: container is itself a person.
+    inner: str | None
+    role: str
+    #: Field on the person naming their role in detail.
+    role_field: str = ""
+    #: Field on the containing organ saying which organ this is. Its value is
+    #: normalised by `scrapers.krs.organs.organ_kind` before it reaches a role,
+    #: because the register writes it as free text - 117 spellings across the
+    #: crawl, typos and all - and a role string gets compared and hashed.
+    organ_field: str = ""
+
+
+#: Where an OdpisAktualny keeps people, as `PersonPath` rows.
 #:
 #: Three container shapes occur and each entry covers whichever it meets: a
 #: bare list of people (``prokurenci``), an organ wrapping them in a ``sklad``
@@ -28,50 +77,53 @@ from dataclasses import dataclass
 #: single person dict (``reprezentacjaIBIGBPPSPZOZ``). The proceedings in
 #: dzial6 nest one further: a list of proceedings, each holding the list of
 #: people appointed by it.
-PERSON_PATHS = (
-    ("dzial1", "wspolnicySpzoo", None, "wspolnik", ""),
-    ("dzial1", "wspolnicyPartnerzy", None, "wspolnik_partner", ""),
-    ("dzial1", "komitetZalozycielski", None, "komitet_zalozycielski", ""),
-    ("dzial1", "jedynyAkcjonariusz", None, "jedyny_akcjonariusz", ""),
-    ("dzial2", "reprezentacja", "sklad", "reprezentacja", "funkcjaWOrganie"),
-    ("dzial2", "organNadzoru", "sklad", "nadzor", "funkcjaWOrganie"),
-    ("dzial2", "prokurenci", None, "prokurent", "rodzajProkury"),
-    ("dzial2", "pelnomocnicy", None, "pelnomocnik", ""),
-    ("dzial2", "osobyReprezentujacePZ", None, "osoba_pz", ""),
-    ("dzial2", "reprezentacjaIBIGBPPSPZOZ", None, "kierownik_pzoz", ""),
-    ("dzial5", "kurator", None, "kurator", ""),
-    ("dzial6", "likwidacja", "likwidatorzy", "likwidator", ""),
-    ("dzial6", "postepowanieUpadlosciowe", "daneSyndyka", "syndyk", ""),
-    (
-        "dzial6",
-        "postepowanieUpadlosciowe",
-        "daneOsobyReprezentujacejUpadlego",
-        "reprezentant_upadlego",
-        "",
-    ),
-    (
-        "dzial6",
-        "zarzadKomisarycznyPrzymusowyPowierzenieZarzadzania",
-        "zarzadcyPrzedstawiciele",
-        "zarzadca_komisaryczny",
-        "",
-    ),
-    (
-        "dzial6",
-        "postepowanieRestrukturyzacyjneNaprawczePrzymusowaRestrukturyzacja",
-        "nadzorcaZarzadcaReprezentujacyAdministratorPelnomocnik",
-        "nadzorca_restrukturyzacyjny",
-        "",
-    ),
-    (
-        "dzial6",
-        "postepowanieRestrukturyzacyjneNaprawczePrzymusowaRestrukturyzacja"
-        "UporzadkowanaLikwidacja",
-        "nadzorcaZarzadcaReprezentujacyAdministratorZastepcaPelnomocnik"
-        "ZarzadcaNadzwyczajny",
-        "nadzorca_restrukturyzacyjny",
-        "",
-    ),
+PERSON_PATHS = tuple(
+    PersonPath(*row)
+    for row in (
+        ("dzial1", "wspolnicySpzoo", None, "wspolnik", ""),
+        ("dzial1", "wspolnicyPartnerzy", None, "wspolnik_partner", ""),
+        ("dzial1", "komitetZalozycielski", None, "komitet_zalozycielski", ""),
+        ("dzial1", "jedynyAkcjonariusz", None, "jedyny_akcjonariusz", ""),
+        ("dzial2", "reprezentacja", "sklad", "reprezentacja", "funkcjaWOrganie"),
+        ("dzial2", "organNadzoru", "sklad", "nadzor", "funkcjaWOrganie", "nazwa"),
+        ("dzial2", "prokurenci", None, "prokurent", "rodzajProkury"),
+        ("dzial2", "pelnomocnicy", None, "pelnomocnik", ""),
+        ("dzial2", "osobyReprezentujacePZ", None, "osoba_pz", ""),
+        ("dzial2", "reprezentacjaIBIGBPPSPZOZ", None, "kierownik_pzoz", ""),
+        ("dzial5", "kurator", None, "kurator", ""),
+        ("dzial6", "likwidacja", "likwidatorzy", "likwidator", ""),
+        ("dzial6", "postepowanieUpadlosciowe", "daneSyndyka", "syndyk", ""),
+        (
+            "dzial6",
+            "postepowanieUpadlosciowe",
+            "daneOsobyReprezentujacejUpadlego",
+            "reprezentant_upadlego",
+            "",
+        ),
+        (
+            "dzial6",
+            "zarzadKomisarycznyPrzymusowyPowierzenieZarzadzania",
+            "zarzadcyPrzedstawiciele",
+            "zarzadca_komisaryczny",
+            "",
+        ),
+        (
+            "dzial6",
+            "postepowanieRestrukturyzacyjneNaprawczePrzymusowaRestrukturyzacja",
+            "nadzorcaZarzadcaReprezentujacyAdministratorPelnomocnik",
+            "nadzorca_restrukturyzacyjny",
+            "",
+        ),
+        (
+            "dzial6",
+            "postepowanieRestrukturyzacyjneNaprawczePrzymusowaRestrukturyzacja"
+            "UporzadkowanaLikwidacja",
+            "nadzorcaZarzadcaReprezentujacyAdministratorZastepcaPelnomocnik"
+            "ZarzadcaNadzwyczajny",
+            "nadzorca_restrukturyzacyjny",
+            "",
+        ),
+    )
 )
 
 #: The keys that make an object a person rather than a partner company, which
@@ -182,28 +234,39 @@ def _entries(node) -> list:
     return []
 
 
-def people_at(dane: dict, path) -> list[CensoredPerson]:
+def people_at(dane: dict, path: PersonPath) -> list[CensoredPerson]:
     """The people one `PERSON_PATHS` entry points at."""
-    dzial_name, key, inner, role, role_field = path
-    dzial = dane.get(dzial_name)
+    dzial = dane.get(path.dzial)
     if not isinstance(dzial, dict):
         return []
 
-    containers = _entries(dzial.get(key))
-    if inner is not None:
-        containers = [
-            entry
+    containers = _entries(dzial.get(path.key))
+    # Each person is kept paired with the organ they were found in, rather
+    # than flattened into one list of people. Flattening is what threw the
+    # organ's ``nazwa`` away, and with it every supervisory member's only
+    # evidence of whether the seat is a paid one - see `PersonPath`.
+    entries: list[tuple[object, dict]]
+    if path.inner is None:
+        entries = [(entry, {}) for entry in containers]
+    else:
+        entries = [
+            (entry, container)
             for container in containers
             if isinstance(container, dict)
-            for entry in _entries(container.get(inner))
+            for entry in _entries(container.get(path.inner))
         ]
 
     people = []
-    for entry in containers:
+    for entry, container in entries:
         if not isinstance(entry, dict):
             continue
-        detail = str(entry.get(role_field, "") or "") if role_field else ""
-        parsed = parse_person(entry, f"{role}: {detail}" if detail else role)
+        detail = str(entry.get(path.role_field, "") or "") if path.role_field else ""
+        if path.organ_field:
+            # The organ first, because it is the part of the role that decides
+            # whether the seat is paid; anything the person adds refines it.
+            kind = organ_kind(container.get(path.organ_field))
+            detail = f"{kind}, {detail}" if detail else kind
+        parsed = parse_person(entry, f"{path.role}: {detail}" if detail else path.role)
         if parsed:
             people.append(parsed)
     return people
@@ -241,9 +304,9 @@ def unread_person_paths(data) -> set[str]:
     if not dane:
         return set()
 
-    known = {(dzial, key) for dzial, key, *_ in PERSON_PATHS}
+    known = {(path.dzial, path.key) for path in PERSON_PATHS}
     known_inner = {
-        (dzial, key, inner) for dzial, key, inner, *_ in PERSON_PATHS if inner
+        (path.dzial, path.key, path.inner) for path in PERSON_PATHS if path.inner
     }
     found: set[str] = set()
 

@@ -1,5 +1,6 @@
 import type { Timestamp } from "firebase-admin/firestore";
 import type { QaCheckStatus } from "./qa";
+import type { SupervisoryOrgan } from "./companyOrgans";
 
 type PageBase<PageType> = {
   id?: string;
@@ -159,6 +160,36 @@ export function pageIsPublic(node: { published?: unknown; deleted?: unknown }) {
   return node.published === true;
 }
 
+/** Node data written through sanitizeFirestoreData stores arrays as objects
+ * with numbered keys, so array fields have to be read tolerantly.
+ *
+ * `sanitizeFirestoreData` leaves a top-level array as an array, but it rewrote
+ * every array it saw until 2026-07-28 and documents written before then still
+ * carry `{"0": "PiS"}` where an array belongs - which is also the shape a
+ * nested array is legitimately stored in. `array-contains` matches nothing
+ * against a map and does not raise, so a read that assumes the array shape
+ * silently loses the value rather than failing. Every read of `parties`,
+ * `activity`, `categories` and `references` goes through here.
+ *
+ * `scripts/migrate/unwrap-array-fields.ts` repairs the documents; this is what
+ * keeps reads working in the meantime, on both sides of the wire.
+ *
+ * Lives here rather than in `server/utils/nodeFilters`, which is where it was
+ * written and where it is still exported from: that module reaches nitro's
+ * `defineCachedFunction` through `server/utils/fetch`, so importing it from a
+ * plain request handler pulls a cache into places that only wanted to read an
+ * array. Nothing about the problem is server-side anyway - the same documents
+ * reach the browser.
+ */
+export function asArray<T>(
+  value: T[] | Record<string, T> | undefined | null,
+): T[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === "object") return Object.values(value);
+  return [];
+}
+
 /** Every kind of node, in one place.
  *
  * The tuple is the source of truth and `NodeType` is derived from it, so that
@@ -282,6 +313,42 @@ export interface Company extends Omit<Node, "type"> {
    * predating the edit form. Set by `/api/revisions/create` whenever a
    * proposal states the field, exactly as `isPublicSource` is. */
   categoriesSource?: "manual";
+  /** Legal form, as `dzial1.danePodmiotu.formaPrawna` spells it, e.g.
+   * "SAMODZIELNY PUBLICZNY ZAKŁAD OPIEKI ZDROWOTNEJ" or "SPÓŁKA Z OGRANICZONĄ
+   * ODPOWIEDZIALNOŚCIĄ".
+   *
+   * Stored raw, for the same reason `activity` is: what it implies about a
+   * place is a decision the site makes and can revisit, not one the scrapers
+   * should have to restate. It is what the pipelines already categorise on -
+   * see `entities/company_categories.py`, where it is the only signal an SPZOZ
+   * carries, the associations register having no PKD codes at all - and it is
+   * what /eksploruj/szpitale shows beside a hospital's board, because it is the
+   * difference between one run as a spółka and one run as an SPZOZ.
+   *
+   * Held on the node for display only. What follows from it about pay is
+   * `supervisoryBody`, worked out by the pipelines; nothing on the site reads
+   * this string and decides. */
+  legalForm?: string;
+  /** Which organ supervises the place, as `dzial2.organNadzoru[].nazwa` names
+   * it, normalized by `data/pipelines/src/scrapers/krs/organs.py`.
+   *
+   * Reporting, not a rule - and the difference from `supervisoryBody` above is
+   * the whole reason both exist. That one reads the *legal form*, so it has an
+   * answer for every institution and is what the employment counters exclude
+   * an unpaid seat by. This one reads what the entry actually filed, which is
+   * finer - it can tell a komisja rewizyjna from a rada fundacji - but is
+   * absent for 719 of the 1,192 SPZOZ in the crawl, whose rada społeczna is
+   * created by statute and never registered. So `"brak"` is emphatically not
+   * evidence of a paid board, and only /eksploruj/szpitale reads this field.
+   *
+   * A scalar rather than a list: no crawled entry anywhere names both a rada
+   * nadzorcza and a rada społeczna, barely any name two organs at all, and a
+   * scalar is the only shape Firestore can filter on - a stored array comes
+   * back as a numbered-key object, see `asArray` in server/utils/nodeFilters.
+   *
+   * Absent means the scrapers have not looked at this company since the field
+   * was added, which is not the same as `"brak"`. */
+  supervisoryOrgan?: SupervisoryOrgan;
   /** Whether the place is owned or run by the public sector.
    *
    * Only `true` is an assertion. `false` and absent both mean *not confirmed*,
@@ -317,28 +384,6 @@ export interface Company extends Omit<Node, "type"> {
    * `isPublic` have one because a person can know what the register cannot
    * show, and here the register is the answer. */
   supervisoryBody?: string;
-}
-
-/** A stored array field, however Firestore happens to be holding it.
- *
- * `sanitizeFirestoreData` leaves a top-level array as an array, but it rewrote
- * every array it saw until 2026-07-28 and documents written before then still
- * carry `{"0": "PiS"}` where an array belongs - which is also the shape a
- * nested array is legitimately stored in. `array-contains` matches nothing
- * against a map and does not raise, so a read that assumes the array shape
- * silently loses the value rather than failing. Every read of `parties`,
- * `activity`, `categories` and `references` goes through here.
- *
- * `scripts/migrate/unwrap-array-fields.ts` repairs the documents; this is what
- * keeps reads working in the meantime, on both sides of the wire.
- */
-export function asArray<T>(
-  value: T[] | Record<string, T> | undefined | null,
-): T[] {
-  if (!value) return [];
-  if (Array.isArray(value)) return value;
-  if (typeof value === "object") return Object.values(value);
-  return [];
 }
 
 /** Whether anything is actually known about a place's ownership.

@@ -94,6 +94,12 @@ class Companies(Pipeline[Company]):
                     # -- see `entities.company_categories`.
                     form=krs.form if krs is not None else None,
                     is_public=krs.is_public if krs is not None else False,
+                    # Only KRS knows it too, and the payloads read this output
+                    # rather than company_krs: a field not named here is
+                    # dropped on the way to the site without a word.
+                    supervisory_organ=(
+                        krs.supervisory_organ if krs is not None else None
+                    ),
                     # Only KRS carries these, so there is nothing to reconcile
                     # -- but without them this output cannot be joined to any
                     # register that identifies a company by its tax id, which

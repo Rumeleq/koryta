@@ -286,6 +286,11 @@ class CompanyUploader(Uploader):
             )
         if "supervisory_body" not in payload:
             payload["supervisory_body"] = supervisory_body(form)
+        # The register's own `formaPrawna`, for display beside a hospital's
+        # board. Not filled in when absent, unlike the two above: those follow
+        # from the form by a rule this side can apply, and this is the form.
+        if "legal_form" not in payload and form:
+            payload["legal_form"] = form
         # A company created because a person works there comes straight from
         # the Companies pipeline rather than through CompaniesPayloads, so it
         # needs the same disambiguation.

@@ -106,6 +106,104 @@ def test_board_supervision_and_partners_all_come_through():
     }
 
 
+# ─── which supervisory organ a seat is on ──────────────────
+#
+# A rada społeczna seat is unpaid and a rada nadzorcza one is not, and the
+# register writes that on the organ rather than on its members. Flattening the
+# organs into their people threw it away, so every supervisory member of every
+# company read alike.
+
+
+def organ(nazwa, *surnames, funkcja=None):
+    sklad = []
+    for surname in surnames:
+        person = masked([surname], "J***")
+        if funkcja:
+            person["funkcjaWOrganie"] = funkcja
+        sklad.append(person)
+    return {"nazwa": nazwa, "sklad": sklad}
+
+
+def roles(data):
+    return {p.role for p in extract_censored_people(data)}
+
+
+def test_a_supervisory_seat_says_which_organ_it_is_on():
+    paid = odpis(dzial2={"organNadzoru": [organ("RADA NADZORCZA", "N******")]})
+    unpaid = odpis(dzial2={"organNadzoru": [organ("RADA SPOŁECZNA", "S******")]})
+
+    assert roles(paid) == {"nadzor: rada_nadzorcza"}
+    assert roles(unpaid) == {"nadzor: rada_spoleczna"}
+
+
+def test_two_organs_do_not_lend_each_other_their_members():
+    """What the flattening lost: which of the organs a person sits on."""
+    data = odpis(
+        dzial2={
+            "organNadzoru": [
+                organ("RADA NADZORCZA", "N******"),
+                organ("KOMISJA REWIZYJNA", "R******"),
+            ]
+        }
+    )
+
+    assert {(p.surname[0], p.role) for p in extract_censored_people(data)} == {
+        ("N******", "nadzor: rada_nadzorcza"),
+        ("R******", "nadzor: komisja_rewizyjna"),
+    }
+
+
+def test_an_organ_the_register_did_not_name_says_so():
+    """Not the same as a company with no supervisory organ registered."""
+    data = odpis(dzial2={"organNadzoru": [organ(None, "N******")]})
+
+    assert roles(data) == {"nadzor: nieznany"}
+
+
+def test_the_organ_comes_before_whatever_the_person_adds():
+    """``funkcjaWOrganie`` is empty on all 52,146 supervisory members in the
+    crawl, but it is the person's function *within* the organ - a detail - and
+    the organ is what decides whether the seat is paid. So the organ leads and
+    the register filling the field in later cannot displace it."""
+    data = odpis(
+        dzial2={
+            "organNadzoru": [
+                organ("RADA NADZORCZA", "N******", funkcja="PRZEWODNICZĄCY")
+            ]
+        }
+    )
+
+    assert roles(data) == {"nadzor: rada_nadzorcza, PRZEWODNICZĄCY"}
+
+
+def test_the_organ_kind_does_not_change_what_the_role_is():
+    """`names.comparable` and the coverage invariant read the part before the
+    colon, so the detail can grow without either noticing."""
+    data = odpis(dzial2={"organNadzoru": [organ("RADA SPOŁECZNA", "S******")]})
+
+    assert {p.role.split(":")[0] for p in extract_censored_people(data)} == {"nadzor"}
+
+
+def test_an_organ_around_a_board_is_not_read_as_a_supervisory_one():
+    """Only organNadzoru names its organ; reprezentacja's nazwaOrganu is not
+    the same field and dzial2.reprezentacja carries no ``nazwa`` at all."""
+    data = odpis(
+        dzial2={
+            "reprezentacja": {
+                "nazwaOrganu": "ZARZĄD",
+                "sklad": [
+                    {
+                        **masked(["F*****"], "M******"),
+                        "funkcjaWOrganie": "PREZES ZARZĄDU",
+                    }
+                ],
+            }
+        }
+    )
+
+    assert roles(data) == {"reprezentacja: PREZES ZARZĄDU"}
+
+
 def test_a_partner_that_is_a_company_is_not_a_person():
     data = odpis(
         dzial1={
@@ -181,7 +279,7 @@ def test_a_curator_lives_in_dzial5():
 
 
 def test_every_role_in_the_table_has_a_distinct_name():
-    roles = [role for *_, role, _ in PERSON_PATHS]
+    roles = [path.role for path in PERSON_PATHS]
 
     assert len(set(roles)) == len(roles) - 1, (
         "only the two restructuring sections share a role name"
