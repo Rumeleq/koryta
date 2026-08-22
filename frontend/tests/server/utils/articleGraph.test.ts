@@ -106,7 +106,7 @@ describe("graphForArticles", () => {
 
   it("draws each named person's immediate connections around them", async () => {
     const graph = await graphForArticles(fakeDb(mentionEdges), ["a1"], true, {
-      expandMentions: true,
+      expand: "mentions",
     });
 
     // Jan's employer and the person he knows are drawn as context; the
@@ -117,7 +117,7 @@ describe("graphForArticles", () => {
 
   it("does not expand a company the article names", async () => {
     await graphForArticles(fakeDb(mentionEdges), ["a1"], true, {
-      expandMentions: true,
+      expand: "mentions",
     });
 
     expect(mockFetchEdgesClose).toHaveBeenCalledWith(["p1"]);
@@ -129,10 +129,49 @@ describe("graphForArticles", () => {
     ]);
 
     const graph = await graphForArticles(fakeDb(mentionEdges), ["a1"], false, {
-      expandMentions: true,
+      expand: "mentions",
     });
 
     expect(graph.edges).toEqual([]);
     expect(Object.keys(graph.nodes)).not.toContain("c1");
+  });
+});
+
+/** The other way somebody gets into a story: not named by an article, but at
+ * the end of a relation drawn from one. Anna is only in this graph because the
+ * article is cited as the source for her connection to Jan. */
+const citedEdges = {
+  ...mentionEdges,
+  r1: {
+    source: "p1",
+    target: "p2",
+    type: "connection",
+    published: true,
+    visibility: true,
+    references: ["a1"],
+  },
+};
+
+describe("graphForArticles, expanding every person", () => {
+  it("draws the network of somebody a cited relation brought in", async () => {
+    const graph = await graphForArticles(fakeDb(citedEdges), ["a1"], true, {
+      expand: "people",
+    });
+
+    // Anna is named by no article, so "mentions" left her out of the
+    // expansion; here she is asked about like anybody else in the story.
+    expect(mockFetchEdgesClose).toHaveBeenCalledWith(["p1", "p2"]);
+    expect(Object.keys(graph.nodes).sort()).toEqual(["c1", "c9", "p1", "p2"]);
+  });
+
+  it("still leaves a company the story names unexpanded", async () => {
+    await graphForArticles(fakeDb(citedEdges), ["a1"], true, {
+      expand: "people",
+    });
+
+    // c9 is the ministry, and its staff list is not the story.
+    expect(mockFetchEdgesClose).not.toHaveBeenCalledWith(
+      expect.arrayContaining(["c9"]),
+    );
   });
 });
