@@ -42,6 +42,25 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
 /** Newest first. Prepend, never insert in the middle. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "home-recent-employments",
+    date: "2026-08-23",
+    title: "Ostatnie zatrudnienia na stronie głównej",
+    description:
+      "Na dole strony głównej lecą kolejne stanowiska, od najświeżej " +
+      "objętego. Przewijanie dokłada następne, a kliknięcie kafelka prowadzi " +
+      "do strony osoby, nie firmy.",
+    steps: [
+      "Wejdź na stronę główną i przewiń na sam dół, do sekcji „Ostatnie zatrudnienia”.",
+      "Sprawdź daty na kafelkach - mają iść od najnowszej w dół, a nie w losowej kolejności.",
+      "Przewijaj dalej - po chwili ma dojść kolejna porcja, bez klikania czegokolwiek.",
+      "Kliknij dowolny kafelek - ma otworzyć stronę osoby, a nie instytucji.",
+      "Zwęź okno do szerokości telefonu - kafelki mają ustawić się w jednej kolumnie zamiast dwóch.",
+      "Przewiń do samego końca listy - ma pojawić się napis, że to już wszystkie zatrudnienia.",
+    ],
+    link: "/",
+    area: "public",
+  },
+  {
     id: "feedback-from-qa",
     date: "2026-08-23",
     title: "Uwaga z listy QA idzie prosto do zespołu",

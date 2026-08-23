@@ -109,6 +109,11 @@
       </v-col>
     </v-row>
   </HomeSection>
+  <!-- Last on the page, and it has to be: the feed keeps growing as the reader
+       scrolls, so anything below it is pushed further away every time it does. -->
+  <HomeSection>
+    <HomeRecentEmployments />
+  </HomeSection>
 </template>
 
 <script setup lang="ts">

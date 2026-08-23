@@ -9,13 +9,16 @@
     "source": "1",
     "target": "2",
     "type": "employed",
-    "revision_id": "rev_edge_2"
+    "revision_id": "rev_edge_2",
+    "start_date": "2023-04-01",
+    "end_date": "2024-09-30"
   },
   {
     "source": "3",
     "target": "2",
     "type": "employed",
-    "revision_id": null
+    "revision_id": null,
+    "start_date": "2026-01-05"
   },
   {
     "source": "4",
@@ -34,7 +37,8 @@
     "source": "chain-person",
     "target": "chain-company",
     "type": "employed",
-    "revision_id": "rev-edge-chain-1"
+    "revision_id": "rev-edge-chain-1",
+    "start_date": "2025-02-17"
   },
   {
     "source": "chain-powiat",
