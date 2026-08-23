@@ -124,27 +124,33 @@
     </template>
 
     <template #[`item.elections`]="{ item }">
-      <template v-for="(election, i) in item.elections" :key="i">
-        <v-chip size="small" class="mr-1 mb-1" variant="outlined">
+      <div class="elections-cell py-1">
+        <v-chip
+          v-for="(election, i) in item.elections"
+          :key="i"
+          size="small"
+          class="mb-1"
+          variant="outlined"
+        >
           <v-tooltip activator="parent" location="top" open-delay="200">
-            {{
-              getWojewodztwo(election.teryt)
-                ? `woj. ${getWojewodztwo(election.teryt)}`
-                : "Brak informacji o województwie"
-            }}
+            <div v-if="election.location">{{ election.location }}</div>
+            <div>
+              {{
+                getWojewodztwo(election.teryt)
+                  ? `woj. ${getWojewodztwo(election.teryt)}`
+                  : "Brak informacji o województwie"
+              }}
+            </div>
+            <div v-if="election.committee">{{ election.committee }}</div>
           </v-tooltip>
-          <template v-if="election.year">
-            <span class="font-weight-bold mr-1">{{ election.year }}</span>
-          </template>
-          <template v-if="election.location">
+          <span v-if="election.year" class="font-weight-bold mr-1">
+            {{ election.year }}
+          </span>
+          <span v-if="election.location" class="election-location">
             {{ election.location }}
-          </template>
-          <template v-if="election.committee">
-            <span class="text-caption ml-1">({{ election.committee }})</span>
-          </template>
+          </span>
         </v-chip>
-        <br v-if="i < item.elections.length - 1" />
-      </template>
+      </div>
     </template>
 
     <template #[`item.visibility`]="{ item }">
@@ -310,3 +316,31 @@ const getWojewodztwo = (teryt?: string) => {
   return terytToWojewodztwo[teryt.substring(0, 2)];
 };
 </script>
+
+<style scoped>
+/* Committee names run to "KOMITET WYBORCZY WYBORCÓW ..." and used to sit in
+ * the chip, which made this the widest column on the page by a distance. It is
+ * in the tooltip now, and what is left is capped so a long town name cannot do
+ * the same thing again. */
+.elections-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: 220px;
+}
+
+.elections-cell .v-chip {
+  max-width: 100%;
+}
+
+.elections-cell :deep(.v-chip__content) {
+  min-width: 0;
+}
+
+.election-location {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+</style>
