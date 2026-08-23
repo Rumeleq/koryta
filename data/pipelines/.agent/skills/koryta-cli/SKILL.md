@@ -5,7 +5,7 @@ description: Guidelines on how to evaluate pipeline outputs.
 
 # Koryta CLI
 
-To test and view the output of a data pipeline from the scrapers directory, use the `koryta` cli command.
+To test and view the output of a data pipeline from the pipelines directory, use the `koryta` cli command.
 The command is part of the package's virtual environment, set up by `uv sync`.
 
 Example:

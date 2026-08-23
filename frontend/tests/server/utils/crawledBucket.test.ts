@@ -72,7 +72,7 @@ function readArchive(gz: Buffer): Map<string, string> {
 
 describe("parseCrawlUrl", () => {
   // Every one of these was checked against NormalizedParse.parse in
-  // data/scrapers; see src/service/test_storage.py for the other half.
+  // data/pipelines; see src/service/test_storage.py for the other half.
   it.each([
     ["https://example.pl/", "example.pl", ""],
     ["https://example.pl", "example.pl", ""],

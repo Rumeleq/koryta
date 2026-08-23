@@ -15,7 +15,7 @@ import { INTERNAL_FIELDS } from "../../server/utils/revisions";
  * forever. `/api/revisions/byNode` reports an `approvedRevisionId` that cannot
  * be fetched.
  *
- * The region seeding in `data/scrapers/src/analysis/payloads/region.py` used the
+ * The region seeding in `data/pipelines/src/analysis/payloads/region.py` used the
  * field as an "approved" flag, filling in the region's own id (`teryt02`) and
  * `rev_<edge_id>` for the tree's `owns` edges. That is 390 region nodes and 375
  * edges, plus 15 regions pointing at a neighbouring region's revision.

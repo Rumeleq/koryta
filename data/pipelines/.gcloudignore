@@ -1,4 +1,4 @@
-# What `gcloud builds submit data/scrapers` may upload.
+# What `gcloud builds submit data/pipelines` may upload.
 #
 # Needed because `.dockerignore` is too late: it is applied by the docker build
 # running inside Cloud Build, long after gcloud has tarred this directory up and
@@ -7,7 +7,7 @@
 # checkout happens to have — for an image whose context is 5 MB.
 #
 # gcloud would otherwise derive its own from `.gitignore`, but only for a git
-# repository root, and this is `data/scrapers` inside one.
+# repository root, and this is `data/pipelines` inside one.
 
 .gcloudignore
 .git

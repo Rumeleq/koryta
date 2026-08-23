@@ -21,7 +21,7 @@ the payloads have no row for is reported separately rather than counted as a
 miss: the models never had anything to go on, which is a data problem and not a
 modelling one, and mixing the two hides both.
 
-Run it from ``data/scrapers`` after the score pipelines' sources are built::
+Run it from ``data/pipelines`` after the score pipelines' sources are built::
 
     .venv/bin/python -m analysis.scripts.score_recall --all --no-backup
     .venv/bin/python -m analysis.scripts.score_recall --all --no-backup --folds 4

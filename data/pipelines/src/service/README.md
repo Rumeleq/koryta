@@ -32,7 +32,7 @@ batch run's in `/ekstrakcje`.
 ## Running it locally
 
 ```
-cd data/scrapers
+cd data/pipelines
 KORYTA_API_URL=http://localhost:3000 \
 FIREBASE_WEB_API_KEY=AIzaSyD54RK-k0TIcJtVbZerx2947XiduteqvaM \
 LLM_API_KEY=$OPENROUTER_APIKEY \
@@ -133,7 +133,7 @@ gcloud secrets add-iam-policy-binding openrouter-api-key --project=$PROJECT \
 gcloud artifacts repositories create koryta --repository-format=docker \
   --location=$REGION --project=$PROJECT
 
-gcloud builds submit data/scrapers \
+gcloud builds submit data/pipelines \
   --tag=$REGION-docker.pkg.dev/$PROJECT/koryta/capture-extractor
 
 gcloud run deploy capture-extractor \

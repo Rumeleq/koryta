@@ -108,7 +108,7 @@ uv run koryta ScrapeRejestrIO --no-mirror
 
 `.github/workflows/pipelines.yml` runs the pipelines on CI in two tiers.
 
-- **slice**, on every pull request touching `data/scrapers/`. One multistream
+- **slice**, on every pull request touching `data/pipelines/`. One multistream
   shard of the Wikipedia dump (~230 MB), `ProcessWiki` only, a few minutes, no
   credentials. Most pipeline breakage is structural and shows up on a shard
   exactly as it would on the whole dump.

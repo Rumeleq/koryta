@@ -4,7 +4,7 @@ import { getFirestore } from "firebase-admin/firestore";
 /**
  * One-time migration: make the December 2025 backfill's revisions usable.
  *
- * `data/scrapers/src/scripts/create_revisions.py` minted a revision for every
+ * `data/pipelines/src/scripts/create_revisions.py` minted a revision for every
  * node and edge that did not have one yet, and got two things wrong.
  *
  * It stored `node_id` as a document reference where everything else stores a

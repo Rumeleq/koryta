@@ -2,7 +2,7 @@ name: Pipelines
 
 # Two tiers over the same code.
 #
-# A pull request touching the scrapers gets the `slice` tier: one multistream
+# A pull request touching the pipelines gets the `slice` tier: one multistream
 # shard of the Wikipedia dump, ~230 MB and a few minutes, no credentials. Most
 # pipeline breakage is structural and shows up on a shard exactly as it would
 # on the whole dump.
@@ -21,7 +21,7 @@ on:
     - cron: "0 3 * * *"
   pull_request:
     paths:
-      - "data/scrapers/**"
+      - "data/pipelines/**"
       - ".github/workflows/pipelines.yml"
   workflow_dispatch:
     inputs:
@@ -117,7 +117,7 @@ jobs:
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
-          cache-dependency-glob: "data/scrapers/uv.lock"
+          cache-dependency-glob: "data/pipelines/uv.lock"
 
       # Keyed on the exact dump file, so a pinned dump is fetched from
       # wikimedia once and restored from cache every night after. Repo-wide
@@ -126,7 +126,7 @@ jobs:
       - name: Cache the dump
         uses: actions/cache@v6
         with:
-          path: data/scrapers/downloaded/${{ env.DUMP_FILE }}
+          path: data/pipelines/downloaded/${{ env.DUMP_FILE }}
           key: wikidump-${{ env.DUMP_FILE }}
 
       # Everything else PeoplePKW and Teryt pull off pkw.gov.pl and
@@ -136,15 +136,15 @@ jobs:
         uses: actions/cache@v6
         with:
           path: |
-            data/scrapers/downloaded
-            !data/scrapers/downloaded/*.bz2
+            data/pipelines/downloaded
+            !data/pipelines/downloaded/*.bz2
           key: downloads-${{ env.TIER }}-${{ github.run_id }}
           restore-keys: downloads-${{ env.TIER }}-
 
       # The ml group (torch, spacy, the nvidia runtimes -- 4.5 GB) is left out:
       # no pipeline this job runs needs it.
       - name: Install dependencies
-        working-directory: data/scrapers
+        working-directory: data/pipelines
         run: uv sync --group test
 
       # Sets up ADC, which google.auth.default() picks up. No key file. Read
@@ -165,7 +165,7 @@ jobs:
       # --assume-yes answers the "this pipeline runs long" prompts. Without it
       # they read EOF from /dev/null, take it as no, and skip the wiki pass.
       - name: Run pipelines
-        working-directory: data/scrapers
+        working-directory: data/pipelines
         run: |
           set -euo pipefail
           # ProcessWikiNer and its ProcessWikiPeopleNames dependency each make
@@ -192,7 +192,7 @@ jobs:
       # the pipeline step has already written versioned/, so on the full tier
       # they read that rather than reprocessing.
       - name: Run pipeline tests
-        working-directory: data/scrapers
+        working-directory: data/pipelines
         run: |
           set -euo pipefail
           if [ "$TIER" = "full" ]; then
@@ -215,7 +215,7 @@ jobs:
           fi
 
       - name: Check the output
-        working-directory: data/scrapers
+        working-directory: data/pipelines
         env:
           KORYTA_E2E_TIER: ${{ env.TIER }}
           # A missing output is a failure here, not a skip as it is locally.
@@ -236,7 +236,7 @@ jobs:
       # break independently, and one night should report both.
       - name: Check the database invariants
         if: ${{ !cancelled() && env.TIER == 'full' }}
-        working-directory: data/scrapers
+        working-directory: data/pipelines
         run: uv run --no-sync pytest -m e2e src/tests/pipelines -v
 
       - name: Upload pipeline output
@@ -245,5 +245,5 @@ jobs:
         with:
           name: versioned-${{ env.TIER }}
           # Not the dump, which lives in downloaded/.
-          path: data/scrapers/versioned
+          path: data/pipelines/versioned
           retention-days: 14

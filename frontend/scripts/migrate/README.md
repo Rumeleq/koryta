@@ -83,7 +83,7 @@ affected had gone from 105 to 461 in the month before it was noticed.
 
 ## The invariants suite
 
-`data/scrapers/src/tests/pipelines/test_invariants.py` checks these properties
+`data/pipelines/src/tests/pipelines/test_invariants.py` checks these properties
 against the nightly production export. Most of its assertions carry a budget —
 the number of documents known to be broken — so after running a migration
 against production, lower the matching budget to the new count. A migration is

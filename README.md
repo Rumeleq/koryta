@@ -20,7 +20,7 @@ This project uses the following technologies:
 
 ### `data` - Python infrastructure to mine the data
 
-- `data/scrapers`- **has README** - Poetry project containing the infrastructure
+- `data/pipelines`- **has README** - Poetry project containing the infrastructure
 
 ### UI related (multiple dirs)
 

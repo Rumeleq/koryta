@@ -1,6 +1,6 @@
 # The capture extractor (src/service), for Cloud Run.
 #
-# Installs the scrapers package's base dependencies rather than a hand-picked
+# Installs the pipelines package's base dependencies rather than a hand-picked
 # subset: `oneshot.py` drives the pipeline modules directly, so it inherits
 # their imports, and a trimmed list would break the next time one of them grew
 # an import. The `ml` group — torch, spacy and the nvidia runtimes, 4.5 GB of
@@ -18,7 +18,7 @@ WORKDIR /app
 # `leveldb-export` is the one dependency resolved from a git url rather than a
 # wheel, and the uv images are too slim to carry a git. Nothing the service
 # imports reaches it — that is `scrapers.koryta.download`, reading the nightly
-# Firestore export — but it is a base dependency of `scrapers`, and taking those
+# Firestore export — but it is a base dependency of `pipelines`, and taking those
 # wholesale is what this image does on purpose.
 #
 # Its own layer, ahead of the copy, so editing pyproject.toml does not reinstall

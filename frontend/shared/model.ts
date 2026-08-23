@@ -268,7 +268,7 @@ export interface Company extends Omit<Node, "type"> {
    * gmina/powiat/województwo/Skarb Państwa, or a hardcoded list of state-owned
    * companies, then propagated down ownership chains so subsidiaries inherit it.
    *
-   * Note this is *not* "publicly traded" — see `data/scrapers/src/scrapers/krs/list.py`.
+   * Note this is *not* "publicly traded" — see `data/pipelines/src/scrapers/krs/list.py`.
    */
   isPublic?: boolean;
   /** Where `isPublic` came from, so an ingest does not overwrite a human.
