@@ -1,7 +1,7 @@
 [project]
-name = "scrapers"
+name = "pipelines"
 version = "0.1.0"
-description = "Scrapers used for koryta.pl"
+description = "Data pipelines for koryta.pl"
 authors = [{ name = "Szymon Pajzert", email = "szymonpajzert@gmail.com" }]
 license = { text = "MIT" }
 readme = "README.md"

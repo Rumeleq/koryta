@@ -9,12 +9,12 @@ import { getApp } from "firebase-admin/app";
 
 /** The bucket the crawler writes to, and the only one the article pipelines
  * read. Spelled here exactly as `CRAWLED_BUCKET` in
- * `data/scrapers/src/stores/storage.py`. */
+ * `data/pipelines/src/stores/storage.py`. */
 export const CRAWLED_BUCKET = "koryta-pl-crawled";
 
 /** The parts of a url the crawled-bucket layout is built from.
  *
- * Mirrors `NormalizedParse.parse` in `data/scrapers/src/entities/util.py`,
+ * Mirrors `NormalizedParse.parse` in `data/pipelines/src/entities/util.py`,
  * because every path below has to come out byte-identical to the one the
  * crawler wrote — `ArticleParsed` looks a page up inside its archive by
  * recomputing this from the url and nothing else, and a mismatch is silent

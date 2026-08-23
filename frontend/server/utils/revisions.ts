@@ -28,7 +28,7 @@ export interface BatchResult {
  * 2026-07-28 this function rewrote every array it saw, which is how 461 people
  * ended up unreachable by any party filter — see
  * `scripts/migrate/unwrap-array-fields.ts`, which repairs the ones already
- * written, and `data/scrapers/src/tests/pipelines/test_invariants.py`.
+ * written, and `data/pipelines/src/tests/pipelines/test_invariants.py`.
  */
 export function sanitizeFirestoreData<T>(
   data: Record<string, unknown> | T,

@@ -71,7 +71,7 @@ export default defineNuxtConfig({
   ],
 
   runtimeConfig: {
-    // The fast extractor for browser-captured pages (data/scrapers/src/service,
+    // The fast extractor for browser-captured pages (data/pipelines/src/service,
     // deployed to Cloud Run). Left "off" everywhere it is not configured — a
     // capture then stores its html and stops there, which is still enough for
     // the nightly pipeline to pick the page up out of the bucket.

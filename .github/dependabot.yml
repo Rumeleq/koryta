@@ -45,7 +45,7 @@ updates:
         update-types: ["major"]
 
   - package-ecosystem: "uv"
-    directory: "/data/scrapers"
+    directory: "/data/pipelines"
     schedule:
       interval: "monthly"
     open-pull-requests-limit: 2

@@ -96,7 +96,7 @@ export function calculateLatestEmploymentStart(edges: Edge[]): string | null {
  * `pipeline`, `pipeline-pagerank`, `pipeline-turnover` and so on. Matching on
  * the substring rather than on the exact name is safe because a Firebase uid is
  * 28 random alphanumerics and cannot contain a word. Mirrored in Python by
- * `is_pipeline_uid` in `data/scrapers/src/entities/person.py`, which is what
+ * `is_pipeline_uid` in `data/pipelines/src/entities/person.py`, which is what
  * keeps the models from being seeded on their own output.
  */
 export function isPipelineUid(uid: string | undefined | null): boolean {

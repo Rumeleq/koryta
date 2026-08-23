@@ -10,7 +10,7 @@ Needs the auth and firestore emulators, so it skips without them:
 
     cd frontend && devns npx firebase emulators:exec --project demo-koryta-pl \\
         --only auth,firestore \\
-        "cd ../data/scrapers && .venv/bin/python -m pytest -m e2e \\
+        "cd ../data/pipelines && .venv/bin/python -m pytest -m e2e \\
             src/tests/e2e/test_vote_rules.py"
 """
 

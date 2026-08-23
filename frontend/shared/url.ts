@@ -6,7 +6,7 @@
  * different articles, which is why not one of the 269 extracted facts managed
  * to link itself to an article node.
  *
- * Mirrors `NormalizedParse.parse` in `data/scrapers/src/entities/util.py`, the
+ * Mirrors `NormalizedParse.parse` in `data/pipelines/src/entities/util.py`, the
  * rule the scrapers already normalise by: assume http when the scheme is
  * missing, lowercase the host, drop a leading `www.` and a trailing slash. The
  * query string is kept — for most Polish news sites it is tracking noise, but

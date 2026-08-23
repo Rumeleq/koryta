@@ -76,7 +76,7 @@ A dev server has no extractor behind it unless you start one, so a capture there
 usually ends at **"Zapisane w archiwum — ekstrakcja nie wystartowała"**. That is
 not a failed capture: the html is in `$TMPDIR/koryta-captures`, the article node
 exists, and the nightly pipeline reads the archive regardless. Only the preview
-is missing. [`src/service/README.md`](../data/scrapers/src/service/README.md#running-it-locally)
+is missing. [`src/service/README.md`](../data/pipelines/src/service/README.md#running-it-locally)
 has the two commands that give you one.
 
 ## What it sends

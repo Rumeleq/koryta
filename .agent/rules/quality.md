@@ -13,7 +13,7 @@
 1. Be location dependent
 
    - If you're modiyfing frontend code, refer to the frontend/.agent directory
-   - If you're modifying pipipeline code, refer to the data/scrapers/.agent directory
+   - If you're modifying pipipeline code, refer to the data/pipelines/.agent directory
 
 1. **Failure Protocol**:
 

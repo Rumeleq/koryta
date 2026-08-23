@@ -5,7 +5,7 @@ import type { Article, ElectionPosition } from "./model";
  * entry, and bucketed as "inne / brak partii" in the statistics.
  *
  * Kept in step with `committee_to_party` in
- * `data/scrapers/src/scrapers/pkw/elections.py`, which is where the pipeline
+ * `data/pipelines/src/scrapers/pkw/elections.py`, which is where the pipeline
  * decides what to call a party. SLD is separate from Nowa Lewica on purpose:
  * they are the same party renamed in 2021, but somebody who stood on an SLD
  * list in 2001 was not a member of a party that did not exist yet, and the
