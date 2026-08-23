@@ -11,7 +11,7 @@
       item-value="id"
       return-object
       autocomplete="off"
-      class="ma-2"
+      class="ma-2 omni-search"
       bg-color="white"
       :rounded="true"
       :width
@@ -300,3 +300,10 @@ watch(nodeGroupPicked, (value) => {
   autocompleteFocus.value = false;
 });
 </script>
+
+<style scoped>
+.omni-search.v-autocomplete--active-menu :deep(.v-autocomplete__menu-icon) {
+  transform: rotate(0deg) !important;
+}
+</style>
+
