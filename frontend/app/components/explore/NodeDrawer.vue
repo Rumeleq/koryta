@@ -1,9 +1,10 @@
 <template>
   <v-navigation-drawer
     v-model="open"
-    location="end"
+    :location="mdAndUp ? 'end' : 'bottom'"
+    :rounded="mdAndUp ? undefined : 't-xl'"
     temporary
-    :width="$vuetify.display.mdAndUp ? 600 : 280"
+    :width="drawerSize"
   >
     <v-card-item>
       <template #append>
@@ -66,6 +67,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { useDisplay } from "vuetify";
 import { generateEntityUrl } from "~/composables/slugs";
 import type { EdgeNode } from "~/composables/edges";
 import type { NodeMaybeRich, PersonRich } from "~~/shared/model";
@@ -100,6 +102,18 @@ const props = withDefaults(
 );
 
 const open = defineModel<boolean>({ required: true });
+
+const { mdAndUp, height } = useDisplay();
+
+/** On a phone the drawer comes up from the bottom rather than the side: 280px
+ * of a 360px screen is too narrow for the map and the employment table, and it
+ * leaves a sliver of the page behind it that invites a mis-tap. `width` is the
+ * cross axis, so under `location="bottom"` it is the height - and it has to be
+ * a number of pixels, because Vuetify puts it straight into the transform that
+ * slides the drawer off screen. */
+const drawerSize = computed(() =>
+  mdAndUp.value ? 600 : Math.round(height.value * 0.85),
+);
 
 const person = computed(() =>
   props.node?.type === "person" ? (props.node as PersonRich) : undefined,
