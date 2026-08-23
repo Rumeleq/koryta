@@ -115,8 +115,9 @@ import { useRoute } from "vue-router";
 import {
   feedbackKindConfig,
   captureFeedbackContext,
+  submitFeedback,
 } from "~/composables/feedback";
-import { useAuthState, authRequest } from "~/composables/auth";
+import { useAuthState } from "~/composables/auth";
 import type { FeedbackContext, FeedbackKind } from "~~/shared/model";
 
 const open = defineModel<boolean>({ required: true });
@@ -161,23 +162,21 @@ const submit = async () => {
   error.value = "";
 
   const trimmedContact = contact.value?.trim() ?? "";
-  const body = {
-    kind: kind.value,
-    message: message.value,
-    ...(trimmedContact ? { contact: trimmedContact } : {}),
-    ...(website.value ? { website: website.value } : {}),
-    context: context.value,
-  };
 
   try {
-    if (signed.value) {
-      await authRequest("/api/feedback/create", { method: "POST", body });
-    } else {
-      // Deliberately not authRequest: it would attach the ID token, and the
-      // server attributes any report that carries one. Sending without it is
-      // what makes "anonimowo" true rather than a promise we are keeping.
-      await $fetch("/api/feedback/create", { method: "POST", body });
-    }
+    // The same call the QA page makes - see composables/feedback.ts. Sending
+    // without a token is what makes "anonimowo" true rather than a promise we
+    // are keeping.
+    await submitFeedback(
+      {
+        kind: kind.value,
+        message: message.value,
+        contact: trimmedContact || undefined,
+        website: website.value || undefined,
+        context: context.value,
+      },
+      { attribute: signed.value },
+    );
 
     sent.value = true;
     message.value = "";

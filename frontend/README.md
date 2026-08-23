@@ -148,6 +148,14 @@ off for you - the value of the page is the second pair of eyes. What another
 reader found is still shown on the card, and an entry they reported a problem
 with is flagged, so you know what to look for before you start.
 
+A verdict worth telling the team about also goes out as an ordinary report -
+the same `/api/feedback/create` the "Zgłoś" button posts to, so it reaches the
+Slack channel and `/admin/opinie` with the entry and the verdict attached
+(`FeedbackContext.qa`). "Worth telling" is `qaVerdictIsReportable`: a problem,
+or anything somebody wrote out, but never a bare "działa" and never a re-save
+of the verdict that was already there. The `qaChecks` document is written
+first, so a Slack outage costs the report and never the tick.
+
 ## Scripts reference
 
 | Script                        | Description                                             |

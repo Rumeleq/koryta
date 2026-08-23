@@ -2,9 +2,21 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ref } from "vue";
 import { getFirestore, getDocs, setDoc } from "firebase/firestore";
 import { useQaChecks } from "../../app/composables/qa";
+import { submitFeedback } from "../../app/composables/feedback";
 import type { QaCheck } from "../../shared/qa";
 
 const user = ref<{ uid: string } | null>({ uid: "me" });
+
+// A verdict goes out through the same intake as the "Zgłoś" button; what these
+// tests care about is which verdicts get that far, and what they say.
+vi.mock("../../app/composables/feedback", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../app/composables/feedback")>();
+  return {
+    ...actual,
+    submitFeedback: vi.fn(async () => ({ id: "fb-1" })),
+  };
+});
 
 vi.mock("firebase/firestore", async (importOriginal) => {
   const actual = await importOriginal<typeof import("firebase/firestore")>();
@@ -192,6 +204,70 @@ describe("useQaChecks", () => {
     // Only `updatedAt` is re-stamped on the server.
     const [, data] = vi.mocked(setDoc).mock.calls[0]!;
     expect(data).not.toHaveProperty("createdAt");
+  });
+
+  it("sends a reported problem where every other report goes", async () => {
+    const qa = useQaChecks();
+    const result = await qa.saveCheck(
+      "qa-changelog",
+      "issue",
+      "  filtr nie filtruje  ",
+    );
+
+    expect(result).toEqual({ reported: true, forwarded: true });
+    const [draft, options] = vi.mocked(submitFeedback).mock.calls[0]!;
+    expect(options).toEqual({ attribute: true });
+    expect(draft.kind).toBe("bug");
+    expect(draft.message).toBe("filtr nie filtruje");
+    expect(draft.context.qa).toEqual({
+      itemId: "qa-changelog",
+      // Copied off the entry, so the Slack card reads right later.
+      title: "Lista zmian do sprawdzenia",
+      status: "issue",
+    });
+  });
+
+  it("sends an approval that came with something to say", async () => {
+    const qa = useQaChecks();
+    await qa.saveCheck("qa-changelog", "ok", "działa, ale wolno");
+
+    expect(submitFeedback).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(submitFeedback).mock.calls[0]![0].kind).toBe("idea");
+  });
+
+  it("keeps a bare tick to itself", async () => {
+    const qa = useQaChecks();
+    const result = await qa.saveCheck("qa-changelog", "ok");
+
+    expect(result).toEqual({ reported: false, forwarded: false });
+    expect(submitFeedback).not.toHaveBeenCalled();
+    // The verdict is still this reader's own, and still recorded.
+    expect(setDoc).toHaveBeenCalledTimes(1);
+    expect(qa.stateOf("qa-changelog")).toBe("ok");
+  });
+
+  it("does not report the same verdict twice", async () => {
+    const qa = useQaChecks();
+    await qa.saveCheck("qa-changelog", "issue", "filtr nie filtruje");
+    await qa.saveCheck("qa-changelog", "issue", "filtr nie filtruje");
+
+    expect(submitFeedback).toHaveBeenCalledTimes(1);
+    // Saving again is still a save - only the report is held back.
+    expect(setDoc).toHaveBeenCalledTimes(2);
+
+    await qa.saveCheck("qa-changelog", "ok", "już działa");
+    expect(submitFeedback).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the verdict when the report cannot get out", async () => {
+    vi.mocked(submitFeedback).mockRejectedValueOnce(new Error("offline"));
+    const qa = useQaChecks();
+
+    const result = await qa.saveCheck("qa-changelog", "issue", "nie działa");
+
+    // Saved first on purpose: a Slack outage costs the report, never the tick.
+    expect(result).toEqual({ reported: true, forwarded: false });
+    expect(qa.stateOf("qa-changelog")).toBe("issue");
   });
 
   it("refuses to save when nobody is logged in", async () => {

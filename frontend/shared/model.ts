@@ -1,4 +1,5 @@
 import type { Timestamp } from "firebase-admin/firestore";
+import type { QaCheckStatus } from "./qa";
 
 type PageBase<PageType> = {
   id?: string;
@@ -551,6 +552,26 @@ export type FeedbackSlackState = {
   error?: string;
 };
 
+/** A report written while working through one entry of the QA changelog
+ * (`shared/qa.ts`), rather than from the "Zgłoś" button.
+ *
+ * A verdict on a changelog entry is feedback like any other - the same
+ * endpoint, the same Slack channel, the same admin queue - it just also knows
+ * which entry was being checked and what the checker concluded. The reader's
+ * own verdict still lives in `qaChecks`, because that is per person and drives
+ * what /qa shows them; this is the copy that reaches the team.
+ */
+export type FeedbackQaContext = {
+  /** `QaItem.id`. Ids are never renamed or reused, so an old report still
+   * points at the entry it was written about. */
+  itemId: string;
+  /** The entry's title as it read at the time. Copied rather than looked up,
+   * so a card in Slack still makes sense after the entry is edited - and so
+   * the Cloud Function does not need the changelog compiled into it. */
+  title: string;
+  status: QaCheckStatus;
+};
+
 /** What the reporter was looking at when they hit the feedback button, so a
  * report arrives already tied to the page it is about. */
 export type FeedbackContext = {
@@ -561,6 +582,8 @@ export type FeedbackContext = {
   pageTitle?: string;
   userAgent?: string;
   viewport?: { width: number; height: number };
+  /** Set only for reports written on /qa - see `FeedbackQaContext`. */
+  qa?: FeedbackQaContext;
 };
 
 export type Feedback = {

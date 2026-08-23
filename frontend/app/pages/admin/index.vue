@@ -71,7 +71,7 @@
 
           <v-card-text>
             <div class="text-caption text-medium-emphasis mb-2">
-              Wysłane przyciskiem „Zgłoś”, jeszcze nietknięte.
+              Wysłane przyciskiem „Zgłoś” albo z listy QA, jeszcze nietknięte.
             </div>
 
             <template v-if="pending">
@@ -409,7 +409,7 @@ const subpages = [
     title: "Zgłoszenia",
     to: "/admin/opinie",
     icon: mdiMessageAlertOutline,
-    desc: "Opinie i błędy zgłoszone przyciskiem na stronie.",
+    desc: "Opinie i błędy zgłoszone przyciskiem na stronie i przy sprawdzaniu QA.",
   },
   {
     title: "Ekstrakcje",

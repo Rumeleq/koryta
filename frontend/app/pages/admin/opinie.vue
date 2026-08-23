@@ -3,6 +3,11 @@
     <v-row>
       <v-col cols="12">
         <h1 class="text-h4 mb-4">Zgłoszenia od użytkowników</h1>
+        <p class="text-body-2 text-medium-emphasis">
+          Wszystko, co ktoś nam napisał: przyciskiem „Zgłoś” i oceniając wpisy
+          na
+          <NuxtLink to="/qa">liście zmian do sprawdzenia</NuxtLink>.
+        </p>
       </v-col>
     </v-row>
 
@@ -61,7 +66,29 @@
           </p>
 
           <div class="d-flex align-center flex-wrap ga-2">
-            <v-chip size="x-small" label :to="pageLink(item)">
+            <!-- A verdict left on a QA changelog entry arrives here like any
+                 other report; what it needs on the card is the entry it was
+                 about, not the /qa route every one of them carries. -->
+            <template v-if="item.context.qa">
+              <v-chip
+                size="x-small"
+                label
+                color="info"
+                :to="`/qa#qa-${item.context.qa.itemId}`"
+              >
+                <v-icon start :icon="mdiClipboardCheckOutline" />
+                QA: {{ item.context.qa.title }}
+              </v-chip>
+              <v-chip
+                size="x-small"
+                label
+                variant="tonal"
+                :color="item.context.qa.status === 'ok' ? 'success' : 'error'"
+              >
+                {{ qaStatusLabels[item.context.qa.status] }}
+              </v-chip>
+            </template>
+            <v-chip v-else size="x-small" label :to="pageLink(item)">
               <v-icon start :icon="mdiLinkVariant" />
               {{ item.context.pageTitle || item.context.route }}
             </v-chip>
@@ -123,9 +150,14 @@
 
 <script setup lang="ts">
 import { computed, ref, onMounted } from "vue";
-import { mdiLinkVariant, mdiEmailOutline } from "@mdi/js";
+import {
+  mdiLinkVariant,
+  mdiEmailOutline,
+  mdiClipboardCheckOutline,
+} from "@mdi/js";
 import { authRequest } from "~/composables/auth";
 import { feedbackKindConfig } from "~/composables/feedback";
+import { qaStatusLabels } from "~~/shared/qa";
 import type { Feedback, FeedbackStatus } from "~~/shared/model";
 
 definePageMeta({

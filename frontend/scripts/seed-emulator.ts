@@ -77,6 +77,10 @@ async function seedDatabase() {
     "revisions",
     "extractions",
     "feedback",
+    // Verdicts on the QA changelog. Cleared with the rest so /qa opens on an
+    // unchecked list, which is what its spec - and anybody looking at a fresh
+    // local stack - expects to see.
+    "qaChecks",
   ];
   for (const col of collections) {
     const docs = await db.collection(col).listDocuments();

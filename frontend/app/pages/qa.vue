@@ -8,7 +8,9 @@
       Lista zmian na stronie, od najnowszej. Przejdź krokami z wpisu, a potem
       powiedz, czy działa - i co poprawić. Liczy się Twoje sprawdzenie: wpis
       przechodzi do sprawdzonych dopiero, gdy Ty go ocenisz, nawet jeśli ktoś
-      inny już go widział. Twoje uwagi widzą inni zalogowani.
+      inny już go widział. Twoje uwagi widzą inni zalogowani, a zgłoszony
+      problem trafia do zespołu tą samą drogą, co przycisk „Zgłoś” - nic nie
+      trzeba pisać drugi raz.
     </p>
 
     <v-alert
@@ -139,10 +141,19 @@ const otherChecks = (itemId: string) =>
 async function save(itemId: string, status: QaCheckStatus, feedback: string) {
   savingId.value = itemId;
   try {
-    await saveCheck(itemId, status, feedback);
-    snackbarText.value =
-      status === "ok" ? "Zapisane: działa" : "Zapisane: zgłoszony problem";
-    snackbarColor.value = "success";
+    const { reported, forwarded } = await saveCheck(itemId, status, feedback);
+    // Three outcomes worth telling apart: the tick alone, the tick plus a
+    // report that reached the team, and the tick with a report that did not.
+    // The last one is not an error - the verdict is saved either way - but
+    // somebody who wrote out a problem should know it is still only here.
+    snackbarText.value = !reported
+      ? "Zapisane: działa"
+      : forwarded
+        ? status === "ok"
+          ? "Zapisane i wysłane do zespołu"
+          : "Zgłoszone - problem trafił do zespołu"
+        : "Zapisane, ale nie udało się wysłać do zespołu";
+    snackbarColor.value = forwarded || !reported ? "success" : "warning";
     snackbar.value = true;
   } catch (error) {
     console.error("Nie udało się zapisać oceny QA", error);

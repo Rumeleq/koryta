@@ -2,9 +2,12 @@ import { describe, it, expect } from "vitest";
 import {
   QA_ITEMS,
   qaCheckId,
+  qaFeedbackKind,
+  qaFeedbackMessage,
   qaItemState,
   qaReportedByOthers,
   qaStateCounts,
+  qaVerdictIsReportable,
   type QaCheck,
 } from "../../shared/qa";
 
@@ -106,5 +109,72 @@ describe("qaStateCounts", () => {
       "u1",
     );
     expect(counts).toEqual({ unchecked: 1, ok: 1, issue: 1 });
+  });
+});
+
+describe("qaVerdictIsReportable", () => {
+  const withNote = (status: QaCheck["status"], feedback: string): QaCheck => ({
+    itemId: "a",
+    userUid: "u1",
+    status,
+    feedback,
+  });
+
+  it("reports a problem, with or without words for it", () => {
+    expect(qaVerdictIsReportable("issue", "mapa się nie rysuje", null)).toBe(
+      true,
+    );
+    expect(qaVerdictIsReportable("issue", "", null)).toBe(true);
+  });
+
+  it("reports an approval that came with something to say", () => {
+    expect(qaVerdictIsReportable("ok", "działa, ale wolno", null)).toBe(true);
+  });
+
+  it("keeps a bare tick out of the channel", () => {
+    expect(qaVerdictIsReportable("ok", "", null)).toBe(false);
+    expect(qaVerdictIsReportable("ok", "   ", null)).toBe(false);
+  });
+
+  it("does not repeat a verdict that has not changed", () => {
+    const previous = withNote("issue", "mapa się nie rysuje");
+    expect(
+      qaVerdictIsReportable("issue", "mapa się nie rysuje", previous),
+    ).toBe(false);
+    // Whitespace alone is not a new report either.
+    expect(
+      qaVerdictIsReportable("issue", "  mapa się nie rysuje  ", previous),
+    ).toBe(false);
+  });
+
+  it("reports a changed mind, and reworded findings", () => {
+    const previous = withNote("issue", "mapa się nie rysuje");
+    expect(qaVerdictIsReportable("ok", "już działa", previous)).toBe(true);
+    expect(qaVerdictIsReportable("issue", "i legenda też", previous)).toBe(
+      true,
+    );
+    // Taking the words back but keeping the verdict still says something.
+    expect(qaVerdictIsReportable("issue", "", previous)).toBe(true);
+  });
+});
+
+describe("qaFeedbackMessage", () => {
+  it("is what the checker wrote", () => {
+    expect(qaFeedbackMessage("  mapa się nie rysuje  ")).toBe(
+      "mapa się nie rysuje",
+    );
+  });
+
+  it("stands in for a problem reported without words", () => {
+    // The API rejects an empty body, and losing the report would be worse than
+    // forwarding a bare "something is wrong here".
+    expect(qaFeedbackMessage("")).toBe("Zgłoszono problem bez opisu.");
+  });
+});
+
+describe("qaFeedbackKind", () => {
+  it("files a problem as a bug and a comment as an idea", () => {
+    expect(qaFeedbackKind("issue")).toBe("bug");
+    expect(qaFeedbackKind("ok")).toBe("idea");
   });
 });

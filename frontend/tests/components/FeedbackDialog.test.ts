@@ -2,11 +2,19 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 import { ref } from "vue";
 import FeedbackDialog from "../../app/components/feedback/Dialog.vue";
-import { useAuthState, authRequest } from "~/composables/auth";
+import {
+  useAuthState,
+  authRequest,
+  anonymousRequest,
+} from "~/composables/auth";
 
+// The two transports the dialog picks between. Which one carries the report is
+// the whole subject of this file: `authRequest` attaches an ID token,
+// `anonymousRequest` has nothing to attach.
 vi.mock("~/composables/auth", () => ({
   useAuthState: vi.fn(() => ({ user: ref(null) })),
   authRequest: vi.fn(() => Promise.resolve({ id: "fb-1" })),
+  anonymousRequest: vi.fn(() => Promise.resolve({ id: "fb-1" })),
 }));
 
 vi.mock("@plausible-analytics/tracker", () => ({
@@ -37,8 +45,6 @@ global.visualViewport = {
   dispatchEvent: () => true,
 } as never;
 
-const plainFetch = vi.fn(() => Promise.resolve({ id: "fb-1" }));
-
 const signedInAs = (email: string | null) =>
   (useAuthState as any).mockReturnValue({
     user: ref({ uid: "user-a", email }),
@@ -62,7 +68,7 @@ const contactInput = () =>
 const clickButton = async (label: string) => {
   const button = [
     ...document.querySelectorAll<HTMLElement>(".v-overlay-container button"),
-  ].find((b) => b.textContent?.includes(label));
+  ].find((b) => b.textContent.includes(label));
   button?.click();
   await new Promise((r) => setTimeout(r, 0));
 };
@@ -70,7 +76,6 @@ const clickButton = async (label: string) => {
 describe("FeedbackDialog attribution", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.stubGlobal("$fetch", plainFetch);
     document.body.innerHTML = "";
   });
 
@@ -101,7 +106,7 @@ describe("FeedbackDialog attribution", () => {
 
     // authRequest attaches the ID token, which is what the server attributes.
     expect(authRequest).toHaveBeenCalled();
-    expect(plainFetch).not.toHaveBeenCalled();
+    expect(anonymousRequest).not.toHaveBeenCalled();
     expect((authRequest as any).mock.calls[0][1].body.contact).toBe(
       "jan@example.com",
     );
@@ -125,9 +130,11 @@ describe("FeedbackDialog attribution", () => {
 
     // The whole point: no token goes out, so the server cannot attribute the
     // report even to itself. Anonymity is a property of the request.
-    expect(plainFetch).toHaveBeenCalled();
+    expect(anonymousRequest).toHaveBeenCalled();
     expect(authRequest).not.toHaveBeenCalled();
-    expect(plainFetch.mock.calls[0][1].body.contact).toBeUndefined();
+    expect(
+      (anonymousRequest as any).mock.calls[0][1].body.contact,
+    ).toBeUndefined();
     wrapper.unmount();
   });
 });

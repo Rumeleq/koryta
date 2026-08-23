@@ -144,6 +144,47 @@ describe("/api/feedback/create", () => {
     expect(mockAdd).not.toHaveBeenCalled();
   });
 
+  it("keeps the QA entry a verdict was written about", async () => {
+    await callHandler({
+      body: {
+        ...validBody,
+        context: {
+          route: "/qa",
+          qa: {
+            itemId: "person-places-map",
+            title: "Mapa miejsc osoby w panelu bocznym",
+            status: "issue",
+          },
+        },
+      },
+    });
+
+    // Same collection, same trigger, same queue as a report from the "Zgłoś"
+    // button - it just also knows which entry was being checked.
+    expect(written().context.qa).toEqual({
+      itemId: "person-places-map",
+      title: "Mapa miejsc osoby w panelu bocznym",
+      status: "issue",
+    });
+    expect(written()).toMatchObject({ adminStatus: "new" });
+  });
+
+  it("refuses a QA context that is not a verdict on an entry", async () => {
+    for (const qa of [
+      { itemId: "a", title: "T", status: "maybe" },
+      { itemId: "", title: "T", status: "ok" },
+      { itemId: "a", status: "ok" },
+    ]) {
+      await expect(
+        callHandler({
+          body: { ...validBody, context: { route: "/qa", qa } },
+        }),
+      ).rejects.toThrow();
+    }
+
+    expect(mockAdd).not.toHaveBeenCalled();
+  });
+
   it("drops a submission that filled the honeypot, without saying so", async () => {
     const result = await callHandler({
       body: { ...validBody, website: "http://spam.example" },

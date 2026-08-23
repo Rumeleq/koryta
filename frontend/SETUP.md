@@ -110,6 +110,11 @@ To exercise the trigger locally, put `SLACK_BOT_TOKEN=xoxb-…` in
 `frontend/functions/.secret.local` (already gitignored via `*.local`) and set
 the channel to a scratch channel.
 
+Two things post here, through the same endpoint and the same trigger: the
+"Zgłoś" button, and a verdict left on an entry of the QA changelog at `/qa`
+(see the README). A QA report carries `context.qa`, which is what makes its
+card name the entry and link back to it.
+
 Reports are accepted from signed-out visitors on purpose. The endpoint is
 protected by a honeypot field and a daily ceiling on how many reports get
 forwarded; past the ceiling reports are still saved and only the Slack forward

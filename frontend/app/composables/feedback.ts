@@ -6,6 +6,7 @@ import {
   mdiDotsHorizontal,
 } from "@mdi/js";
 import { parseEntityUrlSlug, seoTypes, type SeoType } from "./slugs";
+import { anonymousRequest, authRequest } from "./auth";
 import { feedbackKindLabels } from "~~/shared/model";
 import type {
   FeedbackContext,
@@ -97,4 +98,54 @@ export function captureFeedbackContext(
   }
 
   return context;
+}
+
+/** One report, as the form (or the QA page) has it before it is sent. */
+export type FeedbackDraft = {
+  kind: FeedbackKind;
+  message: string;
+  /** Volunteered so we can reply. Its presence is also what decides
+   * attribution - see `submitFeedback`. */
+  contact?: string;
+  /** The dialog's honeypot. Never set anywhere a person types. */
+  website?: string;
+  context: FeedbackContext;
+};
+
+/** The one way a report reaches the server, wherever on the site it was
+ * written: the "Zgłoś" dialog, and a verdict left on a QA changelog entry.
+ * Both land in `feedback`, both go to the same Slack channel and the same
+ * admin queue - which is the point of routing them through here rather than
+ * letting each screen invent its own call.
+ *
+ * `attribute` decides whether an ID token goes with the request. It is not a
+ * flag the server is asked to respect: without the token there is nothing to
+ * attribute the report to, so "anonimowo" is a property of what was sent, not
+ * a promise about what we do with it.
+ */
+export async function submitFeedback(
+  draft: FeedbackDraft,
+  options: { attribute: boolean },
+): Promise<{ id: string | null }> {
+  const body = {
+    kind: draft.kind,
+    message: draft.message,
+    ...(draft.contact ? { contact: draft.contact } : {}),
+    ...(draft.website ? { website: draft.website } : {}),
+    context: draft.context,
+  };
+
+  if (options.attribute) {
+    return await authRequest<{ id: string | null }>("/api/feedback/create", {
+      method: "POST",
+      body,
+    });
+  }
+
+  // Deliberately not authRequest: it would attach the ID token, and the server
+  // attributes any report that carries one.
+  return await anonymousRequest<{ id: string | null }>("/api/feedback/create", {
+    method: "POST",
+    body,
+  });
 }
