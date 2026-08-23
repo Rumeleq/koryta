@@ -52,6 +52,8 @@ export const QA_ITEMS: QaItem[] = [
     steps: [
       "Wejdź na stronę główną i przewiń na sam dół, do sekcji „Ostatnie zatrudnienia”.",
       "Sprawdź daty na kafelkach - mają iść od najnowszej w dół, a nie w losowej kolejności.",
+      "Porównaj daty na kafelkach: stanowisko wciąż zajmowane („obecnie”) ma mieć datę na zielono, zakończone - na szaro.",
+      "Najedź myszą na kafelek - ma się delikatnie unieść, a strzałka po prawej zmienić kolor.",
       "Przewijaj dalej - po chwili ma dojść kolejna porcja, bez klikania czegokolwiek.",
       "Kliknij dowolny kafelek - ma otworzyć stronę osoby, a nie instytucji.",
       "Zwęź okno do szerokości telefonu - kafelki mają ustawić się w jednej kolumnie zamiast dwóch.",
