@@ -161,7 +161,14 @@
           </v-btn>
         </div>
 
-        <NoteEditor :node-id="node" class="mt-4" />
+        <!-- Notes on a person are unreviewed claims about a named individual,
+             so a reader has to be logged in to see them. Everything else -
+             companies, regions, topics - stays open. -->
+        <NoteEditor
+          v-if="user || entity?.type !== 'person'"
+          :node-id="node"
+          class="mt-4"
+        />
 
         <div class="mt-4">
           <template v-if="entity?.type === 'place'">
