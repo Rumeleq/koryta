@@ -5,7 +5,7 @@ import type {
   WriteBatch,
 } from "firebase-admin/firestore";
 import type { Edge, Node, Revision } from "~~/shared/model";
-import { revisionCollection } from "~~/shared/model";
+import { pageIsPublic, revisionCollection } from "~~/shared/model";
 import { recordAudit } from "~~/server/utils/audit";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 
@@ -148,6 +148,29 @@ export function nodeOwnedFields(
   return owned;
 }
 
+/** The counters a node has to carry before anything can find it, for a node
+ * whose counters nothing has computed yet.
+ *
+ * `/api/stats/computeNodes` is what really works these out, and it writes them
+ * for every node - but it is an admin endpoint somebody runs by hand, so
+ * between two runs every node created in between carries no `stats` at all.
+
+ * Only fields that are missing are filled in. A real count computed by
+ * `computeNodes`, or one carried across from the stored document, always wins:
+ * zero here means "nobody has counted yet", never "counted, and it is none".
+ */
+export function withSeededNodeStats(
+  targetData: Record<string, unknown>,
+): Record<string, unknown> {
+  const stats = {
+    ...((targetData.stats as Record<string, unknown> | undefined) ?? {}),
+  };
+  if (stats.nodeGroupSize === undefined) stats.nodeGroupSize = 0;
+  if (stats.isApproved === undefined)
+    stats.isApproved = pageIsPublic(targetData);
+  return { ...targetData, stats };
+}
+
 export interface RevisionWriteOptions {
   /** Written by a pipeline rather than by a person. */
   automatic?: boolean;
@@ -231,7 +254,12 @@ export function createRevisionTransaction(
   if (published !== undefined) {
     targetData.published = published;
   }
-  batch.set(targetRef, targetData);
+  batch.set(
+    targetRef,
+    revision.collection === "nodes"
+      ? withSeededNodeStats(targetData)
+      : targetData,
+  );
 
   return { revisionRef, targetRef };
 }
@@ -294,7 +322,12 @@ export async function applyRevision(
 
   const timestamp = Timestamp.now();
   const batch = db.batch();
-  batch.set(targetRef, targetData);
+  batch.set(
+    targetRef,
+    targetRef.parent.id === "nodes"
+      ? withSeededNodeStats(targetData)
+      : targetData,
+  );
   batch.update(revisionRef, {
     status: "approved",
     review_user: user.uid,
