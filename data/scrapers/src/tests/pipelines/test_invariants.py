@@ -547,6 +547,45 @@ def test_a_published_node_is_in_the_listings(nodes):
     )
 
 
+def test_a_node_with_a_name_index_can_be_searched_for(nodes):
+    """Carrying the search index is not enough to be found by it.
+
+    `/api/search` matches on `nameChunksLower` and orders the hits by
+    `stats.nodeGroupSize`, and Firestore returns no document that lacks the
+    field it is ordered on. So a node can carry a complete name index, have a
+    working page, and still be absent from every search for its own name -
+    which is what a person ingested on 2026-08-21 was reported as.
+
+    Only `/api/stats/computeNodes` really works the counter out, it writes it
+    for every node at once, and an admin runs it by hand, so between two runs
+    everything created in between was in this state.
+    `withSeededNodeStats` in server/utils/revisions.ts now seeds a zero on
+    every node written through a revision, and
+    scripts/migrate/backfill-node-group-size.ts repairs the ones already
+    stored.
+    """
+    # Measured against production on 2026-08-23, before the migration ran:
+    # 474 people and 204 companies. Articles are not searched and so are not
+    # counted here. This goes to zero once the backfill has been run against
+    # production.
+    UNSEEDED = 678
+
+    searchable = {"person", "place", "region"}
+    unfindable = [
+        document["id"]
+        for document in nodes
+        if document.get("type") in searchable
+        and document.get("nameChunksLower")
+        and "nodeGroupSize" not in stats_of(document)
+    ]
+
+    assert len(unfindable) <= UNSEEDED, (
+        f"{len(unfindable)} nodes carry a name index but no "
+        f"`stats.nodeGroupSize`, so no search for their name returns them - up "
+        f"from the {UNSEEDED} known ones: {sample(unfindable)}"
+    )
+
+
 @pytest.mark.parametrize("collection", ["nodes", "edges"])
 def test_revision_id_points_at_the_documents_own_revision(snapshot, collection):
     """`revision_id` names the revision that was published.

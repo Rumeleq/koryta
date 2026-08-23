@@ -4,6 +4,7 @@ import { getUser } from "~~/server/utils/auth";
 import {
   baseNodeFields,
   sanitizeFirestoreData,
+  withSeededNodeStats,
 } from "~~/server/utils/revisions";
 import {
   editSchemas,
@@ -92,18 +93,18 @@ export default defineEventHandler(async (event) => {
     // is approved to show, and with `published: false` said out loud: now that
     // the backfill has run, every document carries the field, and a proposal
     // that left it absent would be the only place the old ambiguity survived.
-    batch.set(nodeRef, {
-      ...(revision.data as Record<string, unknown>),
-      published: false,
-      // `stats` for the same reason, and it is not cosmetic: /api/search sorts
-      // on `stats.nodeGroupSize`, and Firestore's orderBy drops any document
-      // that does not carry the field at all. A person somebody had just
-      // created was therefore invisible to the very picker that created them -
-      // they could be added once and never found again, for good, since nothing
-      // writes the field until /api/stats/computeNodes next runs. Zero is the
-      // honest value: nobody is connected to them yet.
-      stats: { isApproved: false, nodeGroupSize: 0 },
-    });
+    // `stats` is seeded for the same reason, and it is not cosmetic:
+    // /api/search sorts on `stats.nodeGroupSize`, and Firestore's orderBy drops
+    // any document that does not carry the field at all. See
+    // `withSeededNodeStats`, which is where every other node-creating path gets
+    // the same treatment.
+    batch.set(
+      nodeRef,
+      withSeededNodeStats({
+        ...(revision.data as Record<string, unknown>),
+        published: false,
+      }),
+    );
   }
   await batch.commit();
 

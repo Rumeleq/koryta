@@ -134,9 +134,14 @@ describe("createRevisionTransaction", () => {
       data: data,
       update_user: "test-user",
     });
-    // Without approve/published the target document is just the data
+    // Without approve/published the target document is the data, plus the
+    // counters every node has to carry to be found at all - see
+    // `withSeededNodeStats`.
     const targetData = vi.mocked(mockBatch.set).mock.calls[1][1];
-    expect(targetData).toEqual(data);
+    expect(targetData).toEqual({
+      ...data,
+      stats: { nodeGroupSize: 0, isApproved: false },
+    });
   });
 
   it("should set revision_id on the target but not in the revision data when approving", () => {
@@ -201,6 +206,11 @@ describe("createRevisionTransaction", () => {
       node_id: "edge-1",
       collection: "edges",
     });
+    // `stats.nodeGroupSize` is a node's search ranking; an edge has no name to
+    // be found by and nothing reads a counter on one.
+    expect(vi.mocked(mockBatch.set).mock.calls[1][1]).not.toHaveProperty(
+      "stats",
+    );
   });
 
   describe("updating a document that already exists", () => {
@@ -297,13 +307,40 @@ describe("createRevisionTransaction", () => {
     });
 
     it("carries nothing when there is no stored document to carry from", () => {
-      // A document being created owns nothing yet.
+      // A document being created owns nothing yet, beyond the counters seeded
+      // for it so that it can be found.
       expect(targetWrite({ approve: true, published: true })).toEqual({
         name: "Krystian Probierz",
         type: "person",
         parties: ["PiS"],
         revision_id: { id: "new-rev-id" },
         published: true,
+        stats: { nodeGroupSize: 0, isApproved: true },
+      });
+    });
+
+    it("seeds the counters that decide whether a new node can be found", () => {
+      // Not cosmetic, and not only the proposal form's problem: /api/search
+      // orders by `stats.nodeGroupSize` and Firestore drops any document that
+      // lacks the ordered field, so a person the scrapers had just ingested had
+      // a page nobody could search their way to. Zero says "not counted yet";
+      // `computeNodes` replaces it with the real group size.
+      const created = targetWrite({ automatic: true, published: false });
+      expect(created.stats).toEqual({ nodeGroupSize: 0, isApproved: false });
+    });
+
+    it("fills in a counter an existing document is missing", () => {
+      // The nodes written before this was seeded keep arriving here on every
+      // re-ingest; repairing them in passing is free and stops the count from
+      // growing back between migration runs.
+      const incomplete = {
+        ...stored,
+        stats: { isApproved: true, notesCount: 2 },
+      };
+      expect(targetWrite({ approve: true, stored: incomplete }).stats).toEqual({
+        isApproved: true,
+        notesCount: 2,
+        nodeGroupSize: 0,
       });
     });
 
@@ -354,7 +391,7 @@ describe("applyRevision", () => {
       { stats: { isApproved: true, notesCount: 2 }, votes: { interesting: 3 } },
       { name: "Krystian Probierz" },
     );
-    expect(written.stats).toEqual({ isApproved: true, notesCount: 2 });
+    expect(written.stats).toMatchObject({ isApproved: true, notesCount: 2 });
     expect(written.votes).toEqual({ interesting: 3 });
   });
 

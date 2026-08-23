@@ -72,7 +72,7 @@ test.describe("OmniSearch add person", () => {
   test("creates a person that only logged in users can see", async ({
     page,
   }) => {
-    test.setTimeout(90000);
+    test.setTimeout(150000);
 
     const timestamp = Date.now();
     const personName = `Testowa Osoba ${timestamp}`;
@@ -136,7 +136,28 @@ test.describe("OmniSearch add person", () => {
     const createdUrl = page.url();
     const nodeUrl = createdUrl.split("?")[0]!;
 
-    // 5. A logged out visitor must not see it
+    // 5. Searching the name again finds them. The one thing a picker that
+    // offers to create a person must not do is lose them: /api/search orders by
+    // `stats.nodeGroupSize`, Firestore returns no document that lacks the field
+    // it is ordered on, and nothing writes that field until an admin runs
+    // /api/stats/computeNodes - so a person created here could be added once and
+    // never found again. The name index is written by a Firestore trigger and
+    // lands a moment after the node does, and the menu only queries when the
+    // query changes, so this retypes rather than waiting on a stale menu.
+    await expect(async () => {
+      await page.goto("/");
+      await searchFor(page, personName);
+      await expect(
+        page
+          .locator(
+            '.v-overlay--active .v-list-item:not([data-testid^="omni-search-add-"])',
+            { hasText: personName },
+          )
+          .first(),
+      ).toBeVisible({ timeout: 5000 });
+    }).toPass({ timeout: 45000 });
+
+    // 6. A logged out visitor must not see it
     const anonContext = await page.context().browser()!.newContext();
     const anonPage = await anonContext.newPage();
     await anonPage.goto(nodeUrl);
