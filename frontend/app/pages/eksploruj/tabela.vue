@@ -103,6 +103,10 @@ import { useEdges } from "~/composables/edges";
 definePageMeta({ fullWidth: true, affineLink: "BYOEeL1iG0mvIR3yz2pOs" });
 useHead({
   title: "Eksploruj - Tabela - koryta.pl",
+  // Marks the page for the `overflow-x` override below. Set through the head
+  // rather than a stylesheet because it has to come off again when the reader
+  // navigates away - no other page wants a sideways scrollbar.
+  htmlAttrs: { class: "tabela-scroll-x" },
 });
 
 const route = useRoute();
@@ -366,6 +370,9 @@ const focusPerson = (item: PersonRich) => {
 
 <style scoped>
 @media (min-width: 960px) {
+  /* The header sticks to the app bar rather than to the table, which needs
+   * every scroll container between the two out of the way - a `position:
+   * sticky` element measures itself against the nearest one. */
   .table-card,
   .table-card :deep(.v-data-table),
   .table-card :deep(.v-table),
@@ -374,6 +381,20 @@ const focusPerson = (item: PersonRich) => {
   }
   .table-card :deep(.v-data-table__th) {
     top: var(--v-layout-top) !important;
+  }
+}
+</style>
+
+<!-- Not scoped: the rule is on <html>, which no component owns. Vuetify sets
+     `overflow-x: hidden` there, so the columns that do not fit were clipped
+     with no way to reach them - the table sits in a chain of `overflow:
+     visible` (see above), so the page is the only thing left that can scroll
+     to them. Below 960px the wrapper keeps its own scrollbar and this does not
+     apply. -->
+<style>
+@media (min-width: 960px) {
+  html.tabela-scroll-x {
+    overflow-x: auto;
   }
 }
 </style>
