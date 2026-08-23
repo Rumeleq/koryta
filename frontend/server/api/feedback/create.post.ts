@@ -28,6 +28,17 @@ const bodyValidator = z.object({
         height: z.number().int().positive().max(20000),
       })
       .optional(),
+    // Present when the report was written on /qa. The title is taken as the
+    // client sends it rather than looked up in the changelog: it is what the
+    // reporter actually had in front of them, and an entry edited or dropped
+    // since should not turn their report into a dangling id.
+    qa: z
+      .object({
+        itemId: z.string().trim().min(1).max(200),
+        title: z.string().trim().min(1).max(300),
+        status: z.enum(["ok", "issue"]),
+      })
+      .optional(),
   }),
 });
 

@@ -182,6 +182,106 @@ describe("buildFeedbackBlocks", () => {
   });
 });
 
+describe("buildFeedbackBlocks for a QA verdict", () => {
+  const qaReport: Feedback = {
+    ...base,
+    kind: "bug",
+    message: "mapa się nie rysuje",
+    context: {
+      route: "/qa",
+      pageTitle: "QA - zmiany do sprawdzenia",
+      qa: {
+        itemId: "person-places-map",
+        title: "Mapa miejsc osoby w panelu bocznym",
+        status: "issue",
+      },
+    },
+  };
+
+  const fieldsOf = (feedback: Feedback) =>
+    (
+      buildFeedbackBlocks(feedback, opts).filter(
+        (b) => b.type === "section",
+      )[1] as { fields: { text: string }[] }
+    ).fields;
+
+  it("names the entry that was being checked in the header", () => {
+    const header = asText(
+      blockOfType(buildFeedbackBlocks(qaReport, opts), "header"),
+    );
+
+    expect(header).toContain("QA: Mapa miejsc osoby w panelu bocznym");
+    expect(header.length).toBeLessThanOrEqual(150);
+  });
+
+  it("says the verdict instead of repeating the /qa route", () => {
+    const fields = fieldsOf(qaReport);
+
+    expect(fields[0]?.text).toContain("Coś nie działa");
+    expect(fields[0]?.text).not.toContain("/qa");
+    expect(
+      fieldsOf({
+        ...qaReport,
+        context: {
+          ...qaReport.context,
+          qa: { ...qaReport.context.qa!, status: "ok" },
+        },
+      })[0]?.text,
+    ).toContain("Działa");
+  });
+
+  it("carries the entry id, which is what a stored verdict points at", () => {
+    const context = blockOfType(
+      buildFeedbackBlocks(qaReport, opts),
+      "context",
+    ) as { elements: { text: string }[] };
+
+    expect(context.elements[0]?.text).toContain("person-places-map");
+  });
+
+  it("offers the panel and the entry, in that order", () => {
+    const actions = blockOfType(
+      buildFeedbackBlocks(qaReport, opts),
+      "actions",
+    ) as { elements: { url: string }[] };
+
+    expect(actions.elements.map((e) => e.url)).toEqual([
+      "https://koryta.pl/admin/opinie#fb-fb-1",
+      // The anchor QaItemCard renders, so the link lands on the entry.
+      "https://koryta.pl/qa#qa-person-places-map",
+    ]);
+  });
+
+  it("still links the entry when the report has no id yet", () => {
+    const actions = blockOfType(
+      buildFeedbackBlocks({ ...qaReport, id: undefined }, opts),
+      "actions",
+    ) as { elements: { url: string }[] };
+
+    expect(actions.elements).toHaveLength(1);
+    expect(actions.elements[0]?.url).toBe(
+      "https://koryta.pl/qa#qa-person-places-map",
+    );
+  });
+
+  it("names the entry and the verdict in the notification text", () => {
+    expect(buildFeedbackFallback(qaReport)).toBe(
+      "Nowe zgłoszenie (QA: Mapa miejsc osoby w panelu bocznym - Coś nie " +
+        "działa): mapa się nie rysuje",
+    );
+  });
+
+  it("leaves an ordinary report exactly as it was", () => {
+    const blocks = buildFeedbackBlocks(base, opts);
+
+    expect(asText(blockOfType(blocks, "header"))).toContain("Coś nie działa");
+    expect(fieldsOf(base)[0]?.text).toContain("*Strona*");
+    expect(
+      (blockOfType(blocks, "actions") as { elements: unknown[] }).elements,
+    ).toHaveLength(1);
+  });
+});
+
 describe("buildFeedbackFallback", () => {
   it("names the kind and quotes the message", () => {
     expect(buildFeedbackFallback(base)).toBe(

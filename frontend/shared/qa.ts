@@ -42,6 +42,58 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
 /** Newest first. Prepend, never insert in the middle. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "feedback-from-qa",
+    date: "2026-08-23",
+    title: "Uwaga z listy QA idzie prosto do zespołu",
+    description:
+      "Zgłoszony tu problem - i każda uwaga dopisana do wpisu - trafia tam, " +
+      "gdzie zgłoszenia z przycisku „Zgłoś”: na kanał zespołu i do panelu. " +
+      "Nie trzeba pisać tego samego drugi raz.",
+    steps: [
+      "Rozwiń dowolny wpis, wpisz uwagę i kliknij „Coś nie działa”.",
+      "Sprawdź komunikat na dole - ma powiedzieć, że zgłoszenie poszło do zespołu.",
+      "Jako admin wejdź na /admin/opinie: zgłoszenie ma tam być, z chipem „QA” i nazwą wpisu.",
+      "Kliknij ten chip - ma wrócić dokładnie na ten wpis na /qa.",
+      "Kliknij „Działa” bez wpisywania uwagi przy innym wpisie - to samo sprawdzenie, ale w panelu nic nowego się nie pojawia.",
+      "Kliknij drugi raz to samo z tą samą uwagą - też nie ma powstać nowe zgłoszenie.",
+    ],
+    link: "/qa",
+    area: "contributor",
+  },
+  {
+    id: "feedback-button",
+    date: "2026-08-23",
+    title: "Przycisk „Zgłoś” na każdej stronie",
+    description:
+      "Każdy - także niezalogowany - może powiedzieć, co jest nie tak, bez " +
+      "zakładania konta i bez szukania kontaktu. Zgłoszenie zabiera ze sobą " +
+      "stronę, na której było pisane.",
+    steps: [
+      "Otwórz dowolną stronę osoby i kliknij „Zgłoś” w prawym dolnym rogu.",
+      "Wybierz rodzaj, napisz kilka słów i wyślij - ma pojawić się podziękowanie.",
+      "Zalogowany: sprawdź, że e-mail jest już wpisany, a pod spodem jest napisane, że zgłoszenie będzie podpisane.",
+      "Wyczyść pole e-mail i wyślij ponownie - opis ma się zmienić na anonimowy.",
+      "Wyloguj się i zgłoś coś jeszcze raz - ma się udać tak samo.",
+    ],
+    area: "public",
+  },
+  {
+    id: "admin-feedback-queue",
+    date: "2026-08-23",
+    title: "Kolejka zgłoszeń w panelu admina",
+    description:
+      "Wszystkie zgłoszenia w jednym miejscu, ze statusem i notatką, a na " +
+      "stronie głównej panelu licznik nieruszonych.",
+    steps: [
+      "Jako admin wejdź na /admin i sprawdź kafelek „Nowe zgłoszenia”.",
+      "Przejdź do /admin/opinie i zmień status jednego zgłoszenia.",
+      "Odśwież stronę - status i notatka mają się utrzymać, a licznik na /admin zmniejszyć.",
+      "Sprawdź, że zgłoszenie anonimowe jest oznaczone jako anonimowe i nie pokazuje konta.",
+    ],
+    link: "/admin/opinie",
+    area: "admin",
+  },
+  {
     id: "person-notes-require-login",
     date: "2026-08-23",
     title: "Notatki o osobie tylko dla zalogowanych",
@@ -286,4 +338,59 @@ export function qaReportedByOthers(
       check.status === "issue" &&
       check.userUid !== userUid,
   );
+}
+
+/** How a verdict reads in prose - on a card in Slack, in the admin queue, and
+ * under "Co napisali inni". */
+export const qaStatusLabels: Record<QaCheckStatus, string> = {
+  ok: "Działa",
+  issue: "Coś nie działa",
+};
+
+/** Whether a verdict is worth putting in front of the team, and not just
+ * recording as this reader's own tick.
+ *
+ * Everything somebody writes on /qa goes through the same intake as the "Zgłoś"
+ * button - the same endpoint, the same Slack channel, the same queue - so what
+ * decides is whether there is anything to tell. A plain "działa" with nothing
+ * written is a checkbox, and re-saving the same verdict with the same words is
+ * not news either: both would arrive as noise in a channel whose value is that
+ * everything in it deserves reading.
+ */
+export function qaVerdictIsReportable(
+  status: QaCheckStatus,
+  note: string,
+  previous: QaCheck | null,
+): boolean {
+  const text = note.trim();
+  if (status === "ok" && !text) return false;
+  if (
+    previous?.status === status &&
+    (previous.feedback ?? "").trim() === text
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** What the report says.
+ *
+ * The entry and the verdict travel in `FeedbackContext.qa`, so this is the
+ * checker's own words - and a stand-in when a problem was reported without
+ * any, because a report with an empty body is rejected by the API and losing
+ * it would be worse than forwarding a bare "something is wrong here". An "ok"
+ * never reaches this without a note; `qaVerdictIsReportable` stops it first.
+ */
+export function qaFeedbackMessage(note: string): string {
+  return note.trim() || "Zgłoszono problem bez opisu.";
+}
+
+/** The report kind a verdict files as.
+ *
+ * A problem is a bug; a change that works but drew a comment is somebody
+ * saying how it could be better, which is what `idea` already means. Nothing
+ * about the QA origin is lost either way - `context.qa` carries it.
+ */
+export function qaFeedbackKind(status: QaCheckStatus): "bug" | "idea" {
+  return status === "issue" ? "bug" : "idea";
 }

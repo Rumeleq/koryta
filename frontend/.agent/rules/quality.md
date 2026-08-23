@@ -16,7 +16,9 @@
    to see it - `/qa` is where contributors work through that list and report
    what is broken, each on their own (one person's verdict does not check the
    entry off for anybody else). An `id` is never renamed or reused: it is what
-   somebody's stored verdict points at.
+   somebody's stored verdict points at, and what a report written there links
+   back to - a verdict with anything written on it is forwarded to Slack and
+   `/admin/opinie` like any other piece of feedback.
 
 1. **Domain Knowledge**:
    - For working with Revisions and Edges, verify `.agent/skills/revisions.md`.

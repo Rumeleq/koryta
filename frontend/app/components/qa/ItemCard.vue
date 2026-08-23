@@ -1,5 +1,7 @@
 <template>
-  <v-card class="mb-4" :data-qa-item="item.id">
+  <!-- The id is what a card in Slack links back to: a report written here
+       arrives with a "Otwórz wpis QA" button pointing at this anchor. -->
+  <v-card :id="`qa-${item.id}`" class="mb-4" :data-qa-item="item.id">
     <v-card-item>
       <template #prepend>
         <v-icon :icon="stateIcon" :color="qaStateConfig[state].color" />
@@ -65,7 +67,8 @@
             auto-grow
             variant="outlined"
             density="compact"
-            hide-details
+            hint="Zgłoszony problem i każda uwaga idą do zespołu tak samo, jak przez przycisk „Zgłoś”."
+            persistent-hint
           />
 
           <div class="d-flex flex-wrap ga-2 mt-3">
@@ -109,7 +112,7 @@
                 :color="other.status === 'ok' ? 'success' : 'error'"
               />
               <span class="text-body-2">
-                {{ other.feedback || qaStatusLabel(other.status) }}
+                {{ other.feedback || qaStatusLabels[other.status] }}
               </span>
             </div>
           </div>
@@ -133,6 +136,7 @@ import { computed, ref, watch } from "vue";
 import {
   qaAreaConfig,
   qaStateConfig,
+  qaStatusLabels,
   type QaCheck,
   type QaCheckStatus,
   type QaItem,
@@ -178,12 +182,8 @@ const stateIcon = computed(() => {
   return mdiProgressQuestion;
 });
 
-function qaStatusLabel(status: QaCheckStatus): string {
-  return status === "ok" ? "Działa" : "Coś nie działa";
-}
-
 const myVerdictLabel = computed(() =>
-  props.myCheck ? qaStatusLabel(props.myCheck.status) : "",
+  props.myCheck ? qaStatusLabels[props.myCheck.status] : "",
 );
 </script>
 

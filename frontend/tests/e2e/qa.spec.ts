@@ -1,9 +1,13 @@
 import { test, expect } from "@playwright/test";
-import { logIn } from "./helpers/auth";
+import { logIn, USERS } from "./helpers/auth";
 import { QA_ITEMS } from "../../shared/qa";
 
 /** The newest entry is the one the page opens on, whatever it happens to be. */
 const NEWEST = QA_ITEMS[0]!;
+/** A second entry, for the spec that must not touch the one above. Both specs
+ * sign in as the same seeded account and run in parallel, so two verdicts on
+ * one entry would overwrite each other's note. */
+const SECOND = QA_ITEMS[1]!;
 
 test.describe("QA changelog", () => {
   test("a contributor checks a change and reports what is wrong", async ({
@@ -24,9 +28,9 @@ test.describe("QA changelog", () => {
     await card.getByLabel("Uwagi", { exact: false }).fill(feedback);
     await card.getByRole("button", { name: "Coś nie działa" }).click();
 
-    await expect(page.getByText("Zapisane: zgłoszony problem")).toBeVisible({
-      timeout: 30_000,
-    });
+    await expect(
+      page.getByText("Zgłoszone - problem trafił do zespołu"),
+    ).toBeVisible({ timeout: 30_000 });
 
     // Reported problems leave the default list and turn up under "Problemy".
     await expect(card).toBeHidden({ timeout: 30_000 });
@@ -51,6 +55,63 @@ test.describe("QA changelog", () => {
     await expect(card.getByLabel("Uwagi", { exact: false })).toHaveValue(
       feedback,
     );
+  });
+
+  test("a reported problem reaches the same queue as the Zgłoś button", async ({
+    page,
+    browser,
+  }) => {
+    test.setTimeout(180_000);
+
+    await logIn(page, undefined, "/qa");
+
+    // "Wszystkie", because a previous run against the same emulator may have
+    // moved this entry out of "Do sprawdzenia" for this account. Waiting for
+    // the verdicts first: until they land the filter buttons are markup with
+    // no listeners, and the click is dropped.
+    await expect(page.locator('[data-qa-loaded="true"]')).toBeVisible({
+      timeout: 60_000,
+    });
+    await page.getByRole("button", { name: "Wszystkie" }).click();
+
+    const card = page.locator(`[data-qa-item="${SECOND.id}"]`);
+    await expect(card).toBeVisible({ timeout: 30_000 });
+    // A settled entry keeps its instructions folded away and the note field
+    // with them, while an unchecked one opens on them - so this unfolds only
+    // when it needs to, rather than toggling whatever state it found.
+    const note = card.getByLabel("Uwagi", { exact: false });
+    if (!(await note.isVisible())) {
+      await card.getByRole("button", { name: "Jak sprawdzić" }).click();
+    }
+
+    const feedback = `zgłoszenie z QA ${Date.now()}`;
+    await note.fill(feedback);
+    await card.getByRole("button", { name: "Coś nie działa" }).click();
+    await expect(
+      page.getByText("Zgłoszone - problem trafił do zespołu"),
+    ).toBeVisible({ timeout: 30_000 });
+
+    // The point of the whole thing: a verdict left on a changelog entry is
+    // feedback, and turns up where feedback turns up - carrying the entry it
+    // was written about.
+    //
+    // In its own context rather than by signing in again on this page:
+    // firebase keeps the session in IndexedDB, and every other spec here logs
+    // in once, into a browser that was not signed in as somebody else first.
+    const adminContext = await browser.newContext();
+    try {
+      const adminPage = await adminContext.newPage();
+      await logIn(adminPage, USERS.admin, "/admin/opinie");
+
+      const report = adminPage
+        .locator(".v-card", { hasText: feedback })
+        .first();
+      await expect(report).toBeVisible({ timeout: 60_000 });
+      await expect(report).toContainText(`QA: ${SECOND.title}`);
+      await expect(report).toContainText("Coś nie działa");
+    } finally {
+      await adminContext.close();
+    }
   });
 
   test("the toolbar counts what is left to check", async ({ page }) => {

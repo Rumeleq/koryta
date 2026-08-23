@@ -1,5 +1,6 @@
 import type { Feedback } from "./model";
 import { feedbackKindLabels } from "./model";
+import { qaStatusLabels } from "./qa";
 
 /** Block Kit is structural JSON; typing it properly would mean pulling
  * @slack/web-api into the frontend's dependency tree for no benefit, since the
@@ -18,6 +19,12 @@ const KIND_EMOJI: Record<Feedback["kind"], string> = {
   idea: "💡",
   other: "💬",
 };
+
+/** A report from /qa is the same kind of thing as one from the "Zgłoś" button
+ * and belongs in the same channel - but it answers a question the team asked,
+ * so the card says which entry was being checked instead of leading with the
+ * page. */
+const QA_EMOJI = "🔍";
 
 /** Escape the three characters Slack's mrkdwn treats as markup.
  *
@@ -66,6 +73,7 @@ export function buildFeedbackBlocks(
 ): SlackBlock[] {
   const { baseUrl } = options;
   const kindLabel = feedbackKindLabels[feedback.kind];
+  const qa = feedback.context.qa;
 
   // The API only accepts a site-relative route, so this cannot be turned into
   // a link to somewhere else. Escaped anyway: an unescaped `|` or `>` would
@@ -74,16 +82,24 @@ export function buildFeedbackBlocks(
   const pageLabel = feedback.context.pageTitle || feedback.context.route;
 
   // No separate entity field: for an entity page the route above already is
-  // that page, and pageTitle is the name the reporter saw.
+  // that page, and pageTitle is the name the reporter saw. A QA report says
+  // the verdict there instead - its route is always /qa, which the header and
+  // the button below already make plain.
   const fields: SlackBlock[] = [
-    {
-      type: "mrkdwn",
-      text: `*Strona*\n<${pageUrl}|${escapeMrkdwn(truncate(pageLabel, 200))}>`,
-    },
+    qa
+      ? {
+          type: "mrkdwn",
+          text: `*Wynik*\n${escapeMrkdwn(qaStatusLabels[qa.status])}`,
+        }
+      : {
+          type: "mrkdwn",
+          text: `*Strona*\n<${pageUrl}|${escapeMrkdwn(truncate(pageLabel, 200))}>`,
+        },
     { type: "mrkdwn", text: reporterField(feedback) },
   ];
 
   const meta: string[] = [];
+  if (qa) meta.push(`\`${escapeMrkdwn(truncate(qa.itemId, 100))}\``);
   if (feedback.context.nodeId) meta.push(`\`${feedback.context.nodeId}\``);
   if (feedback.context.viewport) {
     meta.push(
@@ -97,7 +113,9 @@ export function buildFeedbackBlocks(
       text: {
         type: "plain_text",
         text: truncate(
-          `${KIND_EMOJI[feedback.kind]} ${kindLabel}`,
+          qa
+            ? `${QA_EMOJI} QA: ${qa.title}`
+            : `${KIND_EMOJI[feedback.kind]} ${kindLabel}`,
           HEADER_TEXT_LIMIT,
         ),
         emoji: true,
@@ -123,18 +141,26 @@ export function buildFeedbackBlocks(
     });
   }
 
+  const actions: SlackBlock[] = [];
   if (feedback.id) {
-    blocks.push({
-      type: "actions",
-      elements: [
-        {
-          type: "button",
-          style: "primary",
-          text: { type: "plain_text", text: "Otwórz w panelu" },
-          url: `${baseUrl}/admin/opinie#fb-${feedback.id}`,
-        },
-      ],
+    actions.push({
+      type: "button",
+      style: "primary",
+      text: { type: "plain_text", text: "Otwórz w panelu" },
+      url: `${baseUrl}/admin/opinie#fb-${feedback.id}`,
     });
+  }
+  if (qa) {
+    // The anchor QaItemCard renders, so this lands on the entry rather than at
+    // the top of a list somebody then has to search.
+    actions.push({
+      type: "button",
+      text: { type: "plain_text", text: "Otwórz wpis QA" },
+      url: `${baseUrl}/qa#qa-${encodeURIComponent(qa.itemId)}`,
+    });
+  }
+  if (actions.length > 0) {
+    blocks.push({ type: "actions", elements: actions });
   }
 
   return blocks;
@@ -143,8 +169,9 @@ export function buildFeedbackBlocks(
 /** Plain-text fallback, used in notifications and by clients that cannot render
  * blocks. Slack warns when it is missing. */
 export function buildFeedbackFallback(feedback: Feedback): string {
-  return truncate(
-    `Nowe zgłoszenie (${feedbackKindLabels[feedback.kind]}): ${feedback.message}`,
-    200,
-  );
+  const qa = feedback.context.qa;
+  const label = qa
+    ? `QA: ${qa.title} - ${qaStatusLabels[qa.status]}`
+    : feedbackKindLabels[feedback.kind];
+  return truncate(`Nowe zgłoszenie (${label}): ${feedback.message}`, 200);
 }

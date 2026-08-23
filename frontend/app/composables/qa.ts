@@ -9,13 +9,17 @@ import {
 } from "firebase/firestore";
 import { useFirebaseApp } from "vuefire";
 import { useAuthState } from "./auth";
+import { captureFeedbackContext, submitFeedback } from "./feedback";
 import { normalizeUpdateTime } from "~~/shared/revisions";
 import {
   QA_ITEMS,
   qaCheckId,
+  qaFeedbackKind,
+  qaFeedbackMessage,
   qaItemState,
   qaReportedByOthers,
   qaStateCounts,
+  qaVerdictIsReportable,
   type QaCheck,
   type QaCheckStatus,
   type QaItemState,
@@ -36,6 +40,7 @@ import {
  */
 export function useQaChecks() {
   const { user } = useAuthState();
+  const route = useRoute();
   // Named explicitly - `useFirestore()` would hand back `(default)`, a
   // database this project does not use. See composables/auth.ts.
   const db = getFirestore(useFirebaseApp(), "koryta-pl");
@@ -119,16 +124,31 @@ export function useQaChecks() {
       (check) => check.itemId === itemId && check.userUid === user.value?.uid,
     ) ?? null;
 
+  /** Record a verdict, and tell the team about it if there is anything to
+   * tell.
+   *
+   * Two writes on purpose, in this order. The `qaChecks` document is this
+   * reader's own record - it is what /qa and the toolbar badge read back, and
+   * it is theirs whether or not anybody else ever sees it. The report is the
+   * copy that leaves the site, and it goes through exactly the intake the
+   * "Zgłoś" button uses, so a problem found while checking a changelog entry
+   * reaches Slack and `/admin/opinie` like any other. Saving first means a
+   * Slack outage costs the report, never the verdict; the caller is told which
+   * of the two happened.
+   */
   async function saveCheck(
     itemId: string,
     status: QaCheckStatus,
     feedback?: string,
-  ) {
+  ): Promise<{ reported: boolean; forwarded: boolean }> {
     const uid = user.value?.uid;
     if (!uid) throw new Error("Trzeba być zalogowanym");
 
     const existing = myCheck(itemId);
     const text = feedback?.trim() ?? "";
+    // Read before the write below replaces it: what counts as news is what
+    // changed against the verdict that was already there.
+    const reported = qaVerdictIsReportable(status, text, existing);
     const stored: QaCheck = {
       itemId,
       userUid: uid,
@@ -160,6 +180,38 @@ export function useQaChecks() {
       ),
       local,
     ];
+
+    if (!reported) return { reported: false, forwarded: false };
+
+    const item = QA_ITEMS.find((entry) => entry.id === itemId);
+    try {
+      await submitFeedback(
+        {
+          kind: qaFeedbackKind(status),
+          message: qaFeedbackMessage(text),
+          context: {
+            ...captureFeedbackContext(route),
+            qa: {
+              itemId,
+              // Copied so the card keeps reading right after the entry is
+              // edited. An id with no entry left in the changelog should not
+              // stop the report going out, so the id stands in for the title.
+              title: item?.title ?? itemId,
+              status,
+            },
+          },
+        },
+        // Always attributed: /qa is behind the auth middleware, and a verdict
+        // is worth more when the team can go back to whoever left it.
+        { attribute: true },
+      );
+      return { reported: true, forwarded: true };
+    } catch (error) {
+      // The verdict is already saved, so this is not a failure of the click -
+      // it is the report not getting out, which is what the caller says.
+      console.error("Nie udało się wysłać zgłoszenia z QA", error);
+      return { reported: true, forwarded: false };
+    }
   }
 
   return {
