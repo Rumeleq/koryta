@@ -1,5 +1,7 @@
 """The scoring models, and the shared rules about who is worth scoring."""
 
+import datetime
+
 import pandas as pd
 import pytest
 
@@ -8,6 +10,7 @@ from analysis.scores import (
     PeopleScoresCapture,
     PeopleScoresCoappointment,
     PeopleScoresPageRank,
+    PeopleScoresSuccession,
     PeopleScoresTurnover,
 )
 from analysis.scores.base import (
@@ -18,6 +21,7 @@ from analysis.scores.base import (
     Population,
     banded_scores,
 )
+from analysis.scores.succession import as_date, successions
 from analysis.scores.turnover import same_region, year_of
 from entities.person import is_pipeline_uid
 from scrapers.stores import Pipeline
@@ -30,10 +34,17 @@ def population(
     shortlist: list[str] | None = None,
     companies: dict[str, CompanyFacts] | None = None,
 ) -> Population:
-    """A population built from `{name: [(krs, start), ...]}` and its seeds."""
+    """A population built from `{name: [(krs, start), ...]}` and its seeds.
+
+    A model that cares about roles or end dates - `PeopleScoresSuccession` is
+    the one - passes whole `Employment`s instead of the pair.
+    """
     posts = {
         name: [
-            Employment(krs=krs, role=None, start=start, end=None) for krs, start in v
+            post
+            if isinstance(post, Employment)
+            else Employment(krs=post[0], role=None, start=post[1], end=None)
+            for post in v
         ]
         for name, v in employments.items()
     }
@@ -454,6 +465,224 @@ class TestCapture:
         anna_big = model(PeopleScoresCapture).raw_scores(None, big)["Anna"]
 
         assert anna_small < anna_big
+
+
+class TestSuccession:
+    """Who took over the seat of somebody already known to be political."""
+
+    def spell(self, krs, start, end, role="Rada Nadzorcza"):
+        return Employment(krs=krs, role=role, start=start, end=end)
+
+    def stood(self, *names, party="PiS"):
+        return {
+            name: [Candidacy(year="2018", teryt=None, party=party, committee="KW PiS")]
+            for name in names
+        }
+
+    def build(self, employments, candidacies=None, seeds=None, companies=None):
+        return population(
+            employments,
+            candidacies=candidacies or {},
+            seeds=seeds or {},
+            shortlist=list(employments),
+            companies=companies or {},
+        )
+
+    def test_a_register_date_is_read_as_a_day_or_not_at_all(self):
+        assert as_date("2024-04-12") == datetime.date(2024, 4, 12)
+        assert as_date(None) is None
+        assert as_date("") is None
+        # A year on its own would land every such spell on 1 January and
+        # manufacture handovers eleven months wide.
+        assert as_date("2024") is None
+        assert as_date("brak") is None
+
+    def test_a_seat_handed_over_on_the_day_is_a_succession(self):
+        spells = [
+            ("Odchodzi", self.spell("1", "2020-01-01", "2024-04-12")),
+            ("Wchodzi", self.spell("1", "2024-04-12", None)),
+        ]
+
+        assert successions(spells) == [("Odchodzi", "Wchodzi", 0)]
+
+    def test_a_seat_left_empty_for_a_year_is_not(self):
+        spells = [
+            ("Odchodzi", self.spell("1", "2020-01-01", "2023-01-01")),
+            ("Wchodzi", self.spell("1", "2024-04-12", None)),
+        ]
+
+        assert successions(spells) == []
+
+    def test_the_register_writing_the_two_filings_out_of_order_still_counts(self):
+        # The successor is entered before the predecessor is struck off. That
+        # is a filing artefact, not two people on one seat.
+        spells = [
+            ("Odchodzi", self.spell("1", "2020-01-01", "2024-04-12")),
+            ("Wchodzi", self.spell("1", "2024-03-20", None)),
+        ]
+
+        assert successions(spells) == [("Odchodzi", "Wchodzi", -23)]
+
+    def test_two_people_sitting_on_the_board_for_years_together_do_not(self):
+        spells = [
+            ("Pierwszy", self.spell("1", "2015-01-01", "2024-04-12")),
+            ("Drugi", self.spell("1", "2016-01-01", None)),
+        ]
+
+        assert successions(spells) == []
+
+    def test_a_board_seat_is_not_handed_over_to_the_supervisory_board(self):
+        pop = self.build(
+            {
+                "Odchodzi": [self.spell("1", "2020-01-01", "2024-04-12", "Zarząd")],
+                "Wchodzi": [self.spell("1", "2024-04-12", None, "Rada Nadzorcza")],
+            },
+            candidacies=self.stood("Odchodzi"),
+        )
+
+        assert model(PeopleScoresSuccession).raw_scores(None, pop) == {}
+
+    def test_a_spell_whose_role_nobody_recorded_takes_no_part(self):
+        pop = self.build(
+            {
+                "Odchodzi": [self.spell("1", "2020-01-01", "2024-04-12", None)],
+                "Wchodzi": [self.spell("1", "2024-04-12", None, None)],
+            },
+            candidacies=self.stood("Odchodzi"),
+        )
+
+        assert model(PeopleScoresSuccession).raw_scores(None, pop) == {}
+
+    def test_a_whole_board_changing_on_one_day_pairs_off_rather_than_squaring(self):
+        # The shape KRS actually produces, and the reason the match is
+        # one-to-one: seven out and seven in is seven claims, not forty-nine.
+        spells = [
+            (f"Odchodzi{i}", self.spell("1", "2018-01-01", "2024-04-12"))
+            for i in range(7)
+        ] + [(f"Wchodzi{i}", self.spell("1", "2024-04-12", None)) for i in range(7)]
+
+        paired = successions(spells)
+
+        assert len(paired) == 7
+        assert len({leaver for leaver, _, _ in paired}) == 7
+        assert len({joiner for _, joiner, _ in paired}) == 7
+
+    def test_the_same_spell_recorded_twice_is_one_seat(self):
+        duplicated = self.spell("1", "2020-01-01", "2024-04-12")
+        pop = self.build(
+            {
+                "Odchodzi": [duplicated, duplicated],
+                "Wchodzi": [self.spell("1", "2024-04-12", None)],
+                "Też": [self.spell("1", "2024-04-12", None)],
+            },
+            candidacies=self.stood("Odchodzi"),
+        )
+
+        scores = model(PeopleScoresSuccession).raw_scores(None, pop)
+
+        # Only one of the two arrivals can have taken the one seat that was
+        # vacated; the duplicate must not hand it over a second time.
+        assert len(scores) == 1
+
+    def test_replacing_somebody_with_a_party_is_the_whole_point(self):
+        pop = self.build(
+            {
+                "Odchodzi": [self.spell("1", "2020-01-01", "2024-04-12")],
+                "Wchodzi": [self.spell("1", "2024-04-12", None)],
+            },
+            candidacies=self.stood("Odchodzi"),
+        )
+
+        assert model(PeopleScoresSuccession).raw_scores(None, pop) == {"Wchodzi": 1.0}
+
+    def test_replacing_somebody_nobody_knows_anything_about_is_not(self):
+        pop = self.build(
+            {
+                "Odchodzi": [self.spell("1", "2020-01-01", "2024-04-12")],
+                "Wchodzi": [self.spell("1", "2024-04-12", None)],
+            }
+        )
+
+        assert model(PeopleScoresSuccession).raw_scores(None, pop) == {}
+
+    def test_a_committee_no_party_could_be_read_off_is_worth_a_quarter(self):
+        # A coalition committee maps to no party on purpose, so this layer is
+        # quieter than a named party rather than absent.
+        pop = self.build(
+            {
+                "Odchodzi": [self.spell("1", "2020-01-01", "2024-04-12")],
+                "Wchodzi": [self.spell("1", "2024-04-12", None)],
+            },
+            candidacies=self.stood("Odchodzi", party=None),
+        )
+
+        assert model(PeopleScoresSuccession).raw_scores(None, pop) == {"Wchodzi": 0.25}
+
+    def test_a_person_the_site_already_published_carries_their_own_weight(self):
+        pop = self.build(
+            {
+                "Odchodzi": [self.spell("1", "2020-01-01", "2024-04-12")],
+                "Wchodzi": [self.spell("1", "2024-04-12", None)],
+            },
+            seeds={"Odchodzi": 3.0},
+        )
+
+        assert model(PeopleScoresSuccession).raw_scores(None, pop) == {"Wchodzi": 3.0}
+
+    def test_somebody_a_human_voted_down_is_not_evidence_for_their_successor(self):
+        pop = self.build(
+            {
+                "Odchodzi": [self.spell("1", "2020-01-01", "2024-04-12")],
+                "Wchodzi": [self.spell("1", "2024-04-12", None)],
+            },
+            seeds={"Odchodzi": -2.0},
+        )
+
+        assert model(PeopleScoresSuccession).raw_scores(None, pop) == {}
+
+    def test_a_public_company_adds_to_a_case_but_never_makes_one(self):
+        public = {"1": CompanyFacts(name="Spółka gminy", teryt=None, is_public=True)}
+
+        evidenced = self.build(
+            {
+                "Odchodzi": [self.spell("1", "2020-01-01", "2024-04-12")],
+                "Wchodzi": [self.spell("1", "2024-04-12", None)],
+            },
+            candidacies=self.stood("Odchodzi"),
+            companies=public,
+        )
+        bare = self.build(
+            {
+                "Odchodzi": [self.spell("1", "2020-01-01", "2024-04-12")],
+                "Wchodzi": [self.spell("1", "2024-04-12", None)],
+            },
+            companies=public,
+        )
+
+        assert model(PeopleScoresSuccession).raw_scores(None, evidenced) == {
+            "Wchodzi": 2.0
+        }
+        assert model(PeopleScoresSuccession).raw_scores(None, bare) == {}
+
+    def test_replacing_two_political_people_counts_twice(self):
+        pop = self.build(
+            {
+                "OdchodziA": [self.spell("1", "2018-01-01", "2020-04-12")],
+                "OdchodziB": [self.spell("2", "2018-01-01", "2024-04-12")],
+                "Wchodzi": [
+                    self.spell("1", "2020-04-12", "2023-01-01"),
+                    self.spell("2", "2024-04-12", None),
+                ],
+            },
+            candidacies=self.stood("OdchodziA", "OdchodziB"),
+        )
+
+        assert model(PeopleScoresSuccession).raw_scores(None, pop)["Wchodzi"] == 2.0
+
+    def test_somebody_who_replaced_nobody_is_not_this_models_business(self):
+        pop = self.build({"Anna": [self.spell("1", "2019-03-01", None)]})
+
+        assert model(PeopleScoresSuccession).raw_scores(None, pop) == {}
 
 
 class TestPipelineUid:

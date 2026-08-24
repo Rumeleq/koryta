@@ -22,7 +22,7 @@ if [[ $1 == prod ]]; then
 	SUFFIX="--prod --endpoint https://autopush.koryta.pl"
 fi
 
-MODELS=${2:-"PeopleScores PeopleScoresPageRank PeopleScoresCoappointment PeopleScoresTurnover PeopleScoresCapture"}
+MODELS=${2:-"PeopleScores PeopleScoresPageRank PeopleScoresCoappointment PeopleScoresTurnover PeopleScoresSuccession PeopleScoresCapture"}
 
 echo "Prerunning the models"
 for MODEL in $MODELS; do
