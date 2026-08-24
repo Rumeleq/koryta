@@ -107,26 +107,6 @@
           >.
         </v-alert>
 
-        <!-- Admins reach an entity page from a list - /eksploruj/tabela, a
-             search result - and from there the node's revision list, which is
-             where a page gets published, was reachable only by typing its url.
-             The publish switch itself stays on /admin/rewizje/[id], next to the
-             approved revision it acts on and to the state of the page: a signed
-             in reader's copy of the node is the latest revision, which carries
-             no `published`, so saying so here would mean a second request per
-             page view to repeat what the link leads to. -->
-        <div v-if="isAdmin" class="mb-4 d-flex">
-          <v-btn
-            variant="tonal"
-            size="small"
-            :prepend-icon="mdiHistory"
-            :to="`/admin/rewizje/${node}`"
-            data-testid="admin-revisions-link"
-          >
-            Rewizje i publikacja
-          </v-btn>
-        </div>
-
         <div v-if="entity?.type === 'place'" class="mb-4 d-flex">
           <v-btn
             class="ml-2"
@@ -384,7 +364,6 @@ import {
   mdiArrowRight,
   mdiFormatListBulleted,
   mdiGraphOutline,
-  mdiHistory,
   mdiHome,
   mdiRefresh,
 } from "@mdi/js";
@@ -422,7 +401,7 @@ const type = props.type;
 
 const route = useRoute();
 
-const { user, isAdmin } = useAuthState();
+const { user } = useAuthState();
 const router = useRouter();
 
 const { smAndDown } = useDisplay();
