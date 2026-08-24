@@ -46,6 +46,7 @@ test("a source added to a note becomes an article node", async ({ page }) => {
 
   // The promotion runs after the note is stored, so the node arrives a moment
   // later - and only once, however the same url is spelled.
+  let articleId = "";
   await expect(async () => {
     const articles = await db()
       .collection("nodes")
@@ -55,10 +56,15 @@ test("a source added to a note becomes an article node", async ({ page }) => {
     expect(articles.docs[0]!.data().type).toBe("article");
     // No title to be had, so the article goes in under its address.
     expect(articles.docs[0]!.data().name).toBe(url);
+    articleId = articles.docs[0]!.id;
   }).toPass({ timeout: 60_000 });
 
-  // And the note entry now points at the article it became.
-  await expect(companyCard.getByRole("link", { name: "Artykuł" })).toBeVisible({
-    timeout: 30_000,
-  });
+  // And the note entry now points at the article it became - that one, by id.
+  // The card carries a chip per source and keeps them all: `company_notes`
+  // leaves one on this same company, and every retry of this test leaves
+  // another, so "an Artykuł link" is several links by the time it is asked
+  // for.
+  await expect(
+    companyCard.locator(`a[href="/entity/article/${articleId}"]`),
+  ).toBeVisible({ timeout: 30_000 });
 });

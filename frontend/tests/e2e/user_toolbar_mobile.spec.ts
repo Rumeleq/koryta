@@ -49,20 +49,29 @@ test.describe("Logged in toolbar on a phone", () => {
     await expect(content).toHaveCSS("overflow-x", /auto|scroll/);
 
     // The last button starts off screen and becomes reachable after scrolling.
-    const lastButton = page.locator(".user-toolbar .v-btn").last();
-    await lastButton.scrollIntoViewIfNeeded();
+    //
+    // Which button is last depends on the page: registering lands on `/`,
+    // whose meta carries a "Dyskusja w affine" link that `/login` has none of,
+    // and it is appended a tick after the url changes - so a strip scrolled to
+    // its end grows a new end, back at scrollLeft 0. Scroll and measure in one
+    // retried block, so the measurement is always about the button that is
+    // last at the time it is taken.
+    await expect(async () => {
+      const lastButton = page.locator(".user-toolbar .v-btn").last();
+      await lastButton.scrollIntoViewIfNeeded();
 
-    const scrolled = await content.evaluate((el) => el.scrollLeft);
-    expect(scrolled).toBeGreaterThan(0);
+      const scrolled = await content.evaluate((el) => el.scrollLeft);
+      expect(scrolled).toBeGreaterThan(0);
 
-    const box = await lastButton.boundingBox();
-    const contentBox = await content.boundingBox();
-    expect(box).not.toBeNull();
-    expect(contentBox).not.toBeNull();
-    expect(box!.x).toBeGreaterThanOrEqual(contentBox!.x - 1);
-    expect(box!.x + box!.width).toBeLessThanOrEqual(
-      contentBox!.x + contentBox!.width + 1,
-    );
+      const box = await lastButton.boundingBox();
+      const contentBox = await content.boundingBox();
+      expect(box).not.toBeNull();
+      expect(contentBox).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(contentBox!.x - 1);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(
+        contentBox!.x + contentBox!.width + 1,
+      );
+    }).toPass({ timeout: 20_000 });
 
     // The strip must not have grown a vertical scrollbar or spilled over the
     // page - the fix is horizontal only.
