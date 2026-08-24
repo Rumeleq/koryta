@@ -10,6 +10,7 @@ from analysis.scores import (
     PeopleScoresCapture,
     PeopleScoresCoappointment,
     PeopleScoresPageRank,
+    PeopleScoresSuccession,
     PeopleScoresTurnover,
 )
 from analysis.stats import Statistics
@@ -64,6 +65,7 @@ PIPELINES = [
     PeopleScoresCapture,
     PeopleScoresCoappointment,
     PeopleScoresPageRank,
+    PeopleScoresSuccession,
     PeopleScoresTurnover,
     Extract,
     KRSAlreadyScraped,
