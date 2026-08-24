@@ -58,6 +58,77 @@ describe("CardEmploymentHistory", () => {
   });
 });
 
+/** The one-line hint that ties a row to the "Zmiany na stanowisku" section
+ * below it: who sat in this seat before. */
+describe("EmploymentHistory predecessors", () => {
+  const predecessor = {
+    edgeId: "e-hubert",
+    personId: "hubert",
+    personName: "Hubert Grzegorczyk",
+    parties: ["PiS"],
+    start: "2021-03-01",
+    end: "2024-05-16",
+    published: true,
+    gapDays: 0,
+  };
+
+  it("names who held the seat before, with the party and the gap", async () => {
+    const wrapper = await mountSuspended(EmploymentHistory, {
+      props: {
+        edges: [edge({ start_date: "2024-05-16" })],
+        predecessors: { e1: predecessor },
+      },
+    });
+
+    const hint = wrapper.get('[data-testid="edge-predecessor-e1"]');
+    expect(hint.text()).toContain("Wcześniej:");
+    expect(hint.text()).toContain("Hubert Grzegorczyk");
+    expect(hint.text()).toContain("PiS");
+    // `gapLabel` from shared/succession.ts, so this row and the section below
+    // it cannot describe one handover two ways.
+    expect(hint.text()).toContain("tego samego dnia");
+  });
+
+  it("does not put a link inside the row's own link", async () => {
+    // The row is an anchor to the other end of the relation. An anchor inside
+    // an anchor is invalid, and the parser recovers from it by closing the
+    // outer one and reopening it around every following fragment - which broke
+    // one row into three separate boxes on the person page.
+    const wrapper = await mountSuspended(EmploymentHistory, {
+      props: {
+        edges: [edge({ start_date: "2024-05-16" })],
+        predecessors: { e1: predecessor },
+      },
+    });
+
+    expect(
+      wrapper.get('[data-testid="edge-predecessor-e1"]').findAll("a"),
+    ).toHaveLength(0);
+  });
+
+  it("leaves a row nobody was matched to alone", async () => {
+    const wrapper = await mountSuspended(EmploymentHistory, {
+      props: {
+        edges: [edge({ id: "e2" })],
+        predecessors: { e1: predecessor },
+      },
+    });
+
+    expect(wrapper.find('[data-testid="edge-predecessor-e2"]').exists()).toBe(
+      false,
+    );
+    expect(wrapper.text()).not.toContain("Wcześniej");
+  });
+
+  it("says nothing on a card that was handed no successions at all", async () => {
+    const wrapper = await render([edge({})]);
+
+    expect(wrapper.find('[data-testid="edge-predecessor-e1"]').exists()).toBe(
+      false,
+    );
+  });
+});
+
 /** The shape `useEdges` hands the card, narrowed to what this card reads. */
 function candidacy(overrides: Record<string, unknown> = {}) {
   return {

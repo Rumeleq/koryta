@@ -3,6 +3,11 @@
        every section it renders for an article reads the local graph, which
        drops any edge with an article on either end. -->
   <ArticleDetailView v-if="type === 'article'" :key="id" :node-id="id" />
+  <!-- A company gets its own view for the same reason an article does: every
+       section it wants - the register entry, who sits there now, who they took
+       over from - is about a place, and none of them means anything on a
+       person's page. -->
+  <PlaceDetailView v-else-if="type === 'place'" :key="id" :node-id="id" />
   <EntityDetailView v-else :key="id" :node="id" :type="type" />
 </template>
 

@@ -40,10 +40,21 @@ const pages: {
     settled: ["Ocena ekstrakcji", "Opublikowane:"],
   },
   {
-    // A place's page is the table filtered to it. `chain-company` is the seeded
-    // institution with no KRS number, so this is where the identifiers a
-    // ministry, an urząd or a wojewódzki fundusz does have - REGON and NIP -
-    // are actually drawn.
+    // A company's own page, restored 2026-08-24. `suk-spolka` is the seeded
+    // institution with a board history, so this covers the two sections that
+    // only exist here: who sits there now, and who they took over from -
+    // including the same-day batch, which is the layout most likely to break.
+    name: "instytucja-strona",
+    path: "/instytucja/wojewodzki-zaklad-testowy-sukspolka",
+    // Both sections are filled from /api/edges/successions after the page
+    // renders, so capturing before it lands catches a page with two empty
+    // headings on it.
+    settled: ["Kto kogo zastąpił", "2 zmiany tego samego dnia"],
+  },
+  {
+    // The table filtered to a place, which is no longer what a place's page
+    // is - but is still where "Eksploruj powiązania" leads, and still the only
+    // place the identifiers a ministry or an urząd does have get drawn.
     name: "instytucja",
     path: "/eksploruj/tabela?place=chain-company",
     // Rendered entirely client side, so none of it exists until two separate

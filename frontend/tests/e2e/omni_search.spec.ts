@@ -53,15 +53,13 @@ test.describe("OmniSearch", () => {
 
     await orlenItem.click();
 
-    // Companies are named by node id, so an institution with no KRS number
-    // opens the table filtered too.
-    await expect(page).toHaveURL(/.*\/eksploruj\/tabela\?.*place=.+/);
+    // A company opens its own page. It used to open the table filtered to it,
+    // which listed the company's people and nothing about the company.
+    await expect(page).toHaveURL(/.*\/instytucja\/.+/);
     // Prod data carries the uppercase KRS registry name ("ORLEN"), the local
     // seed uses "Orlen" - accept both.
-    await expect(
-      page
-        .locator(".v-autocomplete", { hasText: "Instytucje" })
-        .locator(".v-chip__content"),
-    ).toContainText("ORLEN", { ignoreCase: true });
+    await expect(page.locator(".v-main")).toContainText("ORLEN", {
+      ignoreCase: true,
+    });
   });
 });

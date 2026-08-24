@@ -14,11 +14,14 @@
                    between two tags, and "REGON:123456785" reads as one number.
                    Non-breaking, so a register never wraps off its own value. -->
               <strong>{{ identifier.register }}:&nbsp;</strong>
+              <!-- Underlined ink rather than `text-primary`. The theme's sage
+                   is #a8c79f, which is 1.85:1 on white - it reads as a
+                   disabled label, not a link. Sage is a fill colour here. -->
               <a
                 v-if="identifier.url"
                 :href="identifier.url"
                 target="_blank"
-                class="text-primary text-decoration-none"
+                class="text-decoration-underline"
               >
                 {{ identifier.value }}
                 <v-icon :icon="mdiOpenInNew" size="small" />
@@ -34,7 +37,7 @@
           <div class="d-flex flex-wrap ga-2">
             <v-btn
               v-if="canEditNotes"
-              variant="tonal"
+              variant="outlined"
               :prepend-icon="mdiNoteTextOutline"
               @click="notesOpen = !notesOpen"
             >
@@ -47,10 +50,11 @@
               @submitted="submittedRevisionId = $event"
             >
               <template #activator="{ props: activatorProps }">
+                <!-- Outlined, not `tonal color="warning"`: amber ink on a
+                     12%-amber wash is 2.4:1. The icon carries the colour. -->
                 <v-btn
                   v-bind="activatorProps"
-                  variant="tonal"
-                  color="warning"
+                  variant="outlined"
                   :prepend-icon="mdiPencilOutline"
                 >
                   Zaproponuj zmianę
@@ -70,7 +74,7 @@
             <a
               :href="previewUrl"
               target="_blank"
-              class="text-primary font-weight-bold"
+              class="font-weight-bold text-decoration-underline"
             >
               Podgląd zmiany
               <v-icon :icon="mdiOpenInNew" size="small" />
