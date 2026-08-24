@@ -10,19 +10,36 @@
         :party="party"
       />
       <v-spacer />
-      <div class="d-none d-md-inline">
-        <v-spacer />
-        <DialogProposeEditNode
-          v-if="entity && type === 'person'"
-          :entity="entity"
-        />
-        <ButtonVoteNumber
-          v-if="entity"
-          :id="entity.id ?? ''"
-          :key="entity.id ?? ''"
-          category="interesting"
-          show-label
-        />
+      <div class="d-none d-md-flex flex-column align-end ga-1">
+        <div>
+          <DialogProposeEditNode
+            v-if="entity && type === 'person'"
+            :entity="entity"
+          />
+          <ButtonVoteNumber
+            v-if="entity"
+            :id="entity.id ?? ''"
+            :key="entity.id ?? ''"
+            category="interesting"
+            show-label
+          />
+        </div>
+        <!-- Admins reach a person from a list - /eksploruj/tabela, a search
+             result - and the revision list, which is where a page gets
+             published, was reachable only by typing the node id into a url. It
+             sits under the other two controls on the page rather than in a row
+             of its own, because it is the same kind of thing: what this reader
+             may do to the entity they are looking at. -->
+        <v-btn
+          v-if="isAdmin && entity?.id"
+          variant="tonal"
+          size="small"
+          :prepend-icon="mdiHistory"
+          :to="`/admin/rewizje/${entity.id}`"
+          data-testid="admin-revisions-link"
+        >
+          Rewizje
+        </v-btn>
       </div>
     </v-card-title>
     <template #append> </template>
@@ -81,6 +98,7 @@
 <script setup lang="ts">
 import {
   mdiFileDocumentOutline,
+  mdiHistory,
   mdiMapMarkerRadiusOutline,
   mdiOfficeBuildingOutline,
 } from "@mdi/js";
@@ -91,6 +109,8 @@ const props = defineProps<{
   entity: Company | Person | Article | Region;
   type: string;
 }>();
+
+const { isAdmin } = useAuthState();
 
 const company = computed(() =>
   props.type === "place" ? (props.entity as Company) : undefined,
