@@ -5,7 +5,8 @@ all of them containing "pipeline" so the frontend keeps them out of the human
 tally. They are not variants of one another: `PeopleScores` reads a person's
 employers, `PeopleScoresPageRank` reads the shape of the graph around them,
 `PeopleScoresCoappointment` reads who they keep turning up with,
-`PeopleScoresTurnover` reads what they did after an election, and
+`PeopleScoresTurnover` reads what they did after an election,
+`PeopleScoresSuccession` reads whose seat they took, and
 `PeopleScoresCapture` reads the institution rather than the person. Any of them
 can nominate somebody the others miss, which is why the site takes the best
 score across models rather than the sum.
@@ -18,6 +19,7 @@ from analysis.scores.capture import PeopleScoresCapture
 from analysis.scores.coappointment import PeopleScoresCoappointment
 from analysis.scores.company import CompanyScores, PeopleScores
 from analysis.scores.pagerank import PeopleScoresPageRank
+from analysis.scores.succession import PeopleScoresSuccession
 from analysis.scores.turnover import PeopleScoresTurnover
 
 #: Every model, in the order a run should produce them: the shared sources are
@@ -27,6 +29,7 @@ PEOPLE_SCORE_MODELS: list[type[PeopleScoreModel]] = [
     PeopleScoresPageRank,
     PeopleScoresCoappointment,
     PeopleScoresTurnover,
+    PeopleScoresSuccession,
     PeopleScoresCapture,
 ]
 
@@ -38,6 +41,7 @@ __all__ = [
     "PeopleScoresCapture",
     "PeopleScoresCoappointment",
     "PeopleScoresPageRank",
+    "PeopleScoresSuccession",
     "PeopleScoresTurnover",
     "Population",
 ]
