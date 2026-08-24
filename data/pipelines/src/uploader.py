@@ -136,6 +136,14 @@ class Uploader:
             file=sys.stderr,
         )
         cleaned_payload = clean_payload(payload)
+
+        if "elections" in cleaned_payload:
+            cleaned_payload["elections"] = [
+                e
+                for e in cleaned_payload["elections"]
+                if int(e.get("election_year", "0")) > 1999
+            ]
+
         request = json.dumps(cleaned_payload, cls=NumpyEncoder)
         if verbose:
             print(request, file=sys.stderr)
@@ -150,6 +158,8 @@ class Uploader:
             print("  OK", file=sys.stderr)
         else:
             print(f"FAILED ({resp.status_code}): {resp.text}", file=sys.stderr)
+            if resp.status_code == 500:
+                print(f"Payload: {payload}", file=sys.stderr)
             if fail:
                 raise Exception(
                     f"API error: {resp.status_code} - {resp.text} for: {payload}"
