@@ -370,7 +370,10 @@ async function lookupRegionId(
     );
   }
   const regionId = await lookupNode(ctx, "teryt", election.teryt);
-  if (!regionId) throw new Error(`Region not found: ${election.teryt}`);
+  if (!regionId)
+    throw new Error(
+      `Region not found: ${election.teryt} for ${election.election_type} ${election.election_year}`,
+    );
   return regionId;
 }
 
