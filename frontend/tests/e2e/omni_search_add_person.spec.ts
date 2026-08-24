@@ -1,4 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
+import { omniSearchFor } from "./helpers/omniSearch";
 
 /** Everything a search that found nothing can be turned into, in the order the
  * menu offers them. A person comes first because it is what most searches are
@@ -8,13 +9,21 @@ const CREATE_OPTIONS = ["person", "place", "article"] as const;
 const addOption = (type: string) => `[data-testid="omni-search-add-${type}"]`;
 const ADD_PERSON = addOption("person");
 
-/** Types into the omni search and waits for the menu to react. */
-async function searchFor(page: Page, query: string) {
+/** Types into the omni search and waits for `expected` to show up.
+ *
+ * The typing is retried rather than waited on. `networkidle` never arrives on
+ * a page that holds Firestore listeners open - which every page does once
+ * somebody is signed in - and a fill that lands before Vue has hydrated the
+ * field is wiped without ever reaching the component. See helpers/omniSearch.
+ */
+async function searchFor(
+  page: Page,
+  query: string,
+  expected: Locator,
+  timeout?: number,
+) {
   await expect(page.locator(".v-main")).toBeVisible({ timeout: 15000 });
-  await page.waitForLoadState("networkidle");
-
-  await page.locator("input#omni-search").click();
-  await page.locator("input#omni-search").fill(query);
+  await omniSearchFor(page, query, expected, timeout);
 }
 
 test.describe("OmniSearch add person", () => {
@@ -26,10 +35,9 @@ test.describe("OmniSearch add person", () => {
     page,
   }) => {
     const query = "Zbigniew Nieistniejacy Kompletnie";
-    await searchFor(page, query);
-
     const addPerson = page.locator(ADD_PERSON);
-    await expect(addPerson).toBeVisible({ timeout: 10000 });
+    await searchFor(page, query, addPerson);
+
     await expect(addPerson).toContainText("Dodaj nową osobę");
     await expect(addPerson).toContainText(query);
 
@@ -44,14 +52,12 @@ test.describe("OmniSearch add person", () => {
   });
 
   test("offers adding a person below existing results", async ({ page }) => {
-    // "PO" always matches the hardcoded party entry, independent of seed data
-    await searchFor(page, "PO");
-
     const partyItem = page
       .locator(".v-list-item", { hasText: "PO" })
       .filter({ hasText: "Partia" })
       .first();
-    await expect(partyItem).toBeVisible({ timeout: 10000 });
+    // "PO" always matches the hardcoded party entry, independent of seed data
+    await searchFor(page, "PO", partyItem);
 
     const addPerson = page.locator(ADD_PERSON);
     await expect(addPerson).toBeVisible();
@@ -77,7 +83,7 @@ test.describe("OmniSearch add person", () => {
     const timestamp = Date.now();
     const personName = `Testowa Osoba ${timestamp}`;
 
-    await searchFor(page, personName);
+    await searchFor(page, personName, page.locator(ADD_PERSON));
 
     // 1. Logged out, so the activator asks to log in first
     await page.locator(ADD_PERSON).click();
@@ -144,18 +150,18 @@ test.describe("OmniSearch add person", () => {
     // never found again. The name index is written by a Firestore trigger and
     // lands a moment after the node does, and the menu only queries when the
     // query changes, so this retypes rather than waiting on a stale menu.
-    await expect(async () => {
-      await page.goto("/");
-      await searchFor(page, personName);
-      await expect(
-        page
-          .locator(
-            '.v-overlay--active .v-list-item:not([data-testid^="omni-search-add-"])',
-            { hasText: personName },
-          )
-          .first(),
-      ).toBeVisible({ timeout: 5000 });
-    }).toPass({ timeout: 45000 });
+    await page.goto("/");
+    await searchFor(
+      page,
+      personName,
+      page
+        .locator(
+          '.v-overlay--active .v-list-item:not([data-testid^="omni-search-add-"])',
+          { hasText: personName },
+        )
+        .first(),
+      45000,
+    );
 
     // 6. A logged out visitor must not see it
     const anonContext = await page.context().browser()!.newContext();

@@ -7,11 +7,17 @@ import { expect, type Locator, type Page } from "@playwright/test";
  * `fill()` writes the DOM value without it ever reaching the component - Vue
  * then wipes the value on hydration and no search is ever issued. Retrying the
  * whole interaction rides that out: once the field is live the first keystroke
- * triggers the request and the result appears. */
+ * triggers the request and the result appears.
+ *
+ * Retyping also re-issues the query, which is what a caller waiting on
+ * something that is still being written wants: the menu only searches when the
+ * search term changes, so waiting longer on a menu that already answered would
+ * wait forever. Give those a `timeout` that covers the write. */
 export async function omniSearchFor(
   page: Page,
   query: string,
   expected: Locator,
+  timeout = 20_000,
 ) {
   const input = page.locator("input#omni-search");
 
@@ -22,7 +28,7 @@ export async function omniSearchFor(
     await input.fill("");
     await input.fill(query);
     await expect(expected).toBeVisible({ timeout: 1000 });
-  }).toPass({ timeout: 20_000 });
+  }).toPass({ timeout });
 }
 
 /** Open the header search with no query and wait for its menu to appear.
