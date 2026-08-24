@@ -42,6 +42,24 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
 /** Newest first. Prepend, never insert in the middle. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "entity-page-admin-revisions-link",
+    date: "2026-08-24",
+    title: "Skrót do rewizji i publikacji ze strony osoby",
+    description:
+      "Admin na stronie osoby (albo firmy, regionu, tematu) wchodzi wprost na " +
+      "jej listę rewizji, gdzie stronę się publikuje, zamiast szukać jej po id " +
+      "w /admin/rewizje.",
+    steps: [
+      "Jako admin wejdź na /eksploruj/tabela i kliknij dowolną osobę.",
+      "Nad treścią strony kliknij „Rewizje i publikacja” - ma otworzyć listę rewizji tej właśnie osoby.",
+      "Sprawdź na górze tamtej strony, czy osoba jest opublikowana, i w razie potrzeby opublikuj ją.",
+      "Wróć na stronę osoby i sprawdź, że przycisk prowadzi tam samo.",
+      "Wyloguj się (albo zaloguj jako zwykły użytkownik) i otwórz tę samą stronę - przycisku ma nie być.",
+    ],
+    link: "/eksploruj/tabela",
+    area: "admin",
+  },
+  {
     id: "home-compact-on-phone",
     date: "2026-08-24",
     title: "Strona główna na telefonie zaczyna się od wyszukiwarki",
