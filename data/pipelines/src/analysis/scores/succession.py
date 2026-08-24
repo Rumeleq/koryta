@@ -134,10 +134,19 @@ def successions(
     years later takes part in both handovers - which is what the register says
     happened.
 
-    Ties are broken on the two names so that two runs over the same data pair
-    the same people. The input order here is whatever `PeoplePayloads`
-    produced, and a model whose output moves when nothing moved is a model
-    nobody can review.
+    Ties are broken on the register's own facts - when each spell began, then
+    when it ended, then the name - so that two runs over the same data pair the
+    same people. Within a same-day board change every gap is zero, and the
+    tie-break is the whole of what decides who is filed as whose predecessor;
+    anything derived from the import order would move the answer every run.
+    `shared/succession.ts` orders on the same two dates, and then on the node id
+    where this has only the name - `Population` is keyed by name, as its own
+    docstring warns.
+
+    It is still an arbitrary assignment inside a batch: the register says the
+    seven of them swapped, not which chair each took. For a score that is
+    harmless - the seven predecessors are the same seven either way, so the
+    weight a successor picks up does not depend on the assignment.
     """
     candidates: list[tuple[int, int, int]] = []
     for i, (leaver, left) in enumerate(spells):
@@ -153,9 +162,12 @@ def successions(
             gap = (started - ended).days
             if -MAX_OVERLAP_DAYS <= gap <= MAX_GAP_DAYS:
                 candidates.append((i, j, gap))
-    candidates.sort(
-        key=lambda pair: (abs(pair[2]), spells[pair[0]][0], spells[pair[1]][0])
-    )
+
+    def order(index: int) -> tuple[str, str, str]:
+        name, post = spells[index]
+        return (post.start or "", post.end or "", name)
+
+    candidates.sort(key=lambda pair: (abs(pair[2]), order(pair[0]), order(pair[1])))
 
     paired: list[tuple[str, str, int]] = []
     spent_leavers: set[int] = set()

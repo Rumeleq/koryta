@@ -70,19 +70,23 @@ export function generateNodeUrl(node: Node): string | undefined {
   if (!node.id) return undefined;
 
   switch (node.type) {
-    // The types with a readable page of their own. The first two are what the
-    // sitemap lists, and what somebody shares. A topic is reachable but stays
-    // out of the sitemap until the tagging is more than a handful of stories.
+    // The types with a readable page of their own.
+    //
+    // Person and article are what the sitemap lists, and what somebody shares.
+    // A topic is reachable but stays out of the sitemap until the tagging is
+    // more than a handful of stories - and so, for now, is a company: putting
+    // ~3,979 institution urls back into it is a decision separate from
+    // restoring the pages themselves.
+    //
+    // A company had no page at all between 2026-05-21 and 2026-08-24 and was
+    // redirected to the table filtered to it, back when the branch rendering
+    // one held only owners and subsidiaries. The table answers "who works
+    // here"; it could never answer "who did they replace".
     case "person":
     case "article":
     case "topic":
-      return generateEntityUrl(node.type, node.id, node.name);
-
     case "place":
-      // A place's page is the table filtered to it, addressed by node id. Keying
-      // this on the KRS number sent every institution without one - ministries,
-      // urzędy, WFOŚiGW - to the unfiltered table instead.
-      return `/eksploruj/tabela?place=${node.id}`;
+      return generateEntityUrl(node.type, node.id, node.name);
 
     case "region": {
       if (node.id == "teryt1261") {

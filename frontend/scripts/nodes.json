@@ -259,5 +259,84 @@
       }
     },
     "content": "Test person not yet approved"
+  },
+  "sukspolka": {
+    "name": "Wojewódzki Zakład Testowy",
+    "type": "place",
+    "content": "Spółka komunalna na potrzeby testów sukcesji.",
+    "krsNumber": "0000073321",
+    "isPublic": true,
+    "isPublicSource": "manual",
+    "revision_id": "rev-suk-spolka",
+    "stats": {
+      "nodeGroupSize": 1
+    }
+  },
+  "sukadam": {
+    "name": "Adam Ustępujący",
+    "type": "person",
+    "stats": {
+      "nodeGroupSize": 1
+    },
+    "parties": ["PiS"],
+    "revision_id": "rev-suk-adam"
+  },
+  "sukbarbara": {
+    "name": "Barbara Ustępująca",
+    "type": "person",
+    "stats": {
+      "nodeGroupSize": 1
+    },
+    "parties": ["PiS"],
+    "revision_id": "rev-suk-barbara"
+  },
+  "sukcezary": {
+    "name": "Cezary Obejmujący",
+    "type": "person",
+    "stats": {
+      "nodeGroupSize": 1
+    },
+    "revision_id": "rev-suk-cezary"
+  },
+  "sukdanuta": {
+    "name": "Danuta Obejmująca",
+    "type": "person",
+    "stats": {
+      "nodeGroupSize": 1
+    },
+    "parties": ["PO"],
+    "revision_id": "rev-suk-danuta"
+  },
+  "sukedward": {
+    "name": "Edward Poprzedni",
+    "type": "person",
+    "stats": {
+      "nodeGroupSize": 1
+    },
+    "parties": ["PO"],
+    "revision_id": "rev-suk-edward"
+  },
+  "sukfranciszek": {
+    "name": "Franciszek Następny",
+    "type": "person",
+    "stats": {
+      "nodeGroupSize": 1
+    },
+    "revision_id": "rev-suk-franciszek"
+  },
+  "sukhanna": {
+    "name": "Hanna Prokurent",
+    "type": "person",
+    "stats": {
+      "nodeGroupSize": 1
+    },
+    "revision_id": "rev-suk-hanna"
+  },
+  "sukgrzegorz": {
+    "name": "Grzegorz Bez Strony",
+    "type": "person",
+    "stats": {
+      "nodeGroupSize": 1
+    }
   }
 }

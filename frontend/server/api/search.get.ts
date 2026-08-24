@@ -36,11 +36,13 @@ export default editorFreshCachedEventHandler(async (event) => {
   const results = nodes.docs.map(parseNodeDoc<node>);
 
   return results.map((node) => {
-    // The query that opens the table on this hit. A place is named by its node
-    // id rather than by its KRS number, so that a ministry or an urząd - which
-    // has none - opens filtered rather than on the whole table.
+    // The query that opens the table on this hit, for the node kinds whose
+    // page *is* the table. A region is one. A place stopped being one when
+    // companies got their pages back: `generateEntityUrl` sends a search hit
+    // straight to /instytucja/..., which is where who works there and who they
+    // replaced actually live - the table filtered to one company only ever
+    // listed its people.
     const query: Record<string, string> = {};
-    if (node.type === "place") query.place = node.id;
     if (node.teryt) query.teryt = node.teryt;
 
     return {

@@ -2,11 +2,14 @@
   <v-list class="px-2" variant="flat" data-testid="relations-history">
     <div class="d-flex align-center justify-space-between mb-2">
       <h3 class="text-h6">Historia powiązań</h3>
+      <!-- Outlined rather than `variant="text" color="primary"`: sage ink on
+           white is 1.85:1 on this theme, and this is the one control in the
+           section. -->
       <v-btn
         v-if="canAdd"
-        variant="text"
+        variant="outlined"
         size="small"
-        color="primary"
+        rounded="lg"
         :prepend-icon="mdiPlus"
         data-testid="add-relation-employment"
         @click="emit('add')"
@@ -20,8 +23,7 @@
         v-for="edge in edgesSorted"
         :key="edge.id"
         :to="`/entity/${edge.richNode.type}/${edge.richNode.id}`"
-        base-color="surface-light"
-        class="mt-1"
+        class="history-row mt-1"
         rounded
       >
         <template #prepend>
@@ -44,6 +46,49 @@
             {{ committeeOf(edge) }}
           </span>
           <ChipPublicCompany :company="asCompany(edge)" />
+        </div>
+
+        <!-- Who sat here before. A `v-for` over nought or one so the lookup is
+             read once per row rather than four times, and only the predecessor:
+             the section below the card carries both directions, and this row
+             already holds a company, a role, a chip, a bar and two dates. -->
+        <div
+          v-for="predecessor in predecessorOf(edge)"
+          :key="predecessor.edgeId"
+          class="history-row__rail"
+          :data-testid="`edge-predecessor-${edge.id}`"
+        >
+          <v-icon
+            :icon="mdiArrowUp"
+            size="13"
+            class="history-row__rail-icon"
+            aria-hidden="true"
+          />
+          <span class="history-row__rail-label">Wcześniej:</span>
+          <!-- „m.in." where a whole board changed on one day. The register
+               struck four names off and entered four, and which of them took
+               whose chair is an assignment the pairing made up; naming one of
+               them flatly would assert something nobody recorded. -->
+          <span
+            v-if="predecessor.batchSize > 1"
+            class="history-row__rail-label"
+            :title="batchNote(predecessor.batchSize)"
+          >
+            m.in.
+          </span>
+          <!-- Text, not a link. The row itself is an anchor to the other end of
+               the relation, and an anchor inside an anchor is invalid HTML -
+               the parser closes the outer one and reopens it around each
+               fragment, which split this row into three boxes. Clicking
+               through to the predecessor is what „Zmiany na stanowisku" below
+               is for. -->
+          <span class="history-row__rail-name">
+            {{ predecessor.personName }}
+          </span>
+          <PartyChip v-for="party in predecessor.parties" :key="party" :party />
+          <span class="history-row__rail-gap">
+            {{ gapLabel(predecessor.gapDays) }}
+          </span>
         </div>
 
         <div v-if="isDated(edge)" class="d-md-none mt-2 pb-2">
@@ -104,6 +149,7 @@
 <script lang="ts" setup>
 import {
   mdiAccountOutline,
+  mdiArrowUp,
   mdiOfficeBuildingOutline,
   mdiFileDocumentOutline,
   mdiCommentArrowRightOutline,
@@ -111,7 +157,15 @@ import {
   mdiFileDocumentPlusOutline,
   mdiPlus,
 } from "@mdi/js";
+import { gapLabel } from "~~/shared/succession";
 import type { Company } from "~~/shared/model";
+import type { PersonSuccession } from "~~/server/api/edges/successions.get";
+
+/** Whoever held a seat before the spell an edge records, as the successions
+ * endpoint names them, plus how many seats changed hands that day. */
+type Predecessor = NonNullable<PersonSuccession["predecessor"]> & {
+  batchSize: number;
+};
 
 function getIcon(type: string) {
   switch (type) {
@@ -133,6 +187,14 @@ const props = defineProps<{
   /** Whether each row offers citing the relation to an article. A reader who
    * cannot edit still sees the count on the relations that have one. */
   canEdit?: boolean;
+  /** Who held each seat before, keyed by the edge id of the spell that took it
+   * over. Optional because most callers of this card do not ask
+   * `/api/edges/successions` at all - and because the successions of a company
+   * page's rows are somebody else's, not this person's.
+   *
+   * The endpoint answers per post rather than per edge, so a caller builds this
+   * with `predecessorsByEdge` (app/utils/succession.ts) rather than by hand. */
+  predecessors?: Record<string, Predecessor>;
 }>();
 
 const emit = defineEmits<{ add: []; sources: [edge: EdgeNode] }>();
@@ -211,4 +273,86 @@ function asCompany(edge: EdgeNode): Company | undefined {
     ? (edge.richNode as Company)
     : undefined;
 }
+
+/** The predecessor of one row, as nought or one of them.
+ *
+ * A list so the template can `v-for` it: `v-if` would mean looking the edge up
+ * again for every field it prints, each behind a non-null assertion. */
+/** Why a predecessor is hedged, spelled out for whoever hovers it. */
+function batchNote(batchSize: number): string {
+  return (
+    `Tego dnia zmieniło się ${batchSize} stanowisk tej samej funkcji. ` +
+    "Rejestr nie wskazuje, kto zajął czyje miejsce."
+  );
+}
+
+function predecessorOf(edge: EdgeNode): Predecessor[] {
+  const predecessor = edge.id ? props.predecessors?.[edge.id] : undefined;
+  return predecessor ? [predecessor] : [];
+}
 </script>
+
+<style scoped>
+/* The rows were `base-color="surface-light"`, which paints the whole list a
+   low-contrast grey slab. This is `card/Employment.vue`'s idiom instead: a
+   white surface, a hairline, and sage kept for the hover border - never for
+   ink, which on this theme is 1.85:1. */
+.history-row {
+  background: rgb(var(--v-theme-surface));
+  border: 1px solid rgba(var(--v-border-color), 0.16);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.history-row:hover {
+  border-color: rgba(var(--v-theme-primary), 0.9);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.07);
+}
+
+/* Vuetify's own hover overlay on a near-white surface is a grey wash that
+   fights the border above. */
+.history-row :deep(.v-list-item__overlay) {
+  display: none;
+}
+
+/* ---- who sat here before ---- */
+
+/* An annotation on the row rather than a line in it: the rail says this hangs
+   off the company and role above, and keeps it out of the way of the duration
+   bar underneath. */
+.history-row__rail {
+  align-items: center;
+  border-left: 2px solid rgb(var(--v-theme-primary));
+  color: rgba(var(--v-theme-on-surface), 0.72);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.75rem;
+  gap: 4px;
+  line-height: 1.45;
+  margin-top: 7px;
+  padding-left: 9px;
+}
+
+.history-row__rail-icon {
+  color: rgba(var(--v-theme-on-surface), 0.45);
+}
+
+.history-row__rail-label {
+  color: rgba(var(--v-theme-on-surface), 0.6);
+}
+
+.history-row__rail-name {
+  color: rgba(var(--v-theme-on-surface), 0.87);
+  font-weight: 600;
+}
+
+.history-row__rail-gap {
+  background: rgba(var(--v-theme-on-surface), 0.06);
+  border-radius: 6px;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  font-size: 0.6875rem;
+  line-height: 1.6;
+  padding: 0 6px;
+}
+</style>

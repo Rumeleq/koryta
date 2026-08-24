@@ -25,19 +25,13 @@
         </v-alert>
         <v-btn
           color="primary"
-          variant="tonal"
+          variant="flat"
           :prepend-icon="mdiRefresh"
           @click="refreshNode()"
         >
           Odśwież stronę
         </v-btn>
-        <v-btn
-          color="secondary"
-          variant="text"
-          to="/"
-          :prepend-icon="mdiHome"
-          class="ml-2"
-        >
+        <v-btn variant="outlined" to="/" :prepend-icon="mdiHome" class="ml-2">
           Strona główna
         </v-btn>
       </v-card-text>
@@ -107,16 +101,6 @@
           >.
         </v-alert>
 
-        <div v-if="entity?.type === 'place'" class="mb-4 d-flex">
-          <v-btn
-            class="ml-2"
-            variant="tonal"
-            :prepend-icon="mdiGraphOutline"
-            :to="`/graf?miejsce=${node}`"
-          >
-            Graf połączeń
-          </v-btn>
-        </div>
         <div v-if="entity?.type === 'region'" class="mb-4 d-flex">
           <v-btn
             variant="tonal"
@@ -151,9 +135,12 @@
           />
         </div>
         <div v-else class="mt-4 d-flex justify-center">
+          <!-- Flat, not tonal: tonal draws the label in the theme's pale sage
+               on a wash of the same sage, which is 1.73:1. Flat is black on
+               sage. -->
           <v-btn
             color="primary"
-            variant="tonal"
+            variant="flat"
             :prepend-icon="mdiGraphOutline"
             @click="showGraph = true"
           >
@@ -171,29 +158,12 @@
         />
 
         <div class="mt-4">
-          <template v-if="entity?.type === 'place'">
-            <CardConnectionList
-              :edges="owners"
-              title="Właściciele"
-              :can-add="canAddRelations"
-              add-testid="owners"
-              @add="openAdd(['owns_parent'], 'Dodaj właściciela')"
-            />
-            <CardConnectionList
-              :edges="subsidiaries"
-              title="Spółki zależne"
-              :can-add="canAddRelations"
-              add-testid="subsidiaries"
-              @add="openAdd(['owns_child'], 'Dodaj spółkę zależną')"
-            />
-            <CardEmploymentHistory
-              :edges="edges"
-              :can-add="canAddRelations"
-              :can-edit="canAddRelations"
-              @add="openAdd(['employed'], 'Dodaj osobę pracującą tutaj')"
-              @sources="openSources"
-            />
-          </template>
+          <!-- A place is served by `place/DetailView.vue` and never reaches
+               here. The branch that used to draw one lived on for three months
+               after `generateNodeUrl` stopped routing anything to it, and its
+               relations rendered twice - once as rows, once again through the
+               `v-else` below, which binds to the person branch rather than to
+               the chain of them. -->
           <template v-if="entity?.type === 'region'">
             <CardConnectionList :edges="owners" title="Część regionu" />
             <CardConnectionList :edges="subregions" title="Regiony" />
@@ -204,8 +174,19 @@
               :edges="edges"
               :can-add="canAddRelations"
               :can-edit="canAddRelations"
+              :predecessors="predecessors"
               @add="openAdd(undefined, 'Dodaj powiązanie')"
               @sources="openSources"
+            />
+            <!-- The rows above only hint at a handover; this states it, and
+                 says how much of the history it covers. It renders nothing at
+                 all when there is nothing to say. -->
+            <SuccessionPersonChanges
+              :person-id="node"
+              :person-name="entity.name"
+              :person-parties="(entity as Person).parties"
+              :relation-count="edges.length"
+              class="mt-4"
             />
           </template>
           <v-row v-else>
@@ -382,6 +363,7 @@ import type {
   NodeType,
   Revision,
 } from "~~/shared/model";
+import { predecessorsByEdge } from "~/utils/succession";
 import CommentsSection from "@/components/comment/CommentsSection.vue";
 import FormAddRelationDialog from "~/components/form/AddRelationDialog.vue";
 import type { edgeTypeExt } from "~/composables/useEdgeTypes";
@@ -469,6 +451,25 @@ const {
   refresh: refreshEdges,
 } = await useEdges(node);
 const edges = computed(() => [...sources.value, ...targets.value]);
+
+/** Who held each of this person's seats before them, keyed by the relation it
+ * is a hint on.
+ *
+ * `SuccessionPersonChanges` below reads the same response under the same key,
+ * so asking here costs nothing beyond the join - and the join has to happen
+ * here because only this component holds the edges the rows are drawn from.
+ * Empty for a node that is not a person: the endpoint answers about employment
+ * spells, and a region has none.
+ */
+// Asked for at all only on a profile. `type` comes from the url prefix and
+// never changes for the life of the component - the page re-creates it by
+// `:key` when the node does - so the branch is safe to take at setup time, and
+// it keeps a region or a topic from asking about employment spells it has none
+// of.
+const successions = type === "person" ? usePersonSuccessions(node) : undefined;
+const predecessors = computed(() =>
+  predecessorsByEdge(successions?.data.value?.posts ?? [], edges.value),
+);
 const owners = computed(() => {
   return sources.value.filter((e) => e.type === "owns");
 });
