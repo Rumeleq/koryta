@@ -51,5 +51,79 @@
     "target": "chain-powiat",
     "type": "owns",
     "revision_id": "rev-edge-chain-3"
+  },
+  {
+    "source": "sukadam",
+    "target": "sukspolka",
+    "type": "employed",
+    "name": "Rada Nadzorcza",
+    "revision_id": "rev-edge-sukadam",
+    "start_date": "2019-03-01",
+    "end_date": "2024-04-12"
+  },
+  {
+    "source": "sukbarbara",
+    "target": "sukspolka",
+    "type": "employed",
+    "name": "Rada Nadzorcza",
+    "revision_id": "rev-edge-sukbarbara",
+    "start_date": "2020-06-01",
+    "end_date": "2024-04-12"
+  },
+  {
+    "source": "sukcezary",
+    "target": "sukspolka",
+    "type": "employed",
+    "name": "Rada Nadzorcza",
+    "revision_id": "rev-edge-sukcezary",
+    "start_date": "2024-04-12"
+  },
+  {
+    "source": "sukdanuta",
+    "target": "sukspolka",
+    "type": "employed",
+    "name": "Rada Nadzorcza",
+    "revision_id": "rev-edge-sukdanuta",
+    "start_date": "2024-04-12"
+  },
+  {
+    "source": "sukedward",
+    "target": "sukspolka",
+    "type": "employed",
+    "name": "Zarząd",
+    "revision_id": "rev-edge-sukedward",
+    "start_date": "2015-01-01",
+    "end_date": "2023-11-30"
+  },
+  {
+    "source": "sukfranciszek",
+    "target": "sukspolka",
+    "type": "employed",
+    "name": "Zarząd",
+    "revision_id": "rev-edge-sukfranciszek",
+    "start_date": "2024-01-15"
+  },
+  {
+    "source": "sukhanna",
+    "target": "sukspolka",
+    "type": "employed",
+    "name": "Prokurent",
+    "revision_id": "rev-edge-sukhanna",
+    "start_date": "2018-01-01",
+    "end_date": "2022-05-10"
+  },
+  {
+    "source": "sukgrzegorz",
+    "target": "sukspolka",
+    "type": "employed",
+    "name": "Prokurent",
+    "revision_id": "rev-edge-sukgrzegorz",
+    "start_date": "2022-05-10"
+  },
+  {
+    "source": "chain-powiat",
+    "target": "sukspolka",
+    "type": "owns",
+    "revision_id": "rev-edge-suk-owns"
   }
 ]

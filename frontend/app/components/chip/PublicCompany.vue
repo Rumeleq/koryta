@@ -1,12 +1,17 @@
 <template>
   <v-tooltip v-if="chip" :text="chip.tooltip" location="bottom">
     <template #activator="{ props: tooltipProps }">
+      <!-- `flat` where the chip has a colour, `tonal` where it does not.
+           Tonal draws the label in the chip's own colour, and this theme's
+           primary is a pale sage - 1.73:1 on its own 12% wash, which is how
+           „Instytucja publiczna" came out unreadable. Flat puts black on the
+           sage instead, which is 11.3:1 and reads as the badge it is. -->
       <v-chip
         v-bind="tooltipProps"
         :color="chip.color"
         :prepend-icon="chip.icon"
         size="x-small"
-        variant="tonal"
+        :variant="chip.color ? 'flat' : 'tonal'"
       >
         {{ chip.label }}
       </v-chip>

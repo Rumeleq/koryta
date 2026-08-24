@@ -8,21 +8,23 @@ function place(fields: Record<string, unknown>): Node {
 }
 
 describe("generateNodeUrl", () => {
-  it("opens a company's page as the table filtered to it", () => {
+  it("opens a company's own page", () => {
+    // Between 2026-05-21 and 2026-08-24 this answered
+    // `/eksploruj/tabela?place=abc` instead, and the company page was
+    // unreachable behind that redirect.
     expect(generateNodeUrl(place({ id: "abc", krsNumber: "0000033198" }))).toBe(
-      "/eksploruj/tabela?place=abc",
+      "/instytucja/podmiot-abc",
     );
   });
 
-  it("filters just the same for an institution with no KRS number", () => {
-    // Ministries, urzędy and wojewódzkie fundusze are not in the register.
-    // Keying the link on the KRS number sent every one of them to the
-    // unfiltered table, which the entity page then redirected to.
+  it("does the same for an institution with no KRS number", () => {
+    // Ministries, urzędy and wojewódzkie fundusze are not in the register, so
+    // the url is keyed on the node id and the name only decorates it.
     expect(
       generateNodeUrl(
         place({ id: "ministerstwo", name: "Ministerstwo Infrastruktury" }),
       ),
-    ).toBe("/eksploruj/tabela?place=ministerstwo");
+    ).toBe("/instytucja/ministerstwo-infrastruktury-ministerstwo");
   });
 
   it("has no url for a node that was never saved", () => {
