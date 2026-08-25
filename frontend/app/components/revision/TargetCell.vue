@@ -1,13 +1,19 @@
 <template>
-  <div class="d-flex flex-column ga-1">
+  <div class="d-flex flex-column ga-1 target-cell">
     <NuxtLink
       v-if="proposal.targetPath"
       :to="proposal.targetPath"
-      class="link-plain text-body-2 font-weight-medium"
+      class="link-plain text-body-2 font-weight-medium target-cell__name"
+      :title="name"
     >
       {{ name }}
     </NuxtLink>
-    <span v-else class="text-body-2 font-weight-medium">{{ name }}</span>
+    <span
+      v-else
+      class="text-body-2 font-weight-medium target-cell__name"
+      :title="name"
+      >{{ name }}</span
+    >
 
     <div class="d-flex flex-wrap align-center ga-1">
       <v-chip
@@ -100,3 +106,25 @@ const chips = computed(() => {
   return chips;
 });
 </script>
+
+<style scoped>
+/* A table column is as wide as its widest cell, and an article's title is the
+ * widest thing a proposal can be filed against - one of them pushed every
+ * other column of the review queue off the useful part of the screen. A
+ * max-width on the td would be ignored under the table's auto layout, so the
+ * cap lives on this div, which is the cell's only child. The title attribute
+ * keeps the part that no longer fits readable. */
+.target-cell {
+  max-width: 320px;
+}
+
+.target-cell__name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  /* Names are not always prose: an id or a url has no space to break at. */
+  overflow-wrap: anywhere;
+}
+</style>
