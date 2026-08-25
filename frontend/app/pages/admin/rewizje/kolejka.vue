@@ -150,25 +150,11 @@
         loading-text="Ładowanie..."
         items-per-page-text="Wierszy na stronę:"
       >
-        <template #[`item.updateTime`]="{ item }">
-          <div class="text-no-wrap">
-            {{ formatDaysAgo(item.updateTime) }}
-          </div>
-          <div class="text-caption text-medium-emphasis text-no-wrap">
-            {{ formatMoment(item.updateTime) }}
-          </div>
-        </template>
-
-        <template #[`item.target`]="{ item }">
-          <RevisionTargetCell :proposal="item" />
-        </template>
-
-        <template #[`item.changes`]="{ item }">
-          <RevisionChangeCell :proposal="item" />
-        </template>
-
-        <template #[`item.author`]="{ item }">
-          <div class="d-flex flex-column align-start ga-1">
+        <!-- Who proposed it and when, as one thing: the two used to sit at
+             opposite ends of the row, and reading a queue entry meant looking
+             them up against each other. -->
+        <template #[`item.submission`]="{ item }">
+          <div class="d-flex flex-column align-start ga-1 py-1">
             <a
               class="cursor-pointer"
               title="Pokaż wszystko, co ta osoba zaproponowała"
@@ -176,6 +162,14 @@
             >
               <UserChip :uid="item.updateUser" :user="item.author" />
             </a>
+            <!-- Two lines rather than one: in a 200px column the pair runs
+                 past the edge, and "3 dni temu" is the half that gets read. -->
+            <div class="text-caption text-no-wrap">
+              {{ formatDaysAgo(item.updateTime) }}
+            </div>
+            <div class="text-caption text-medium-emphasis text-no-wrap">
+              {{ formatMoment(item.updateTime) }}
+            </div>
             <div class="d-flex align-center flex-wrap ga-1">
               <ChipRevisionStatus
                 :status="item.status"
@@ -191,16 +185,29 @@
           </div>
         </template>
 
+        <template #[`item.target`]="{ item }">
+          <RevisionTargetCell :proposal="item" />
+        </template>
+
+        <template #[`item.changes`]="{ item }">
+          <RevisionChangeCell :proposal="item" />
+        </template>
+
+        <!-- One button, not five. Deciding needs the whole revision next to
+             the ones around it, which is the comparison view - so the row
+             sends the reviewer there with this revision picked out, instead
+             of packing approve, publish, reject, compare and copy-link into
+             the narrowest column of the table. -->
         <template #[`item.actions`]="{ item }">
-          <RevisionReviewActions
-            :proposal="item"
-            :reviewable="item.status === 'pending'"
-            :loading="deciding === item.id"
-            :full-comparison-to="comparisonTo(item)"
-            @approve="approve(item, $event)"
-            @reject="openReject(item)"
-            @permalink="copyPermalink(item)"
-          />
+          <v-btn
+            variant="tonal"
+            size="small"
+            :prepend-icon="mdiCompare"
+            :to="reviewTo(item)"
+            :data-testid="`review-${item.id}`"
+          >
+            {{ reviewLabel(item) }}
+          </v-btn>
         </template>
       </v-data-table-server>
     </v-card>
@@ -238,7 +245,11 @@
  * is why that is the click the owner was missing.
  */
 import { computed, ref, watch } from "vue";
-import { mdiCheckDecagramOutline, mdiFormatListBulleted } from "@mdi/js";
+import {
+  mdiCheckDecagramOutline,
+  mdiCompare,
+  mdiFormatListBulleted,
+} from "@mdi/js";
 import { authRequest } from "~/composables/auth";
 import { useQueryFilters } from "~/composables/queryFilters";
 import { formatDaysAgo } from "~/utils/chartTheme";
@@ -308,11 +319,14 @@ const automaticOptions = [
   { title: "Wszystko", value: "all" },
 ];
 
+// "Zgłoszenie" is who and when in one column, first, because that is the pair
+// a reviewer reads to decide whether a row is worth opening. "Czego dotyczy"
+// is capped by RevisionTargetCell rather than here: a width on the header is a
+// hint the table's auto layout may ignore, and an article title ignored it.
 const headers = [
-  { title: "Zgłoszono", key: "updateTime", sortable: false, width: 130 },
+  { title: "Zgłoszenie", key: "submission", sortable: false, width: 200 },
   { title: "Czego dotyczy", key: "target", sortable: false },
   { title: "Proponowana zmiana", key: "changes", sortable: false },
-  { title: "Autor", key: "author", sortable: false },
   { title: "", key: "actions", sortable: false, align: "end" as const },
 ];
 
@@ -417,6 +431,20 @@ const comparisonTo = (proposal: Proposal) =>
   proposal.targetCollection === "nodes" && proposal.targetId
     ? `/admin/rewizje/${proposal.targetId}?revisionId=${proposal.id}`
     : null;
+
+/** Where the row's one button goes. An edge revision has no per-node
+ * comparison view - it is reviewed on its own page, which takes no id - so it
+ * gets the nearest screen that can actually review it rather than a dead
+ * button. */
+const reviewTo = (proposal: Proposal) =>
+  comparisonTo(proposal) ?? "/admin/rewizje-krawedzi";
+
+const reviewLabel = (proposal: Proposal) =>
+  comparisonTo(proposal) === null
+    ? "Rewizje powiązań"
+    : proposal.status === "pending"
+      ? "Rozpatrz"
+      : "Zobacz";
 
 const focusAuthor = (uid: string) => {
   author.value = uid;

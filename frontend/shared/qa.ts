@@ -42,6 +42,29 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
 /** Newest first. Prepend, never insert in the middle. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "reviewer-queue-one-button",
+    date: "2026-08-25",
+    title: "Kolejka rewizji: jeden przycisk zamiast pięciu",
+    description:
+      "Wiersz w kolejce ma teraz jeden przycisk - âRozpatrzâ - który otwiera " +
+      "porównanie rewizji tego wpisu z tą jedną podświetloną i przewiniętą " +
+      "na widok. Decyzje zapadają tam, gdzie widać całą zmianę, a nie w " +
+      "najwęższej kolumnie tabeli. Autor i data to jedna kolumna " +
+      "âZgłoszenieâ na początku wiersza, a âCzego dotyczyâ nie rozpycha się " +
+      "już na tytuł artykułu.",
+    steps: [
+      "Jako admin wejdź na /admin/rewizje/kolejka.",
+      "Sprawdź pierwszą kolumnę âZgłoszenieâ - w jednym miejscu ma być autor, kiedy zgłosił i status.",
+      "Sprawdź ostatnią kolumnę - ma być w niej dokładnie jeden przycisk.",
+      "Kliknij âRozpatrzâ - otwiera się porównanie rewizji tego wpisu, a kolumna z tą rewizją jest podświetlona i widoczna bez przewijania w bok.",
+      "Zatwierdź albo odrzuć ją tam i wróć do kolejki - przycisk przy rozpatrzonej zmienia się na âZobaczâ.",
+      "Ustaw filtr âRodzajâ na âWszystkoâ i znajdź rewizję powiązania - jej przycisk ma prowadzić na /admin/rewizje-krawedzi, bo powiązania recenzuje się tam.",
+      "Znajdź rewizję artykułu o długim tytule - kolumna âCzego dotyczyâ ma być wąska, tytuł ucięty po dwóch liniach, a cały widoczny w dymku po najechaniu.",
+    ],
+    link: "/admin/rewizje/kolejka",
+    area: "admin",
+  },
+  {
     id: "drawer-admin-revisions-link",
     date: "2026-08-25",
     title: "Skrót do rewizji także w panelu bocznym",

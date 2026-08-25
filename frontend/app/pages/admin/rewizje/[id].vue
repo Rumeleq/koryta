@@ -58,6 +58,7 @@
               <th
                 v-for="rev in allRevisions"
                 :key="'h-' + rev.id"
+                :data-revision-header="rev.id"
                 class="card-header text-left"
                 :class="{
                   'highlighted-revision': rev.id === route.query.revisionId,
@@ -278,7 +279,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from "vue";
+import { computed, ref, onMounted, nextTick, watch } from "vue";
 import { useRoute } from "vue-router";
 import { ClientOnly } from "#components";
 import { relationsPlural } from "~/composables/edges";
@@ -426,6 +427,21 @@ async function reject() {
   }
 }
 
+/** The review queue links here naming one revision, and the tint that marks it
+ * is worth nothing if it is off to the right of a table wide enough to scroll.
+ * Scrolled once the columns exist, `inline: "center"` so the neighbours it is
+ * being compared against come with it, and `block: "nearest"` so the page does
+ * not jump away from the publish controls above. */
+const scrollToHighlighted = async () => {
+  if (import.meta.server) return;
+  const id = route.query.revisionId;
+  if (typeof id !== "string" || !id) return;
+  await nextTick();
+  document
+    .querySelector(`[data-revision-header="${id}"]`)
+    ?.scrollIntoView({ block: "nearest", inline: "center" });
+};
+
 const allRevisions = computed(() => {
   return [...revisions.value].sort((a, b) => {
     const timeA = new Date(parseTime(a.update_time)).getTime();
@@ -433,6 +449,12 @@ const allRevisions = computed(() => {
     return timeB - timeA;
   });
 });
+
+watch(
+  () => [allRevisions.value.length, route.query.revisionId] as const,
+  scrollToHighlighted,
+  { immediate: true },
+);
 
 // The node name isn't stored on the revision list directly, so derive it from
 // the most recent revision that carries a `name` in its data snapshot. Names
