@@ -117,46 +117,6 @@
           :type="type"
         />
 
-        <div
-          v-if="!smAndDown || showGraph"
-          class="mt-4"
-          style="
-            height: 500px;
-            width: 100%;
-            position: relative;
-            overflow: visible;
-            border: 1px solid #ccc;
-          "
-        >
-          <LazyGraphContainer
-            :key="node"
-            :focus-node-id="node"
-            :max-depth="1"
-          />
-        </div>
-        <div v-else class="mt-4 d-flex justify-center">
-          <!-- Flat, not tonal: tonal draws the label in the theme's pale sage
-               on a wash of the same sage, which is 1.73:1. Flat is black on
-               sage. -->
-          <v-btn
-            color="primary"
-            variant="flat"
-            :prepend-icon="mdiGraphOutline"
-            @click="showGraph = true"
-          >
-            Pokaż graf powiązań
-          </v-btn>
-        </div>
-
-        <!-- Notes on a person are unreviewed claims about a named individual,
-             so a reader has to be logged in to see them. Everything else -
-             companies, regions, topics - stays open. -->
-        <NoteEditor
-          v-if="user || entity?.type !== 'person'"
-          :node-id="node"
-          class="mt-4"
-        />
-
         <div class="mt-4">
           <!-- A place is served by `place/DetailView.vue` and never reaches
                here. The branch that used to draw one lived on for three months
@@ -222,6 +182,53 @@
               <CardShortNode :edge="edge" />
             </v-col>
           </v-row>
+        </div>
+
+        <!-- Notes on a person are unreviewed claims about a named individual,
+             so a reader has to be logged in to see them. Everything else -
+             companies, regions, topics - stays open. -->
+        <NoteEditor
+          v-if="user || entity?.type !== 'person'"
+          :node-id="node"
+          :node-type="type"
+          class="mt-4"
+        />
+
+        <!-- Last on the page, under the relations it draws. The rows above are
+             the record - who, where, when, cited; the graph is the same facts
+             arranged so a shape can be seen in them, and it is only worth
+             looking at once the reader knows what they are looking for. -->
+        <!-- Two hops for a person, not one. One hop is their own relations,
+             which the rows above already give in full, with dates and sources -
+             the canvas was redrawing the list as a star and adding nothing. The
+             second ring is the part a list cannot show: who else sits on those
+             boards, and where those people sit besides.
+
+             A region stays at one. It owns every institution inside it, so its
+             first ring is already a hundred companies and its second would be
+             every person on all of their boards - the explosion
+             `expandableFrontier` refuses to walk into, entered from the other
+             end. Either way the reader can change it in the bar above the
+             canvas. -->
+        <LazyGraphContainer
+          v-if="!smAndDown || showGraph"
+          :key="node"
+          class="mt-4"
+          :focus-node-id="node"
+          :max-depth="entity?.type === 'person' ? 2 : 1"
+        />
+        <div v-else class="mt-4 d-flex justify-center">
+          <!-- Flat, not tonal: tonal draws the label in the theme's pale sage
+               on a wash of the same sage, which is 1.73:1. Flat is black on
+               sage. -->
+          <v-btn
+            color="primary"
+            variant="flat"
+            :prepend-icon="mdiGraphOutline"
+            @click="showGraph = true"
+          >
+            Pokaż graf powiązań
+          </v-btn>
         </div>
 
         <FormAddRelationDialog

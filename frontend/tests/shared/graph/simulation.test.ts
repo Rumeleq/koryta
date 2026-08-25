@@ -39,6 +39,10 @@ describe("shared/graph/simulation.ts", () => {
         forceCenter: vi
           .fn()
           .mockReturnValue({ strength: vi.fn().mockReturnThis() }),
+        forceCollide: vi.fn().mockReturnValue({
+          radius: vi.fn().mockReturnThis(),
+          strength: vi.fn().mockReturnThis(),
+        }),
         forceX: vi.fn().mockReturnValue({ strength: vi.fn().mockReturnThis() }),
         forceY: vi.fn().mockReturnValue({ strength: vi.fn().mockReturnThis() }),
       };
@@ -66,6 +70,13 @@ describe("shared/graph/simulation.ts", () => {
       );
       expect(simulationMock.force).toHaveBeenCalledWith(
         "charge",
+        expect.anything(),
+      );
+      // The floor under how close two nodes may sit. Charge is a long range
+      // push a link force can pull straight through, which is how a board's
+      // spokes came to be packed on top of one another.
+      expect(simulationMock.force).toHaveBeenCalledWith(
+        "collide",
         expect.anything(),
       );
       // Deliberately absent: `forceCenter` moves every node so their centroid

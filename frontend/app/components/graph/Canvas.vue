@@ -1,32 +1,62 @@
 <template>
   <v-network-graph
     v-if="ready"
+    ref="graph"
     :key="`${focusNodeId}-${Object.keys(nodes).length}-${(edges ?? []).length}`"
+    v-model:selected-nodes="selectedNodes"
+    v-model:zoom-level="zoomLevel"
     :nodes="nodes"
     :edges="edges"
     :configs="configs"
     :layouts="layoutCentered"
     :event-handlers="eventHandlers"
   >
-    <template #node="{ node, config }">
-      <circle
-        v-if="node?.type === 'circle'"
-        :r="config.node.normal.width(node) / 2"
-        :fill="config.node.normal.color(node)"
-      />
-      <rect
-        v-else-if="node?.type === 'rect'"
-        :width="config.node.normal.width(node)"
-        :height="config.node.normal.height(node)"
-        :x="-config.node.normal.width(node) / 2"
-        :y="-config.node.normal.height(node) / 2"
-        :fill="config.node.normal.color(node)"
-      />
-    </template>
+    <!-- The whole node is drawn here rather than left to the library, because
+         a coloured disc says only "somebody" and a grey square says only
+         "something". The glyph inside says which, at every zoom, without
+         reading the label - which at two hops is the difference between a
+         picture and a word cloud.
 
-    <template #override-node>
-      <!-- Let's just use the `#view` or `#override-node-label` (v-network-graph has `#override-node-label`?) -->
-      <!-- Ah, v-network-graph has no override-node-label slot directly, it has `<template #node="{ node }">` -->
+         `override-node` and not `node`: the slot this component used to declare
+         does not exist. v-network-graph passes any other slot name through to
+         its layer machinery, so the circles and rectangles written there were
+         never mounted, and the default renderer drew the nodes all along. -->
+    <template #override-node="{ nodeId, scale, config }">
+      <g :opacity="dimmed(nodeId) ? 0.18 : 1">
+        <!-- The page's subject, ringed. It is pinned at the origin, but so is
+             the reader's attention only until the layout settles. -->
+        <circle
+          v-if="nodeId === focusNodeId"
+          :r="haloRadius(config) * scale"
+          fill="none"
+          :stroke="FOCUS_RING"
+          :stroke-width="2 * scale"
+          stroke-opacity="0.6"
+        />
+        <circle
+          v-if="config.type === 'circle'"
+          :r="config.radius * scale"
+          :fill="config.color"
+          :stroke="config.strokeColor"
+          :stroke-width="config.strokeWidth * scale"
+        />
+        <rect
+          v-else
+          :x="(-config.width * scale) / 2"
+          :y="(-config.height * scale) / 2"
+          :width="config.width * scale"
+          :height="config.height * scale"
+          :rx="config.borderRadius * scale"
+          :fill="config.color"
+          :stroke="config.strokeColor"
+          :stroke-width="config.strokeWidth * scale"
+        />
+        <path
+          :d="entityGlyph(nodes[nodeId]?.entityType)"
+          :fill="readableInk(nodes[nodeId]?.color)"
+          :transform="glyphTransform(config, scale)"
+        />
+      </g>
     </template>
   </v-network-graph>
 
@@ -38,14 +68,28 @@
 
 <script setup lang="ts">
 import { defineConfigs, SimpleLayout } from "v-network-graph";
-import type { EventHandlers, NodeEvent } from "v-network-graph";
+import type {
+  EventHandlers,
+  Instance,
+  NodeEvent,
+  ShapeStyle,
+} from "v-network-graph";
 import { useSimulationStore } from "@/stores/simulation";
-import type { NodeType } from "~~/shared/model";
-import type { Node as GraphNode, Edge } from "~~/shared/graph/model";
+import type { Node as GraphNode, NodeStats, Edge } from "~~/shared/graph/model";
 import { wrapLabel } from "~/utils/graphLabel";
+import { entityGlyph } from "~/utils/entityIcon";
+import { graphNodeDestination, readableInk } from "~/utils/graphNode";
+
+/** A node as it arrives: `getNodes` stamps the group headcount onto it, and the
+ * spec for this component mounts nodes without one.
+ *
+ * v-network-graph hands a config callback the node object and nothing else, so
+ * everything the styling below keys off - the id, the ring, the kind - has to
+ * be on the node itself. It all is; see `shared/graph/model.ts`. */
+type CanvasNode = GraphNode & { stats?: NodeStats };
 
 const props = defineProps<{
-  nodes: Record<string, GraphNode>;
+  nodes: Record<string, CanvasNode>;
   edges: Edge[];
   ready: boolean;
   focusNodeId?: string;
@@ -53,6 +97,30 @@ const props = defineProps<{
 
 const simulationStore = useSimulationStore();
 const router = useRouter();
+
+const emit = defineEmits<{
+  (e: "select", nodeId: string | undefined): void;
+}>();
+
+/** Sage, a shade darker than the theme's primary, which is too pale to read as
+ * a ring against a white canvas. */
+const FOCUS_RING = "#5f7a54";
+
+/** How wide a node is drawn, by how far it is from the page's subject.
+ *
+ * The subject is largest, its own relations next, and the ring beyond them
+ * small enough to read as background. A flat two hop graph is forty equal dots
+ * and no way to tell whose page you are on. */
+const RING_WIDTH: Record<number, number> = { 0: 46, 1: 34, 2: 24 };
+const RING_LABEL: Record<number, number> = { 0: 13, 1: 11.5, 2: 9.5 };
+
+function ringOf(node: GraphNode): number {
+  return Math.min(node.depth ?? 1, 2);
+}
+
+function nodeWidth(node: GraphNode): number {
+  return (node.sizeMult ?? 1) * (RING_WIDTH[ringOf(node)] ?? 34);
+}
 
 const layoutCentered = computed(() => {
   if (!props.focusNodeId) return {};
@@ -65,34 +133,121 @@ const layoutCentered = computed(() => {
   return layout;
 });
 
-const emit = defineEmits<{
-  (e: "expand", nodeId: string): void;
-}>();
+/** What the reader has clicked. The library maintains this itself; the watch
+ * below holds it to one at a time, because the point of a selection here is to
+ * answer "and what is this one attached to", and two overlapping answers is the
+ * crowd the highlight exists to cut through. Shift-clicking is how a second one
+ * gets in. */
+const selectedNodes = ref<string[]>([]);
+const hoveredNode = ref<string | undefined>(undefined);
 
-const handleNodeClick = ({ node, event }: NodeEvent<MouseEvent>) => {
+watch(selectedNodes, (ids) => {
+  if (ids.length > 1) {
+    selectedNodes.value = [ids[ids.length - 1]!];
+    return;
+  }
+  emit("select", ids[0]);
+});
+
+/** The node the canvas is answering "and what is this one attached to" about:
+ * whatever is under the pointer, or failing that whatever was last clicked.
+ * Named once, because the nodes and the edges both dim against it, and dimming
+ * them by two copies of the rule is how they come to disagree. */
+const activeId = computed(() => hoveredNode.value ?? selectedNodes.value[0]);
+
+/** The active node and everything one relation from it. Everything else on the
+ * canvas is dimmed to the point of being background, which is the only way a
+ * name in the middle of a two hop graph can be read at all. */
+const highlighted = computed<Set<string> | undefined>(() => {
+  const id = activeId.value;
+  if (!id) return undefined;
+  const near = new Set<string>([id]);
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  for (const edge of props.edges ?? []) {
+    if (edge.source === id) near.add(edge.target);
+    if (edge.target === id) near.add(edge.source);
+  }
+  return near;
+});
+
+function dimmed(nodeId: string | undefined): boolean {
+  return !!highlighted.value && !!nodeId && !highlighted.value.has(nodeId);
+}
+
+function dimmedEdge(edge: Edge): boolean {
+  const id = activeId.value;
+  if (!id) return false;
+  return edge.source !== id && edge.target !== id;
+}
+
+/** The ring drawn around the page's subject, just outside its shape. */
+function haloRadius(config: ShapeStyle): number {
+  const half =
+    config.type === "circle"
+      ? config.radius
+      : Math.max(config.width, config.height) / 2;
+  return half + 6;
+}
+
+/** Places the 24x24 material path at the middle of the node, scaled to sit
+ * inside it with room to spare. */
+function glyphTransform(config: ShapeStyle, scale: number): string {
+  const box =
+    config.type === "circle"
+      ? config.radius * 2
+      : Math.min(config.width, config.height);
+  const size = box * 0.56 * scale;
+  return `translate(${-size / 2} ${-size / 2}) scale(${size / 24})`;
+}
+
+/** How each kind of relation is drawn.
+ *
+ * Employment is the site's subject, so it is the one solid line; everything
+ * else is dashed, at a weight that says how much of a claim it is. Colour
+ * alone would not do it - a reader who cannot separate the sage from the mauve
+ * can still count the gaps in a dash. */
+type EdgeStyle = { color: string; width: number; dasharray?: string };
+
+/** What a relation nobody drew a line for looks like: the ones that hang off an
+ * article rather than off a register entry. */
+const ASIDE: EdgeStyle = { color: "#9aa5ab", width: 1.4, dasharray: "2 4" };
+
+// Keyed by the edge type rather than by `string`, so adding one to
+// `shared/graph/model.ts` fails the typecheck here the way it already does at
+// `edgeLabel` in shared/graph/util.ts, instead of quietly drawing it as "zna".
+const EDGE_STYLE: Record<Edge["type"], EdgeStyle> = {
+  employed: { color: "#59707c", width: 2.2 },
+  connection: { color: "#8d6a9f", width: 2, dasharray: "7 4" },
+  owns: { color: "#6f8f5a", width: 1.8, dasharray: "3 3" },
+  election: { color: "#b98235", width: 1.8, dasharray: "1 4" },
+  mentions: ASIDE,
+  comment: ASIDE,
+  tagged: ASIDE,
+};
+
+/** Falls back to the acquaintance style. The table above is exhaustive over the
+ * declared union, but the type is read straight off a firestore document, and a
+ * row written before a rename is not bound by it. */
+function edgeStyle(edge: Edge): EdgeStyle {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  return EDGE_STYLE[edge.type] ?? EDGE_STYLE.connection;
+}
+
+/** Opening a node's page, on a double click.
+ *
+ * A single click is not bound at all: the library's own selection handles it
+ * (`selectable: true` below), and selecting is what draws the highlight. This
+ * used to be bound to `node:click` as well, behind an `event.detail !== 2`
+ * guard - but v-network-graph builds the second click and the double click from
+ * one init object and dispatches both, so the navigation ran twice.
+ */
+const handleNodeDoubleClick = ({ node }: NodeEvent<MouseEvent>) => {
   const nodeWhole = props.nodes[node];
   if (!nodeWhole) return;
 
-  if (event.detail !== 2) {
-    // Single click: expand the node to show immediate neighbors
-    emit("expand", node);
-  } else {
-    // Double click: navigate
-    let destination: NodeType | undefined = undefined;
-    switch (nodeWhole.type) {
-      case "rect":
-        destination = "place";
-        break;
-      case "circle":
-        destination = "person";
-        break;
-      case "document":
-        destination = "teryt" in nodeWhole ? "region" : "article";
-        break;
-    }
-
-    router.push({ path: `/entity/${destination}/${node}` });
-  }
+  const destination = graphNodeDestination(nodeWhole);
+  if (!destination) return;
+  router.push({ path: `/entity/${destination}/${node}` });
 };
 
 const handleDoubleClick = () => {
@@ -100,45 +255,133 @@ const handleDoubleClick = () => {
 };
 
 const eventHandlers: EventHandlers = {
-  "node:click": handleNodeClick,
   "view:dblclick": handleDoubleClick,
-  "node:dblclick": handleNodeClick,
+  "node:dblclick": handleNodeDoubleClick,
+  "node:pointerover": ({ node }) => {
+    hoveredNode.value = node;
+  },
+  "node:pointerout": () => {
+    hoveredNode.value = undefined;
+  },
 };
 
+/** The shape of a node, `grow` pixels wider than it is drawn at rest.
+ *
+ * `document` is not a shape v-network-graph knows - it always fell through to
+ * the rectangle branch by accident. Said out loud here so a region is a
+ * rectangle on purpose, told apart from a company by its glyph and its colour
+ * rather than by nothing at all.
+ *
+ * Circles are sized by `radius`, rectangles by `width`/`height`, and only the
+ * latter were ever set - so `sizeMult` did nothing to a person and the
+ * library's default 16px radius drew every one of them the same size.
+ */
+function nodeShape(grow: number) {
+  const across = (node: CanvasNode) => nodeWidth(node) + grow;
+  return {
+    type: (node: CanvasNode) =>
+      node.type === "circle" ? ("circle" as const) : ("rect" as const),
+    radius: (node: CanvasNode) => across(node) / 2,
+    width: across,
+    height: (node: CanvasNode) =>
+      across(node) * (node.type === "document" ? 0.8 : 1),
+    borderRadius: (node: CanvasNode) => (node.type === "document" ? 2 : 7),
+    color: (node: CanvasNode) => node.color,
+  };
+}
+
 const configs = reactive(
-  defineConfigs({
+  defineConfigs<CanvasNode, Edge>({
     node: {
       normal: {
-        type: (node) => node.type,
-        width: (node) => (node.sizeMult ?? 1) * 32,
-        height: (node) => (node.sizeMult ?? 1) * 32,
-        color: (node) => node.color,
+        ...nodeShape(0),
+        // A hairline of the page background, so two nodes the layout pushed
+        // together still read as two.
+        strokeWidth: (node) => (node.depth === 0 ? 2 : 1.5),
+        strokeColor: (node) => (node.depth === 0 ? FOCUS_RING : "#ffffff"),
+      },
+      hover: {
+        ...nodeShape(6),
+        strokeWidth: 2.5,
+        strokeColor: FOCUS_RING,
+      },
+      selectable: true,
+      focusring: {
+        visible: true,
+        width: 3,
+        padding: 3,
+        color: FOCUS_RING,
+      },
+      // The subject over its own relations, and those over the outer ring, so
+      // that where they overlap the nearer one is the one you can read.
+      zOrder: {
+        enabled: true,
+        zIndex: (node) => 10 - ringOf(node),
+        bringToFrontOnHover: true,
+        bringToFrontOnSelected: true,
       },
       label: {
-        color: "#000",
+        // Point at a node and the rest of the canvas gives up its names. At two
+        // hops there are more labels than there is room for them, and this is
+        // what makes any one of them legible.
+        visible: (node) => !dimmed(node.id),
+        fontSize: (node) => RING_LABEL[ringOf(node)] ?? 11.5,
+        color: "#1b1b1b",
         // Labels are drawn over whatever the layout put underneath them, and a
         // dense graph puts a lot there: without a plate behind the text, a name
         // crossing an edge or another name is unreadable rather than merely
         // crowded.
         background: {
           visible: true,
-          color: "rgba(255, 255, 255, 0.82)",
+          color: "rgba(255, 255, 255, 0.86)",
           padding: { vertical: 1, horizontal: 3 },
           borderRadius: 3,
         },
         lineHeight: 1.1,
-        text: (node) =>
-          wrapLabel(
-            node.stats?.people
-              ? `${node.name ?? ""} (${node.stats.people})`
-              : (node.name ?? ""),
-          ),
+        margin: 5,
+        directionAutoAdjustment: true,
+        // A headcount for whatever holds people - an institution, or a region
+        // through the institutions it owns. Not for a person: there it read as
+        // a score nobody had defined, "Jan Kowalski (1)", because the same
+        // group walk that counts who works at a company also counts who a
+        // person knows.
+        text: (node) => {
+          const people = node.type === "circle" ? 0 : (node.stats?.people ?? 0);
+          const name = people ? `${node.name} (${people})` : node.name;
+          return ringOf(node) === 2
+            ? wrapLabel(name, { maxChars: 14, maxLines: 2 })
+            : wrapLabel(name);
+        },
       },
     },
     edge: {
+      normal: {
+        color: (edge) => (dimmedEdge(edge) ? "#dde2e5" : edgeStyle(edge).color),
+        width: (edge) => edgeStyle(edge).width,
+        dasharray: (edge) => edgeStyle(edge).dasharray ?? 0,
+      },
+      hover: {
+        color: (edge) => edgeStyle(edge).color,
+        width: (edge) => edgeStyle(edge).width + 1,
+        dasharray: (edge) => edgeStyle(edge).dasharray ?? 0,
+      },
+      marker: {
+        // Only ownership has a direction worth an arrowhead: a region owns a
+        // company, never the other way about. Employment and acquaintance read
+        // the same from either end.
+        target: {
+          type: ([edge]) => (edge.type === "owns" ? "arrow" : "none"),
+          width: 3,
+          height: 3,
+          margin: 1,
+          offset: 0,
+          units: "strokeWidth",
+          color: null,
+        },
+      },
       label: {
         fontSize: 11,
-        color: "000",
+        color: "#000",
       },
     },
 
@@ -146,6 +389,8 @@ const configs = reactive(
       autoPanAndZoomOnLoad: "center-zero",
       scalingObjects: true,
       doubleClickZoomEnabled: false,
+      minZoomLevel: 0.2,
+      maxZoomLevel: 4,
     },
   }),
 );
@@ -184,4 +429,56 @@ function applyLayoutHandler() {
 watch([() => props.nodes, () => props.focusNodeId], applyLayoutHandler, {
   immediate: true,
 });
+
+const graph = ref<Instance | null>(null);
+const zoomLevel = ref(1);
+
+/** How far in the automatic framing is allowed to go.
+ *
+ * `fitToContents` on a graph of five nodes zooms until those five fill the
+ * canvas, and with `scalingObjects` the nodes grow with it - a person and two
+ * employers came out the size of coins. Past this the view is centred instead
+ * of magnified. */
+const MAX_AUTO_ZOOM = 1.25;
+
+/** Put the whole graph in frame.
+ *
+ * `autoPanAndZoomOnLoad: "center-zero"` puts the origin in the middle and stops
+ * there, which was right when the canvas held a node and its handful of
+ * relations. Two hops out the layout spreads well past the viewport, and the
+ * subject - pinned at the origin - ends up in the middle of a picture whose
+ * edges are off screen.
+ */
+async function fitView() {
+  const instance = graph.value;
+  if (!instance) return;
+  await instance.fitToContents({ margin: "8%" });
+  if (zoomLevel.value > MAX_AUTO_ZOOM) {
+    zoomLevel.value = MAX_AUTO_ZOOM;
+    await instance.panToCenter();
+  }
+}
+
+/** The force layout animates for a second or so after the data lands, so the
+ * frame is taken once it has stopped moving rather than around the positions it
+ * started from.
+ *
+ * On the node count as well as on `ready`, because the two things that change
+ * the picture after the first render - switching the reach in the bar, and
+ * expanding a node - never make it not-ready, and both leave a graph that no
+ * longer fits the frame taken for the old one. */
+let fitTimer: ReturnType<typeof setTimeout> | undefined;
+watch(
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  () => [props.ready, Object.keys(props.nodes ?? {}).length] as const,
+  ([isReady]) => {
+    if (!isReady || !import.meta.client) return;
+    clearTimeout(fitTimer);
+    fitTimer = setTimeout(() => void fitView(), 1600);
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => clearTimeout(fitTimer));
+
+defineExpose({ fitView });
 </script>

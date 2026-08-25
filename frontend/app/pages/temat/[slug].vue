@@ -50,20 +50,12 @@
         Graf powiązań
       </v-card-title>
       <v-card-text>
-        <div
-          style="
-            height: 560px;
-            width: 100%;
-            position: relative;
-            border: 1px solid #ccc;
-          "
-        >
-          <GraphContainer
-            :key="topicId"
-            focus-node-id=""
-            :source="graphSource"
-          />
-        </div>
+        <GraphContainer
+          :key="topicId"
+          focus-node-id=""
+          :source="graphSource"
+          :height="560"
+        />
         <p class="text-caption text-medium-emphasis mt-2">
           Pokazujemy osoby i instytucje wspomniane w artykułach z tego tematu
           oraz powiązania, dla których te artykuły są źródłem.

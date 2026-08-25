@@ -1,6 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { getNodeGroups, getEdges, getNodesNoStats } from "~~/shared/graph/util";
+import {
+  getNodeGroups,
+  getEdges,
+  getNodesNoStats,
+  getGraphBFS,
+  pruneOuterRing,
+} from "~~/shared/graph/util";
 import type { Person, Company, Region, Edge as DBEdge } from "~~/shared/model";
+import type { Edge, Node, NodeStats } from "~~/shared/graph/model";
 
 describe("graph utils", () => {
   describe("getNodeGroups", () => {
@@ -176,5 +183,191 @@ describe("graph utils", () => {
 
       expect(forPerson1?.connected).not.toContain("p2");
     });
+  });
+});
+
+/** A node as `getNodes` hands it on, which is what both functions below take. */
+const drawn = (
+  name: string,
+  type: Node["type"] = "circle",
+): Node & { stats: NodeStats } => ({
+  name,
+  type,
+  color: "#000000",
+  stats: { people: 0 },
+});
+
+const spell = (source: string, target: string, endDate?: string): Edge => ({
+  source,
+  target,
+  type: "employed",
+  end_date: endDate,
+});
+
+describe("getGraphBFS", () => {
+  // F -- A -- x, and A -- B, so B is two hops out and y three.
+  const nodes = {
+    F: drawn("Focus"),
+    A: drawn("Employer", "rect"),
+    B: drawn("Colleague"),
+    y: drawn("Colleague of a colleague"),
+    away: drawn("Nobody"),
+  };
+  const edges = [spell("F", "A"), spell("B", "A"), spell("B", "y")];
+
+  it("stamps every node with how far out it sits", () => {
+    const result = getGraphBFS("F", [], 2, edges, nodes);
+
+    expect(result.F?.depth).toBe(0);
+    expect(result.A?.depth).toBe(1);
+    expect(result.B?.depth).toBe(2);
+  });
+
+  it("stops at the depth it was asked for, and keeps nothing unreachable", () => {
+    const result = getGraphBFS("F", [], 2, edges, nodes);
+
+    expect(Object.keys(result).sort()).toEqual(["A", "B", "F"]);
+  });
+
+  it("draws one hop the way it always did", () => {
+    const result = getGraphBFS("F", [], 1, edges, nodes);
+
+    expect(Object.keys(result).sort()).toEqual(["A", "F"]);
+  });
+
+  it("starts an expanded node one ring out, not at the subject's", () => {
+    // A page has one subject. Drawing the node a reader asked to see more of
+    // at depth nought would give it the subject's size, ring and label, which
+    // says the page is about it.
+    const result = getGraphBFS("F", ["B"], 2, edges, nodes);
+
+    expect(result.F?.depth).toBe(0);
+    expect(result.B?.depth).toBe(1);
+    // And whatever the expansion reveals lands in the outer ring, where the
+    // budget can reach it.
+    expect(result.y?.depth).toBe(2);
+  });
+
+  it("ignores an expansion of the subject itself", () => {
+    const result = getGraphBFS("F", ["F"], 2, edges, nodes);
+
+    expect(result.F?.depth).toBe(0);
+  });
+});
+
+describe("pruneOuterRing", () => {
+  /** One person, two employers, and four other people spread across them.
+   *
+   * `shared` sits on both boards, `a2`'s spell is still open, `a1`'s and `b1`'s
+   * have ended. That is one of each thing the ranking is supposed to notice. */
+  const nodes = {
+    F: { ...drawn("Focus"), depth: 0 },
+    A: { ...drawn("Aleja", "rect"), depth: 1 },
+    B: { ...drawn("Brama", "rect"), depth: 1 },
+    shared: { ...drawn("Na obu radach"), depth: 2 },
+    a1: { ...drawn("Dawny kolega"), depth: 2 },
+    a2: { ...drawn("Obecny kolega"), depth: 2 },
+    b1: { ...drawn("Jedyny z Bramy"), depth: 2 },
+  };
+  const edges = [
+    spell("F", "A"),
+    spell("F", "B"),
+    spell("shared", "A", undefined),
+    spell("shared", "B", undefined),
+    spell("a1", "A", "2019-01-01"),
+    spell("a2", "A"),
+    spell("b1", "B", "2019-01-01"),
+  ];
+
+  it("leaves a one hop graph exactly as it is", () => {
+    // The page's own relations, every one of which the rows above the graph
+    // list by name. Cutting those would be cutting the page.
+    const oneHop = {
+      F: { ...drawn("Focus"), depth: 0 },
+      A: { ...drawn("Aleja", "rect"), depth: 1 },
+    };
+
+    expect(pruneOuterRing(oneHop, edges, 1)).toEqual({
+      nodes: oneHop,
+      omitted: 0,
+    });
+  });
+
+  it("does nothing when the ring already fits", () => {
+    const result = pruneOuterRing(nodes, edges, 10);
+
+    expect(result.nodes).toEqual(nodes);
+    expect(result.omitted).toBe(0);
+  });
+
+  it("keeps the whole of the inner rings", () => {
+    const result = pruneOuterRing(nodes, edges, 1);
+
+    expect(result.nodes.F).toBeDefined();
+    expect(result.nodes.A).toBeDefined();
+    expect(result.nodes.B).toBeDefined();
+  });
+
+  it("gives every relation a turn before any of them gets a second", () => {
+    // Three seats. A could fill all three on its own; B has one candidate and
+    // gets to place them, because "who else is at Brama" is a different fact
+    // from "a third person at Aleja".
+    const result = pruneOuterRing(nodes, edges, 3);
+
+    expect(result.nodes.b1).toBeDefined();
+    expect(Object.keys(result.nodes)).toHaveLength(6);
+  });
+
+  it("lets one relation fill the ring when no other is competing for it", () => {
+    // Somebody who sits on exactly one board should see that board, not a
+    // fixed handful of it. Fairness is what the round robin is for, and with a
+    // single sponsor there is nobody to be fair to.
+    const oneBoard = {
+      F: { ...drawn("Focus"), depth: 0 },
+      A: { ...drawn("Aleja", "rect"), depth: 1 },
+      ...Object.fromEntries(
+        Array.from({ length: 9 }, (_, i) => [
+          `c${i}`,
+          { ...drawn(`Kolega ${i}`), depth: 2 },
+        ]),
+      ),
+    };
+    const oneBoardEdges = [
+      spell("F", "A"),
+      ...Array.from({ length: 9 }, (_, i) => spell(`c${i}`, "A")),
+    ];
+
+    const result = pruneOuterRing(oneBoard, oneBoardEdges, 6);
+
+    expect(
+      Object.values(result.nodes).filter((node) => node.depth === 2),
+    ).toHaveLength(6);
+    expect(result.omitted).toBe(3);
+  });
+
+  it("prefers whoever is reached by more than one of the relations", () => {
+    const result = pruneOuterRing(nodes, edges, 3);
+
+    expect(result.nodes.shared).toBeDefined();
+  });
+
+  it("prefers an open spell to one that has ended", () => {
+    const result = pruneOuterRing(nodes, edges, 3);
+
+    expect(result.nodes.a2).toBeDefined();
+    expect(result.nodes.a1).toBeUndefined();
+  });
+
+  it("says how many it left out", () => {
+    expect(pruneOuterRing(nodes, edges, 3).omitted).toBe(1);
+  });
+
+  it("cuts the same graph the same way twice", () => {
+    // A cached response and a fresh one have to agree, and the ordering the
+    // ranking falls back on is the only thing holding that.
+    const first = pruneOuterRing(nodes, edges, 2);
+    const second = pruneOuterRing(nodes, edges, 2);
+
+    expect(Object.keys(first.nodes)).toEqual(Object.keys(second.nodes));
   });
 });

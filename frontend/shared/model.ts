@@ -170,21 +170,6 @@ export const nodeTypes = [
 
 export type NodeType = (typeof nodeTypes)[number];
 
-export function nodeIcon(type: NodeType) {
-  switch (type) {
-    case "person":
-      return "mdi-account-outline";
-    case "place":
-      return "mdi-office-building-outline";
-    case "article":
-      return "mdi-file-document-outline";
-    case "topic":
-      return "mdi-tag-outline";
-    default:
-      return "mdi-comment-arrow-right-outline";
-  }
-}
-
 export type EdgeType =
   | "employed"
   | "connection"
@@ -193,14 +178,6 @@ export type EdgeType =
   | "comment"
   | "election"
   | "tagged";
-
-export const nodeTypeIcon: Record<NodeType, string> = {
-  person: "mdi-account-outline",
-  place: "mdi-office-building-outline",
-  article: "mdi-file-document-outline",
-  region: "mdi-map-marker-radius-outline",
-  topic: "mdi-tag-outline",
-};
 
 export const destinationAddText: Record<NodeType, string> = {
   person: "Dodaj osobę",

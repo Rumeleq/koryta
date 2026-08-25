@@ -34,7 +34,12 @@ test.describe("Add a relation", () => {
     test.setTimeout(180_000);
     // Jan Kowalski (1) and Piotr Wiśniewski (4).
     await logIn(page, USERS.normal, "/entity/person/1");
-    await expect(page.locator("body")).not.toContainText("Piotr Wiśniewski");
+    // Scoped to the relations list, not to the whole page: the graph below it
+    // draws two hops now, and Piotr is at the second - both of them are linked
+    // to Orlen. What this spec is about is whether they are related to each
+    // other, and the list is where that is claimed.
+    const relations = page.getByTestId("relations-history");
+    await expect(relations).not.toContainText("Piotr Wiśniewski");
 
     const dialog = await compose(
       page,
@@ -53,11 +58,13 @@ test.describe("Add a relation", () => {
     await expect(dialog).toBeHidden({ timeout: 30_000 });
 
     // Really stored: an edge awaiting approval is still shown to a logged in
-    // reader, so a reload lists it.
+    // reader, so a reload lists it. In the list, again - his name was on the
+    // page before the relation existed.
     await page.reload();
-    await expect(page.locator("body")).toContainText("Piotr Wiśniewski", {
-      timeout: 30_000,
-    });
+    await expect(page.getByTestId("relations-history")).toContainText(
+      "Piotr Wiśniewski",
+      { timeout: 30_000 },
+    );
     await expect(page.locator("body")).toContainText("żona");
   });
 

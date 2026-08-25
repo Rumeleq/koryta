@@ -1,5 +1,5 @@
 import { defineEventHandler, readBody, getRouterParam } from "h3";
-import { getLocalGraph } from "./[id].get";
+import { getLocalGraph } from "~~/server/utils/localGraph";
 
 export default defineEventHandler(async (event) => {
   const body = (await readBody(event)) || {};

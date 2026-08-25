@@ -1,5 +1,9 @@
 <template>
-  <v-card v-if="user || otherSources.length > 0" class="mb-4">
+  <v-card
+    v-if="user || otherSources.length > 0"
+    class="mb-4"
+    data-testid="note-editor"
+  >
     <v-card-title>Notatki</v-card-title>
 
     <v-card-text v-if="user && !userNote && !isEditing">

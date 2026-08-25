@@ -1,11 +1,14 @@
-import type { Ref } from "vue";
+import type { MaybeRefOrGetter, Ref } from "vue";
+import { toValue } from "vue";
 import type { GraphLayout } from "~~/shared/graph/util";
 import type { Node as GraphNode, NodeStats, Edge } from "~~/shared/graph/model";
 import { authFetch } from "@/composables/auth";
 
 export type GraphOptions = {
   focusNodeId: string;
-  maxDepth?: number;
+  /** How many relations out to draw. A ref or getter, because the graph offers
+   * the reader the choice and the url has to follow it. */
+  maxDepth?: MaybeRefOrGetter<number>;
   filtered?: string[];
   expandedNodes?: Ref<Set<string>>;
   /** Where to get the layout, for a graph that is not one node's neighbourhood.
@@ -18,7 +21,7 @@ export type GraphOptions = {
 export function useGraph(opts: GraphOptions) {
   const url = computed(() => {
     if (opts.source) return opts.source;
-    let u = `/api/graph/local/${opts.focusNodeId}?distance=${opts.maxDepth ?? 1}`;
+    let u = `/api/graph/local/${opts.focusNodeId}?distance=${toValue(opts.maxDepth) ?? 1}`;
     if (opts.expandedNodes?.value && opts.expandedNodes.value.size > 0) {
       const expand = Array.from(opts.expandedNodes.value)
         .filter((id) => id !== opts.focusNodeId)
@@ -95,20 +98,32 @@ export function useGraph(opts: GraphOptions) {
   const edgesFiltered = computed(() => {
     if (!edgesFilteredDuplicates.value) return undefined;
 
+    const drawn = nodesFiltered.value;
     const unique = new Map<string, Edge>();
     for (const edge of edgesFilteredDuplicates.value) {
-      if (edge) {
-        unique.set(edge.source + edge.target + edge.type, edge);
-      }
+      if (!edge) continue;
+      // An edge whose other end was filtered out has nothing to join. The
+      // canvas looks a node's position up by id, so a dangling one is a line
+      // drawn to the origin - and `interestingNodes` above drops any company
+      // the layout has no people at, which two hops out is a real possibility:
+      // a colleague's other employer arrives with only that colleague on it.
+      if (!drawn[edge.source] || !drawn[edge.target]) continue;
+      unique.set(edge.source + edge.target + edge.type, edge);
     }
     return Array.from(unique.values());
   });
+
+  /** How many nodes at the outer ring the server left out. See
+   * `pruneOuterRing` - the canvas says so rather than pretending the ring it
+   * drew is all there is. */
+  const omitted = computed(() => graph.value?.omitted ?? 0);
 
   return {
     nodesFiltered,
     nodeGroupsMap,
     edgesFiltered,
     ready,
+    omitted,
     url,
   };
 }

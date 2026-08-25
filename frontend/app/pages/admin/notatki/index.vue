@@ -130,7 +130,7 @@
         <template #[`item.nodeName`]="{ item }">
           <div class="d-flex align-center ga-1">
             <v-icon
-              :icon="item.nodeType ? nodeTypeIcons[item.nodeType] : mdiHelp"
+              :icon="item.nodeType ? entityIcon(item.nodeType) : mdiHelp"
               size="small"
               class="text-medium-emphasis"
             />
@@ -247,22 +247,18 @@
 
 <script setup lang="ts">
 import {
-  mdiAccountOutline,
   mdiCommentQuestionOutline,
-  mdiFileDocumentOutline,
   mdiFormatListBulleted,
   mdiGestureTapButton,
   mdiHelp,
   mdiLink,
   mdiMagnify,
-  mdiMapMarkerRadiusOutline,
-  mdiOfficeBuildingOutline,
   mdiOpenInNew,
-  mdiTagOutline,
 } from "@mdi/js";
 import { computed, ref, shallowRef, watch } from "vue";
 import { useRoute } from "vue-router";
 import { authRequest } from "~/composables/auth";
+import { entityIcon } from "~/utils/entityIcon";
 import { useEdges } from "~/composables/edges";
 import {
   noteAdminTypeConfig,
@@ -382,14 +378,6 @@ const nodeTypeLabels: Record<NodeType, string> = {
   article: "Artykuł",
   region: "Region",
   topic: "Temat",
-};
-
-const nodeTypeIcons: Record<NodeType, string> = {
-  person: mdiAccountOutline,
-  place: mdiOfficeBuildingOutline,
-  article: mdiFileDocumentOutline,
-  region: mdiMapMarkerRadiusOutline,
-  topic: mdiTagOutline,
 };
 
 const nodeTypeFilterOptions = Object.entries(nodeTypeLabels).map(

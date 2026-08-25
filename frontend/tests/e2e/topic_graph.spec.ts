@@ -7,9 +7,10 @@ import { logIn, USERS } from "./helpers/auth";
 const label = (page: Page, name: string) =>
   page.locator("svg text").filter({ hasText: name });
 
-/** A node is 32px across (`Canvas.vue` sizes it), so two centres closer than
- * that are one circle drawn on top of another. */
-const NODE_WIDTH = 32;
+/** How wide a node is on this page. A topic's layout carries no `depth`, so
+ * `ringOf` in `Canvas.vue` reads every node as the middle ring - `RING_WIDTH[1]`
+ * - and two centres closer than that are one circle drawn on top of another. */
+const NODE_WIDTH = 34;
 
 /** How far apart the two people are drawn, centre to centre.
  *

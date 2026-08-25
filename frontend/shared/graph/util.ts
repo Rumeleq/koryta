@@ -14,6 +14,10 @@ export interface GraphLayout {
   edges: Edge[];
   nodeGroups: ReturnType<typeof getNodeGroups>;
   nodes: Record<string, Node & { stats: NodeStats }>;
+  /** How many nodes at the outer ring the budget left out, so the canvas can
+   * say so. A graph that silently stops at twenty eight names reads as the
+   * whole truth about somebody. */
+  omitted?: number;
 }
 
 export function getNodeGroups(
@@ -198,18 +202,39 @@ export function getEdges(edgesFromDB: DBEdge[]) {
   });
 }
 
+/** The nodes within `maxDepth` relations of the subject, each stamped with how
+ * far away it is.
+ *
+ * The stamp is the point as much as the filter. A two hop graph drawn flat
+ * reads as one crowd - the reader cannot tell which of forty names is this
+ * person's employer and which is a colleague's - so every node carries the hop
+ * count that put it there, and the canvas draws the rings differently.
+ *
+ * `expandedIds` are nodes the reader asked to see more of. They are extra
+ * roots for the walk, but they start at one rather than nought: a page has a
+ * single subject, and a neighbour drawn at depth nought gets the subject's
+ * size, ring and label - which is a claim about whose page this is. Starting
+ * them at one also puts whatever they reveal in the outer ring, where
+ * `pruneOuterRing` can budget it rather than letting an expansion smuggle an
+ * unbounded number of nodes past it. */
 export function getGraphBFS(
-  focusNodeIds: Set<string>,
+  subjectId: string,
+  expandedIds: string[],
   maxDepth: number,
   edges: Edge[],
   interestingNodes: Record<string, Node & { stats: NodeStats }>,
-) {
-  const visited = new Set<string>();
+): Record<string, Node & { stats: NodeStats; depth: number }> {
+  const depths = new Map<string, number>();
 
   const queue: { id: string; d: number }[] = [];
-  for (const id of focusNodeIds) {
-    queue.push({ id, d: 0 });
-    visited.add(id);
+  const roots: [string, number][] = [
+    [subjectId, 0],
+    ...expandedIds.map((id): [string, number] => [id, 1]),
+  ];
+  for (const [id, d] of roots) {
+    if (depths.has(id)) continue;
+    queue.push({ id, d });
+    depths.set(id, d);
   }
 
   while (queue.length > 0) {
@@ -225,14 +250,122 @@ export function getGraphBFS(
         continue;
       }
 
-      if (!visited.has(neighborId)) {
-        visited.add(neighborId);
+      if (!depths.has(neighborId)) {
+        depths.set(neighborId, current.d + 1);
         queue.push({ id: neighborId, d: current.d + 1 });
       }
     }
   }
 
   return Object.fromEntries(
-    Object.entries(interestingNodes).filter(([key]) => visited.has(key)),
+    Object.entries(interestingNodes)
+      .filter(([key]) => depths.has(key))
+      .map(([key, node]) => [key, { ...node, depth: depths.get(key)! }]),
   );
+}
+
+/** Cut the outermost ring down to `budget`, keeping the part of it that says
+ * something about the subject.
+ *
+ * The ring is cut rather than the fetch narrowed because which second hop nodes
+ * matter is only knowable once they are all in hand: the ones worth drawing are
+ * those reached through more than one direct relation - a colleague who follows
+ * this person from one board to the next - and those whose relation has not
+ * ended. Neither is a query Firestore can answer.
+ *
+ * Shared out round by round rather than by score alone, so every direct
+ * relation contributes something before any of them contributes a second: a
+ * person with one colleague at a small foundation and forty at a ministry
+ * should still see the foundation on the canvas. That is the whole of the
+ * fairness rule - no per relation cap on top of it, because a ministry may
+ * only reach its seventh once every other relation has had six or run dry, and
+ * a person who sits on exactly one board should see that board rather than six
+ * of it.
+ *
+ * The inner rings are never touched. They are the page's own relations, and the
+ * list above the graph already names every one of them.
+ */
+export function pruneOuterRing<T extends Node & { depth: number }>(
+  nodes: Record<string, T>,
+  edges: Edge[],
+  budget: number,
+): { nodes: Record<string, T>; omitted: number } {
+  const entries = Object.entries(nodes);
+  const outerDepth = entries.reduce((max, [, n]) => Math.max(max, n.depth), 0);
+  // Nothing to thin: a one hop graph is the page's own relations, and every one
+  // of them is drawn whatever it costs.
+  if (outerDepth < 2) return { nodes, omitted: 0 };
+
+  const outer = new Set(
+    entries.filter(([, n]) => n.depth === outerDepth).map(([id]) => id),
+  );
+  if (outer.size <= budget) return { nodes, omitted: 0 };
+
+  /** For each inner node, the outer ones hanging off it. */
+  const sponsors = new Map<string, Set<string>>();
+  /** Which inner nodes each outer one hangs off, and whether any of those
+   * relations is still open. Built once and read by the sort below: scoring
+   * inside the comparator would re-walk it O(n log n) times for a ranking that
+   * is settled before any of the sorting starts. */
+  const reach = new Map<string, { paths: Set<string>; current: boolean }>();
+
+  for (const edge of edges) {
+    const ends: [string, string][] = [
+      [edge.source, edge.target],
+      [edge.target, edge.source],
+    ];
+    for (const [inner, out] of ends) {
+      if (!outer.has(out) || outer.has(inner) || !nodes[inner]) continue;
+      const seen = reach.get(out) ?? {
+        paths: new Set<string>(),
+        current: false,
+      };
+      seen.paths.add(inner);
+      seen.current ||= !edge.end_date;
+      reach.set(out, seen);
+
+      const hanging = sponsors.get(inner) ?? new Set<string>();
+      hanging.add(out);
+      sponsors.set(inner, hanging);
+    }
+  }
+
+  /** Best first: reached by the most of the page's own relations, then still
+   * held rather than ended, then by name so the order is total. */
+  const better = (a: string, b: string) => {
+    const [x, y] = [reach.get(a), reach.get(b)];
+    return (
+      (y?.paths.size ?? 0) - (x?.paths.size ?? 0) ||
+      Number(y?.current ?? false) - Number(x?.current ?? false) ||
+      (nodes[a]?.name ?? a).localeCompare(nodes[b]?.name ?? b)
+    );
+  };
+
+  const ranked = new Map<string, string[]>(
+    [...sponsors].map(([inner, hanging]) => [inner, [...hanging].sort(better)]),
+  );
+  // Deterministic order for the round robin, so the same graph is drawn twice
+  // the same way and a cached response matches a fresh one.
+  const innerOrder = [...ranked.keys()].sort((a, b) =>
+    (nodes[a]?.name ?? a).localeCompare(nodes[b]?.name ?? b),
+  );
+
+  const kept = new Set<string>();
+  while (kept.size < budget) {
+    const before = kept.size;
+    for (const inner of innerOrder) {
+      if (kept.size >= budget) break;
+      const next = ranked.get(inner)?.find((id) => !kept.has(id));
+      if (next) kept.add(next);
+    }
+    // Every sponsor had a turn and none of them had anything left.
+    if (kept.size === before) break;
+  }
+
+  return {
+    nodes: Object.fromEntries(
+      entries.filter(([id, n]) => n.depth !== outerDepth || kept.has(id)),
+    ),
+    omitted: outer.size - kept.size,
+  };
 }

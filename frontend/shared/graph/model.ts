@@ -3,6 +3,14 @@ import type { ElectionPosition } from "../model";
 export interface Node {
   name: string;
   prettyURL?: string;
+  /** The node's own id, the same string the layout files it under.
+   *
+   * Carried off the database record by `parseNodeDoc` and spread through by
+   * `shared/graph/nodes.ts`, so it is there on every node the canvas ever
+   * sees - and the canvas needs it, because v-network-graph hands a config
+   * callback the node object and nothing else. Optional because the graph
+   * models are also built by hand in tests. */
+  id?: string;
 
   type: "circle" | "rect" | "document";
   color: string;
@@ -13,6 +21,16 @@ export interface Node {
   entityType?: string;
   /** Only on company nodes, see `Company.isPublic`. */
   isPublic?: boolean;
+  /** How many relations away from the page's subject this node sits: 0 for the
+   * subject itself, 1 for something it is directly related to, 2 for a relation
+   * of one of those.
+   *
+   * Set by `getGraphBFS`, so it is absent on a layout that has no subject to
+   * count from - an article's, a topic's. The canvas draws the outer ring
+   * smaller and paler than the inner one, which is what keeps a two hop graph
+   * readable: without it a colleague's other employer looks exactly as much
+   * this person's business as their own. */
+  depth?: number;
 }
 
 export interface NodeStats {

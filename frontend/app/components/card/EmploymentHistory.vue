@@ -27,7 +27,7 @@
         rounded
       >
         <template #prepend>
-          <v-icon :icon="getIcon(edge.richNode.type)" />
+          <v-icon :icon="entityIcon(edge.richNode.type)" />
         </template>
 
         <v-list-item-title class="text-subtitle-2 font-weight-bold text-wrap">
@@ -148,15 +148,12 @@
 
 <script lang="ts" setup>
 import {
-  mdiAccountOutline,
   mdiArrowUp,
-  mdiOfficeBuildingOutline,
-  mdiFileDocumentOutline,
-  mdiCommentArrowRightOutline,
   mdiFileDocumentMultipleOutline,
   mdiFileDocumentPlusOutline,
   mdiPlus,
 } from "@mdi/js";
+import { entityIcon } from "~/utils/entityIcon";
 import { gapLabel } from "~~/shared/succession";
 import type { Company } from "~~/shared/model";
 import type { PersonSuccession } from "~~/server/api/edges/successions.get";
@@ -166,19 +163,6 @@ import type { PersonSuccession } from "~~/server/api/edges/successions.get";
 type Predecessor = NonNullable<PersonSuccession["predecessor"]> & {
   batchSize: number;
 };
-
-function getIcon(type: string) {
-  switch (type) {
-    case "person":
-      return mdiAccountOutline;
-    case "place":
-      return mdiOfficeBuildingOutline;
-    case "article":
-      return mdiFileDocumentOutline;
-    default:
-      return mdiCommentArrowRightOutline;
-  }
-}
 
 const props = defineProps<{
   edges: EdgeNode[];
