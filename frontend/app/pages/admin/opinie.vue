@@ -40,6 +40,7 @@
       :id="`fb-${item.id}`"
       :key="item.id"
       class="mb-4"
+      :class="{ 'feedback-settled': isSettled(item) }"
     >
       <v-row no-gutters>
         <v-col cols="12" md="8" class="pa-4 border-e">
@@ -189,6 +190,14 @@ const visible = computed(() =>
 /** Reports are written by anyone, including signed-out visitors, so the route
  * is never trusted as a link target. The API only accepts site-relative paths;
  * this refuses anything else outright rather than rendering it. */
+/** Settled means nobody has to read it again: it was dealt with, or a decision
+ * was made not to. Those two are what the card greys out - "w trakcie" is still
+ * work in the queue and stays at full contrast. */
+const SETTLED_STATUSES: FeedbackStatus[] = ["resolved", "wont_fix"];
+
+const isSettled = (item: Feedback) =>
+  SETTLED_STATUSES.includes(item.adminStatus);
+
 const pageLink = (item: Feedback) =>
   /^\/(?!\/)/.test(item.context.route) ? item.context.route : undefined;
 
@@ -237,3 +246,19 @@ const updateAdmin = async (
 
 onMounted(load);
 </script>
+
+<style scoped>
+/* Greyed rather than hidden: a settled report is still the record of what was
+ * asked for, and the filter above is there when you want it gone entirely.
+ * Hover and keyboard focus bring it back to full contrast so it stays
+ * readable and its status select stays usable. */
+.feedback-settled {
+  opacity: 0.5;
+  transition: opacity 0.2s ease;
+}
+
+.feedback-settled:hover,
+.feedback-settled:focus-within {
+  opacity: 1;
+}
+</style>
