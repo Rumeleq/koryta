@@ -1,4 +1,5 @@
 import {
+  mdiAccountAlertOutline,
   mdiAlertCircleOutline,
   mdiCheckCircleOutline,
   mdiHelpCircleOutline,
@@ -35,6 +36,12 @@ const configMap: Record<
   insufficient: {
     text: "Za mało informacji",
     icon: mdiHelpCircleOutline,
+    color: "warning",
+    downColor: "warning",
+  },
+  wrongPerson: {
+    text: "To nie ta osoba",
+    icon: mdiAccountAlertOutline,
     color: "warning",
     downColor: "warning",
   },
