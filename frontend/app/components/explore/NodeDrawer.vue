@@ -51,6 +51,20 @@
           category="interesting"
           show-label
         />
+        <!-- The same shortcut the person's own page carries, in the row that
+             already holds what an admin may do here. Reaching a person from
+             the table and then having to open their page to publish them was
+             the long way round to the one screen that publishes. -->
+        <v-btn
+          v-if="isAdmin"
+          variant="tonal"
+          size="small"
+          :prepend-icon="mdiHistory"
+          :to="`/admin/rewizje/${person.id}`"
+          data-testid="drawer-admin-revisions-link"
+        >
+          Rewizje
+        </v-btn>
       </ExploreProposeChange>
 
       <NoteEditor
@@ -67,6 +81,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { mdiHistory } from "@mdi/js";
 import { useDisplay } from "vuetify";
 import { generateEntityUrl } from "~/composables/slugs";
 import type { EdgeNode } from "~/composables/edges";
@@ -102,6 +117,8 @@ const props = withDefaults(
 );
 
 const open = defineModel<boolean>({ required: true });
+
+const { isAdmin } = useAuthState();
 
 const { mdAndUp, height } = useDisplay();
 

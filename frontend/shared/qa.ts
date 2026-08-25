@@ -42,6 +42,24 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
 /** Newest first. Prepend, never insert in the middle. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "drawer-admin-revisions-link",
+    date: "2026-08-25",
+    title: "Skrót do rewizji także w panelu bocznym",
+    description:
+      "Przycisk âRewizjeâ, który admin ma na stronie osoby, jest teraz również " +
+      "w panelu bocznym otwieranym z tabeli - w tej samej linii co âZaproponuj " +
+      "zmianęâ i głosy. Nie trzeba już wychodzić z tabeli, żeby dojść do " +
+      "ekranu, na którym stronę się publikuje.",
+    steps: [
+      "Jako admin wejdź na /eksploruj/tabela i kliknij nazwisko - w panelu, w linii z głosami, ma być przycisk âRewizjeâ.",
+      "Kliknij go - ma otworzyć listę rewizji tej samej osoby, którą panel pokazywał.",
+      "Wróć do tabeli, otwórz inną osobę i sprawdź, że przycisk prowadzi do niej, a nie do poprzedniej.",
+      "Zaloguj się jako zwykły użytkownik i powtórz - âZaproponuj zmianęâ ma być, âRewizjiâ nie.",
+    ],
+    link: "/eksploruj/tabela",
+    area: "admin",
+  },
+  {
     id: "admin-feedback-settled-dimmed",
     date: "2026-08-25",
     title: "Załatwione zgłoszenia schodzą na drugi plan",
