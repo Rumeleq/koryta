@@ -123,4 +123,26 @@ describe("useGraph with an explicit source", () => {
 
     expect(seen.nodes).toEqual(["A", "C"]);
   });
+
+  it("drops an edge whose other end was filtered out", async () => {
+    // A company nobody in the layout works at is dropped by `interestingNodes`,
+    // and two hops out that happens for real - a colleague's other employer
+    // arrives with only that colleague on it. The edge to it has nothing left
+    // to join, and the canvas looks a node's position up by id: a dangling one
+    // is a line drawn to the origin.
+    const withOrphan = {
+      ...mockNodes.value,
+      F: { type: "rect", stats: { people: 0 } },
+    };
+    registerEndpoint("/api/graph/topic/orphan", () => ({
+      nodes: withOrphan,
+      edges: [...mockEdges.value, { source: "E", target: "F" }],
+      nodeGroups: [],
+    }));
+
+    const seen = await layoutFrom({ source: "/api/graph/topic/orphan" });
+
+    expect(seen.nodes).not.toContain("F");
+    expect(seen.edges).toBe(3);
+  });
 });

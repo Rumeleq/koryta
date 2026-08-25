@@ -6,7 +6,7 @@
       :to="mentionUrl(mention)"
       :variant="mention.published ? 'tonal' : 'outlined'"
       :prepend-icon="
-        mention.nodeType ? nodeTypeIcon[mention.nodeType] : undefined
+        mention.nodeType ? entityIcon(mention.nodeType) : undefined
       "
       size="small"
       data-testid="article-mention-chip"
@@ -77,7 +77,7 @@
  */
 import { ref } from "vue";
 import { mdiCloseCircle } from "@mdi/js";
-import { nodeTypeIcon } from "~~/shared/model";
+import { entityIcon } from "~/utils/entityIcon";
 import type { Link, NodeType } from "~~/shared/model";
 import { generateEntityUrl } from "~/composables/slugs";
 import type { ArticleRelation } from "~~/server/api/articles/[id]/relations.get";

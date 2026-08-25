@@ -5,7 +5,7 @@
            reviewer needs to place the note before reading it. -->
       <div class="d-flex align-center ga-1 mb-1">
         <v-icon
-          :icon="row.nodeType ? nodeTypeIcons[row.nodeType] : mdiHelp"
+          :icon="row.nodeType ? entityIcon(row.nodeType) : mdiHelp"
           size="small"
           class="text-medium-emphasis flex-shrink-0"
         />
@@ -71,29 +71,13 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import {
-  mdiAccountOutline,
-  mdiFileDocumentOutline,
-  mdiHelp,
-  mdiLink,
-  mdiMapMarkerRadiusOutline,
-  mdiOfficeBuildingOutline,
-  mdiOpenInNew,
-  mdiTagOutline,
-} from "@mdi/js";
+import { mdiHelp, mdiLink, mdiOpenInNew } from "@mdi/js";
 import { noteKindConfig } from "~/composables/notes";
 import { generateEntityUrl } from "~/composables/slugs";
-import type { NodeType, NoteRow } from "~~/shared/model";
+import type { NoteRow } from "~~/shared/model";
+import { entityIcon } from "~/utils/entityIcon";
 
 const { row } = defineProps<{ row: NoteRow }>();
-
-const nodeTypeIcons: Record<NodeType, string> = {
-  person: mdiAccountOutline,
-  place: mdiOfficeBuildingOutline,
-  article: mdiFileDocumentOutline,
-  region: mdiMapMarkerRadiusOutline,
-  topic: mdiTagOutline,
-};
 
 const kindConfig = computed(() => noteKindConfig[row.kind]);
 

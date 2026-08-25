@@ -103,23 +103,17 @@
           />
         </div>
 
-        <div
+        <!-- One hop by default, unlike a person's page: a company's own
+             relations are already a board's worth of names, and the second ring
+             is every other seat each of them holds. It is a click away in the
+             bar above the canvas for a reader who wants it. -->
+        <LazyGraphContainer
           v-if="!smAndDown || showGraph"
+          :key="nodeId"
           class="mt-6"
-          style="
-            height: 500px;
-            width: 100%;
-            position: relative;
-            overflow: visible;
-            border: 1px solid rgba(var(--v-border-color), 0.16);
-          "
-        >
-          <LazyGraphContainer
-            :key="nodeId"
-            :focus-node-id="nodeId"
-            :max-depth="1"
-          />
-        </div>
+          :focus-node-id="nodeId"
+          :max-depth="1"
+        />
         <div v-else class="mt-6 d-flex justify-center">
           <v-btn
             color="primary"

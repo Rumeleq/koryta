@@ -49,6 +49,70 @@ describe("GraphCanvas", () => {
 
     expect(configs.view.layoutHandler).toBeInstanceOf(ForceLayout);
   });
+  it("draws a glyph inside every node, and a ring around the subject", async () => {
+    const component = await mountSuspended(GraphCanvas, {
+      props: {
+        nodes: {
+          p1: {
+            name: "Anna Nowak",
+            type: "circle",
+            color: "#073b76",
+            entityType: "person",
+            depth: 0,
+          },
+          c1: {
+            name: "Orlen",
+            type: "rect",
+            color: "#6b7a83",
+            entityType: "place",
+            depth: 1,
+          },
+        } as unknown as Record<string, GraphNode>,
+        edges: [{ source: "p1", target: "c1", type: "employed" }],
+        ready: true,
+        focusNodeId: "p1",
+      },
+      global: { plugins: [vuetify] },
+    });
+
+    // One material path per node, and two different ones: a coloured disc says
+    // "somebody" and a grey box says "something", which is all a reader had to
+    // go on before.
+    const glyphs = component.findAll(".v-ng-node path");
+    expect(glyphs).toHaveLength(2);
+    expect(glyphs[0]!.attributes("d")).not.toBe(glyphs[1]!.attributes("d"));
+
+    // White ink on the navy, which is what the luminance pick is for.
+    expect(glyphs[0]!.attributes("fill")).toBe("#ffffff");
+
+    // The company is a rectangle; the person is a circle, plus a second one for
+    // the ring that marks whose page this is.
+    expect(component.findAll(".v-ng-node rect")).toHaveLength(1);
+    expect(component.findAll(".v-ng-node circle")).toHaveLength(2);
+  });
+
+  it("draws the far ring smaller than the near one", async () => {
+    const component = await mountSuspended(GraphCanvas, {
+      global: { plugins: [vuetify] },
+    });
+    const normal = (
+      component.vm as unknown as {
+        configs: {
+          node: { normal: { radius: (node: object) => number } };
+        };
+      }
+    ).configs.node.normal;
+
+    // Flat, a two hop graph is forty equal dots with no way to tell whose page
+    // it is.
+    expect(normal.radius({ depth: 0 })).toBeGreaterThan(
+      normal.radius({ depth: 1 }),
+    );
+    expect(normal.radius({ depth: 1 })).toBeGreaterThan(
+      normal.radius({ depth: 2 }),
+    );
+  });
+
   it("breaks a long name over several lines, on a plate of its own", async () => {
     const component = await mountSuspended(GraphCanvas, {
       props: {

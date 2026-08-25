@@ -30,6 +30,21 @@ export function simulation(
       .forceSimulation(nodes)
       .force("edge", forceLink.distance(80).strength(0.3))
       .force("charge", d3.forceManyBody().strength(-400))
+      // A hard floor under how close two nodes may sit, which the charge alone
+      // does not give: charge is a long range push that a link force can pull
+      // straight through, and it did - on a board with eight members the spokes
+      // packed together and the pinned subject at the centre ended up drawn
+      // over one of them.
+      //
+      // The radius is the widest node (46px, the subject) plus room for the
+      // label under it, rather than a node's own size: the simulation is handed
+      // ids and positions and nothing else, so it cannot ask how big any
+      // particular node is. Erring large costs a slightly wider graph, which
+      // `fitToContents` then frames.
+      .force(
+        "collide",
+        d3.forceCollide<ForceNodeDatum>().radius(38).strength(0.9),
+      )
       // No `forceCenter`, and this is not a tidy-up: it drew two people on top
       // of one another.
       //

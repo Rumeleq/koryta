@@ -20,7 +20,7 @@
           v-for="edge in edgesSorted"
           :key="edge.richNode.id"
           :to="`/entity/${edge.richNode.type}/${edge.richNode.id}`"
-          :prepend-icon="nodeTypeIcon[edge.richNode.type]"
+          :prepend-icon="entityIcon(edge.richNode.type)"
         >
           <v-list-item-title>
             {{ edge.richNode.name }}
@@ -37,7 +37,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { mdiPlus } from "@mdi/js";
-import { nodeTypeIcon } from "~~/shared/model";
+import { entityIcon } from "~/utils/entityIcon";
 import type { EdgeNode } from "~~/app/composables/edges";
 
 const { edges, title } = defineProps<{

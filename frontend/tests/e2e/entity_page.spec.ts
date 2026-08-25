@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { logIn, USERS } from "./helpers/auth";
 
 /** Jan Kowalski, seeded as node 1: a PO politician working at Orlen who knows
  * Anna Nowak. The assertions below are all about that seeded shape. */
@@ -25,6 +26,37 @@ test.describe("Entity page", () => {
     await expect(page.getByText("Anna Nowak").first()).toBeVisible({
       timeout: 30_000,
     });
+  });
+
+  test("reads relations, then notes, then the graph", async ({ page }) => {
+    test.setTimeout(120_000);
+    // Signed in, because a person's notes are unreviewed claims about a named
+    // individual and are not shown to anybody else - so this is the only way to
+    // see all three sections at once.
+    await logIn(page, USERS.normal, PERSON);
+
+    const relations = page.getByTestId("relations-history");
+    const notes = page.getByTestId("note-editor");
+    const graph = page.getByTestId("graph-panel");
+    await expect(relations).toBeVisible({ timeout: 30_000 });
+    await expect(notes).toBeVisible({ timeout: 30_000 });
+    await expect(graph).toBeVisible({ timeout: 30_000 });
+
+    // The order is the argument: the rows are the record, with dates and
+    // sources; the notes are what this reader can add to it; the graph is the
+    // same facts arranged so a shape can be seen in them, and it is only worth
+    // looking at once you know what you are looking for.
+    const tops = await page.evaluate(() =>
+      ["relations-history", "note-editor", "graph-panel"].map(
+        (id) =>
+          document
+            .querySelector(`[data-testid="${id}"]`)!
+            .getBoundingClientRect().top,
+      ),
+    );
+
+    expect(tops[0]!).toBeLessThan(tops[1]!);
+    expect(tops[1]!).toBeLessThan(tops[2]!);
   });
 
   test("the /entity url redirects to the readable one", async ({ page }) => {

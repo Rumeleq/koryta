@@ -240,20 +240,12 @@
         <template v-if="graphNodeIds.length">
           <v-divider class="my-4" />
           <h2 class="text-subtitle-1 font-weight-bold mb-2">Graf powiązań</h2>
-          <div
-            style="
-              height: 460px;
-              width: 100%;
-              position: relative;
-              border: 1px solid #ccc;
-            "
-          >
-            <LazyGraphContainer
-              :key="nodeId"
-              focus-node-id=""
-              :source="graphSource"
-            />
-          </div>
+          <LazyGraphContainer
+            :key="nodeId"
+            focus-node-id=""
+            :source="graphSource"
+            :height="460"
+          />
           <p class="text-caption text-medium-emphasis mt-2">
             Pokazujemy osoby i instytucje wspomniane w tym artykule, powiązania,
             dla których jest on źródłem, oraz najbliższe otoczenie wspomnianych
