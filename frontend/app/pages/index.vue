@@ -36,6 +36,19 @@
         </v-col>
       </v-row>
     </v-container>
+    <!-- Phone only, and the counterpart to the headline hidden above: taking
+         the logo and the h1 off the first screen also took away the one line
+         that said what the site is for, and a search box on its own does not
+         say it. One sentence, above the field it explains, so the first screen
+         reads as a sentence, a search and then the map. -->
+    <v-container fluid class="d-md-none px-4 pt-4 pb-0">
+      <!-- Full emphasis, not medium: this sits on the green band, where
+           rgba(0,0,0,.6) is the wrong side of readable. -->
+      <p class="text-body-2 text-high-emphasis mb-0">
+        Sprawdzamy, którymi stanowiskami w publicznych spółkach podzielili się
+        politycy.
+      </p>
+    </v-container>
     <!-- Search and button in one wrapping flex line rather than an 8/4 grid.
          The grid put them in columns with different padding, so on a phone,
          where the columns stack, the button sat 20px to the left of the search
@@ -49,16 +62,22 @@
         class="home-actions d-flex flex-wrap align-center ga-4 pa-4 pa-md-8"
       >
         <omni-search />
+        <!-- Desktop only. Wrapped under a full width search field it read as a
+             stray control rather than as the search's companion, and on a
+             phone the first screen is better spent getting the reader to the
+             map than to a second call to action. The app bar carries the same
+             link on a desktop; the footer is where a phone finds it. -->
         <v-btn
           :append-icon="mdiChevronRight"
           color="secondary"
           border
-          class="text-none"
+          class="text-none d-none d-md-inline-flex"
           flat
           rounded="lg"
           slim
           text="Działaj z nami"
           to="/pomoc"
+          data-testid="home-cta"
         />
       </v-col>
     </v-row>
