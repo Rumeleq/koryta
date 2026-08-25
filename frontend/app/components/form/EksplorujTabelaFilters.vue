@@ -1,221 +1,259 @@
 <template>
   <div class="mb-4">
-    <v-row>
-      <v-col cols="12" md="3">
-        <v-autocomplete
-          v-model="party"
-          :items="availableParties"
-          label="Partia"
-          variant="outlined"
-          density="comfortable"
-          hide-details
-          clearable
-          multiple
-          chips
-          closable-chips
-        />
-      </v-col>
-      <v-col cols="12" md="3">
-        <v-autocomplete
-          v-model="teryt"
-          :items="availableRegions"
-          label="Region osoby"
-          variant="outlined"
-          density="comfortable"
-          hide-details
-          clearable
-        />
-      </v-col>
-      <v-col cols="12" md="3">
-        <v-autocomplete
-          v-model="companyTeryt"
-          :items="availableRegions"
-          label="Siedziba spółki"
-          variant="outlined"
-          density="comfortable"
-          hide-details
-          clearable
-        />
-      </v-col>
-      <v-col cols="12" md="3">
-        <v-autocomplete
-          v-model="place"
-          :items="availableCompanies"
-          label="Instytucje"
-          variant="outlined"
-          density="comfortable"
-          hide-details
-          clearable
-          multiple
-          chips
-          closable-chips
-          class="collapsible-autocomplete"
-          :class="{ 'is-expanded': showAllPlaces }"
-        >
-          <template v-if="(place?.length || 0) > 1" #append-inner>
-            <v-btn
-              variant="tonal"
-              size="small"
-              color="primary"
-              density="compact"
-              class="mt-1"
-              @click.stop="showAllPlaces = !showAllPlaces"
-            >
-              {{ showAllPlaces ? "Zwiń" : `+${(place?.length || 0) - 1}` }}
-            </v-btn>
-          </template>
-        </v-autocomplete>
-      </v-col>
-      <v-col cols="12" md="3" class="d-flex align-center">
-        <v-select
-          v-model="currentlyEmployed"
-          :items="[
-            { title: 'Wszystkie osoby', value: 'all' },
-            { title: 'Teraz w publicznej spółce', value: 'any' },
-            { title: 'Teraz w wyszukanych podmiotach', value: 'selected' },
-          ]"
-          label="Zatrudnienie"
-          variant="outlined"
-          density="comfortable"
-          hide-details
-          bg-color="white"
-        />
-      </v-col>
-      <v-col cols="12" md="3">
-        <v-select
-          v-model="category"
-          :items="availableCategories"
-          label="Typ podmiotu"
-          variant="outlined"
-          density="comfortable"
-          hide-details
-          clearable
-        />
-      </v-col>
-    </v-row>
-
-    <v-expand-transition>
-      <v-sheet
-        v-if="showVisibility && showStatusBanner"
-        rounded="lg"
-        border
-        class="pa-4 mt-4 position-relative"
-        color="blue-grey-lighten-5"
-      >
-        <v-btn
-          :icon="mdiClose"
-          variant="text"
-          size="small"
-          class="position-absolute"
-          style="top: 8px; right: 8px"
-          color="medium-emphasis"
-          @click="showStatusBanner = false"
-        ></v-btn>
-
-        <div class="d-flex align-start mb-4 pr-8">
-          <v-icon
-            color="info"
-            class="mr-3 mt-1"
-            :icon="mdiInformationOutline"
-          ></v-icon>
-          <div>
-            <div class="text-subtitle-2 font-weight-bold">
-              Filtry administracyjne
-            </div>
-            <div class="text-body-2 text-medium-emphasis">
-              Widoczność pozwala na przeglądanie i weryfikację nieopublikowanych
-              osób z bazy. Filtr głosów społeczności umożliwia ukrycie
-              niezweryfikowanych osób, które zostały już przez kogoś ocenione.
-            </div>
-          </div>
-        </div>
-
-        <v-row>
-          <v-col cols="12" sm="6" md="4">
-            <v-select
-              v-model="visibility"
-              :items="[
-                { title: 'Wszystkie', value: 'all' },
-                { title: 'Opublikowane', value: 'public' },
-                { title: 'Szkice', value: 'private' },
-              ]"
-              label="Widoczność"
-              variant="outlined"
-              density="comfortable"
-              hide-details
-              bg-color="white"
-            />
-          </v-col>
-          <v-col cols="12" sm="6" md="4">
-            <v-select
-              v-model="hideVoted"
-              :items="[
-                { title: 'Wszystkie', value: 'all' },
-                { title: 'Brak głosu', value: 'no_votes' },
-                { title: 'Ocenione', value: 'has_votes' },
-              ]"
-              label="Głosy społeczności"
-              variant="outlined"
-              density="comfortable"
-              hide-details
-              bg-color="white"
-            />
-          </v-col>
-          <v-col cols="12" sm="6" md="4">
-            <v-text-field
-              v-model="minEmploymentDate"
-              type="date"
-              label="Zatrudnieni od"
-              variant="outlined"
-              density="comfortable"
-              hide-details
-              clearable
-              bg-color="white"
-            />
-          </v-col>
-          <v-col cols="12" sm="6" md="4">
-            <v-text-field
-              v-model="minVotes"
-              type="number"
-              label="Min. głosy łącznie"
-              variant="outlined"
-              density="comfortable"
-              hide-details
-              clearable
-              :min="0"
-              bg-color="white"
-            />
-          </v-col>
-        </v-row>
-      </v-sheet>
-    </v-expand-transition>
+    <!-- Phone only. Six stacked selects, the admin status sheet and the
+         heading and login banner above them put the first row of the table
+         1300px down a 667px screen - three flicks before any data. Folded
+         away by default, they cost one line; the count is on the button so a
+         filter that is narrowing the table is never doing it out of sight.
+         A class rather than `useDisplay().smAndDown`: under SSR Vuetify
+         builds its display state from a placeholder 1280px and corrects it
+         only when the app's suspense resolves, so a width-driven `v-if`
+         renders the desktop layout first and may never correct. -->
+    <v-btn
+      block
+      class="d-md-none text-none mb-2"
+      variant="tonal"
+      size="small"
+      :prepend-icon="mdiFilterVariant"
+      :append-icon="filtersOpen ? mdiChevronUp : mdiChevronDown"
+      @click="filtersOpen = !filtersOpen"
+    >
+      {{ filtersLabel }}
+    </v-btn>
 
     <div
-      v-if="showVisibility && !showStatusBanner"
-      class="mt-6 mb-2 d-flex align-center"
+      class="tabela-filters"
+      :class="{ 'tabela-filters--collapsed': !filtersOpen }"
     >
-      <v-divider></v-divider>
-      <v-btn
-        variant="tonal"
-        size="small"
-        class="mx-4 text-none text-caption text-medium-emphasis"
-        :prepend-icon="mdiFilterCogOutline"
-        @click="showStatusBanner = true"
+      <v-row>
+        <v-col cols="12" md="3">
+          <v-autocomplete
+            v-model="party"
+            :items="availableParties"
+            label="Partia"
+            variant="outlined"
+            density="comfortable"
+            hide-details
+            clearable
+            multiple
+            chips
+            closable-chips
+          />
+        </v-col>
+        <v-col cols="12" md="3">
+          <v-autocomplete
+            v-model="teryt"
+            :items="availableRegions"
+            label="Region osoby"
+            variant="outlined"
+            density="comfortable"
+            hide-details
+            clearable
+          />
+        </v-col>
+        <v-col cols="12" md="3">
+          <v-autocomplete
+            v-model="companyTeryt"
+            :items="availableRegions"
+            label="Siedziba spółki"
+            variant="outlined"
+            density="comfortable"
+            hide-details
+            clearable
+          />
+        </v-col>
+        <v-col cols="12" md="3">
+          <v-autocomplete
+            v-model="place"
+            :items="availableCompanies"
+            label="Instytucje"
+            variant="outlined"
+            density="comfortable"
+            hide-details
+            clearable
+            multiple
+            chips
+            closable-chips
+            class="collapsible-autocomplete"
+            :class="{ 'is-expanded': showAllPlaces }"
+          >
+            <template v-if="(place?.length || 0) > 1" #append-inner>
+              <v-btn
+                variant="tonal"
+                size="small"
+                color="primary"
+                density="compact"
+                class="mt-1"
+                @click.stop="showAllPlaces = !showAllPlaces"
+              >
+                {{ showAllPlaces ? "Zwiń" : `+${(place?.length || 0) - 1}` }}
+              </v-btn>
+            </template>
+          </v-autocomplete>
+        </v-col>
+        <v-col cols="12" md="3" class="d-flex align-center">
+          <v-select
+            v-model="currentlyEmployed"
+            :items="[
+              { title: 'Wszystkie osoby', value: 'all' },
+              { title: 'Teraz w publicznej spółce', value: 'any' },
+              { title: 'Teraz w wyszukanych podmiotach', value: 'selected' },
+            ]"
+            label="Zatrudnienie"
+            variant="outlined"
+            density="comfortable"
+            hide-details
+            bg-color="white"
+          />
+        </v-col>
+        <v-col cols="12" md="3">
+          <v-select
+            v-model="category"
+            :items="availableCategories"
+            label="Typ podmiotu"
+            variant="outlined"
+            density="comfortable"
+            hide-details
+            clearable
+          />
+        </v-col>
+      </v-row>
+
+      <v-expand-transition>
+        <v-sheet
+          v-if="showVisibility && showStatusBanner"
+          rounded="lg"
+          border
+          class="pa-4 mt-4 position-relative"
+          color="blue-grey-lighten-5"
+        >
+          <v-btn
+            :icon="mdiClose"
+            variant="text"
+            size="small"
+            class="position-absolute"
+            style="top: 8px; right: 8px"
+            color="medium-emphasis"
+            @click="showStatusBanner = false"
+          ></v-btn>
+
+          <div class="d-flex align-start mb-4 pr-8">
+            <v-icon
+              color="info"
+              class="mr-3 mt-1"
+              :icon="mdiInformationOutline"
+            ></v-icon>
+            <div>
+              <div class="text-subtitle-2 font-weight-bold">
+                Filtry administracyjne
+              </div>
+              <div class="text-body-2 text-medium-emphasis">
+                Widoczność pozwala na przeglądanie i weryfikację
+                nieopublikowanych osób z bazy. Filtr głosów społeczności
+                umożliwia ukrycie niezweryfikowanych osób, które zostały już
+                przez kogoś ocenione.
+              </div>
+            </div>
+          </div>
+
+          <v-row>
+            <v-col cols="12" sm="6" md="4">
+              <v-select
+                v-model="visibility"
+                :items="[
+                  { title: 'Wszystkie', value: 'all' },
+                  { title: 'Opublikowane', value: 'public' },
+                  { title: 'Szkice', value: 'private' },
+                ]"
+                label="Widoczność"
+                variant="outlined"
+                density="comfortable"
+                hide-details
+                bg-color="white"
+              />
+            </v-col>
+            <v-col cols="12" sm="6" md="4">
+              <v-select
+                v-model="hideVoted"
+                :items="[
+                  { title: 'Wszystkie', value: 'all' },
+                  { title: 'Brak głosu', value: 'no_votes' },
+                  { title: 'Ocenione', value: 'has_votes' },
+                ]"
+                label="Głosy społeczności"
+                variant="outlined"
+                density="comfortable"
+                hide-details
+                bg-color="white"
+              />
+            </v-col>
+            <v-col cols="12" sm="6" md="4">
+              <v-text-field
+                v-model="minEmploymentDate"
+                type="date"
+                label="Zatrudnieni od"
+                variant="outlined"
+                density="comfortable"
+                hide-details
+                clearable
+                bg-color="white"
+              />
+            </v-col>
+            <v-col cols="12" sm="6" md="4">
+              <v-text-field
+                v-model="minVotes"
+                type="number"
+                label="Min. głosy łącznie"
+                variant="outlined"
+                density="comfortable"
+                hide-details
+                clearable
+                :min="0"
+                bg-color="white"
+              />
+            </v-col>
+          </v-row>
+        </v-sheet>
+      </v-expand-transition>
+
+      <div
+        v-if="showVisibility && !showStatusBanner"
+        class="mt-6 mb-2 d-flex align-center"
       >
-        {{ statusSummary }}
-      </v-btn>
-      <v-divider></v-divider>
+        <v-divider></v-divider>
+        <v-btn
+          variant="tonal"
+          size="small"
+          class="mx-4 text-none text-caption text-medium-emphasis"
+          :prepend-icon="mdiFilterCogOutline"
+          @click="showStatusBanner = true"
+        >
+          {{ statusSummary }}
+        </v-btn>
+        <v-divider></v-divider>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { mdiClose, mdiFilterCogOutline, mdiInformationOutline } from "@mdi/js";
+import {
+  mdiChevronDown,
+  mdiChevronUp,
+  mdiClose,
+  mdiFilterCogOutline,
+  mdiFilterVariant,
+  mdiInformationOutline,
+} from "@mdi/js";
 import { ref, computed } from "vue";
 import { companyCategories } from "~~/shared/companyCategories";
 
 const showStatusBanner = ref(true);
 const showAllPlaces = ref(false);
+
+/** Only ever read below 960px - the stylesheet ignores it above, where there
+ * is room for the filters to simply be there. */
+const filtersOpen = ref(false);
 
 const availableCategories = companyCategories.map((c) => ({
   title: c.title,
@@ -235,6 +273,31 @@ const currentlyEmployed = defineModel<"all" | "any" | "selected">(
 );
 const minEmploymentDate = defineModel<string | null>("minEmploymentDate");
 const minVotes = defineModel<number | null>("minVotes");
+
+/** How many filters are narrowing the table right now. The button says it
+ * because a collapsed panel that is quietly filtering is worse than no panel:
+ * the reader sees a short list and no reason for it. */
+const activeFilterCount = computed(
+  () =>
+    [
+      party.value?.length,
+      teryt.value,
+      companyTeryt.value,
+      place.value?.length,
+      category.value,
+      currentlyEmployed.value && currentlyEmployed.value !== "all",
+      visibility.value && visibility.value !== "all",
+      hideVoted.value && hideVoted.value !== "all",
+      minEmploymentDate.value,
+      minVotes.value,
+    ].filter(Boolean).length,
+);
+
+const filtersLabel = computed(() =>
+  activeFilterCount.value
+    ? `Filtry (${activeFilterCount.value})`
+    : "Filtry i wyszukiwanie",
+);
 
 const statusSummary = computed(() => {
   const filters = [];
@@ -262,6 +325,15 @@ withDefaults(
 </script>
 
 <style scoped>
+/* Above 960px the filters are always there; the class the button toggles is
+   simply not honoured, so the desktop layout cannot be folded away by a state
+   its own toggle is hidden from. */
+@media (max-width: 959.98px) {
+  .tabela-filters--collapsed {
+    display: none;
+  }
+}
+
 .collapsible-autocomplete:not(.is-expanded)
   :deep(.v-select__selection:nth-of-type(n + 2)),
 .collapsible-autocomplete:not(.is-expanded)

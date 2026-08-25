@@ -42,6 +42,27 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
 /** Newest first. Prepend, never insert in the middle. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "tabela-starts-at-the-table",
+    date: "2026-08-25",
+    title: "Tabela na telefonie zaczyna się od tabeli",
+    description:
+      "Na wąskim ekranie filtry są zwinięte pod jeden przycisk, nagłówek jest " +
+      "mniejszy, a banerek logowania nie wypycha już przycisku poza ekran. " +
+      "Pierwszy wiersz tabeli był 1300 px w dół - trzy machnięcia palcem - i " +
+      "jest teraz od razu pod filtrem. Na komputerze wszystko zostaje po " +
+      "staremu, filtry są rozwinięte.",
+    steps: [
+      "Na telefonie (albo zwęż okno poniżej 960 px) wejdź na /eksploruj/tabela - tabela ma być widoczna bez przewijania albo po jednym machnięciu.",
+      "Kliknij przycisk âFiltry i wyszukiwanieâ - filtry mają się rozwinąć i zwinąć ponownie.",
+      "Ustaw jakiś filtr, na przykład partię, i zwiń panel - na przycisku ma być âFiltry (1)â, żeby nie filtrował po cichu.",
+      "Wyloguj się i sprawdź niebieski banerek: przycisk âZaloguj sięâ ma być pod tekstem, w całości na ekranie.",
+      "Spróbuj przewinąć stronę w bok - nie ma czego, nic nie wystaje poza ekran.",
+      "Rozszerz okno powyżej 960 px - filtry mają być rozwinięte, bez przycisku do zwijania.",
+    ],
+    link: "/eksploruj/tabela",
+    area: "public",
+  },
+  {
     id: "reviewer-queue-one-button",
     date: "2026-08-25",
     title: "Kolejka rewizji: jeden przycisk zamiast pięciu",
