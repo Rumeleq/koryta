@@ -1,6 +1,9 @@
 <template>
   <v-alert type="info" variant="tonal" class="mb-4" :icon="mdiAccountLock">
-    <div class="d-flex align-center justify-space-between w-100">
+    <!-- Wraps rather than sits in one line: on a phone the button used to be
+         pushed off the right edge by the text beside it, which is where the
+         page's 5px of sideways scroll came from. -->
+    <div class="d-flex flex-wrap align-center justify-space-between ga-2 w-100">
       <div>
         {{ message }}
         <template v-if="hiddenCount > 0">
@@ -11,12 +14,7 @@
           >.
         </template>
       </div>
-      <v-btn
-        color="primary"
-        variant="flat"
-        to="/login"
-        class="ml-4 flex-shrink-0"
-      >
+      <v-btn color="primary" variant="flat" to="/login" class="flex-shrink-0">
         Zaloguj się
       </v-btn>
     </div>

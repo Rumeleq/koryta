@@ -9,7 +9,9 @@
       :company-regions="companyRegions"
     />
     <div class="pa-4">
-      <h1 class="text-h4 mb-4">
+      <!-- Three lines of text-h4 is a fifth of a phone screen spent on a
+           title the reader just clicked their way to. -->
+      <h1 class="text-h6 text-md-h4 mb-2 mb-md-4">
         Eksploruj powiązania dla
         {{ entityName }}
       </h1>
