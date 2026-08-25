@@ -2,6 +2,7 @@ import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { getApp } from "firebase-admin/app";
 import { getUser, requireDatascience } from "~~/server/utils/auth";
 import type { ExtractionFact } from "~~/shared/model";
+import { normalizePersonName } from "~~/shared/names";
 import { normalizeUrl } from "~~/shared/url";
 import { z } from "zod";
 
@@ -32,6 +33,15 @@ const articleSchema = z.object({
   publication_date: z.string().nullable(),
   extracted_facts: z.array(factSchema),
   tag: z.string(),
+  /** Node ids of the people the pipeline confirmed are named in this article.
+   *
+   * Article-level, because that is what the mention matcher judges: one article
+   * usually carries facts about several people, and only some of them are in
+   * the graph. Which fact belongs to which of these people is settled here, by
+   * name - see `matchPeopleByName`. Optional: the one-shot capture path
+   * (`oneshot.py`) analyses a page before any mention matching has run.
+   */
+  koryta_ids: z.array(z.string()).optional(),
 });
 
 const extractionRequestSchema = z.object({
@@ -74,10 +84,19 @@ export default defineEventHandler(async (event) => {
     if (sourceURL) urlToNodeId.set(normalizeUrl(sourceURL), doc.id);
   }
 
+  // The people the pipeline confirmed in these articles, by node id. Read once
+  // for the whole batch: the same politician shows up in article after article,
+  // so a per-article lookup would fetch them over and over.
+  const peopleById = await readPeople(
+    db,
+    body.articles.flatMap((article) => article.koryta_ids ?? []),
+  );
+
   // Flatten all facts and prepare documents
   const allDocs: FirebaseFirestore.DocumentData[] = [];
   for (const article of body.articles) {
     const articleNodeId = urlToNodeId.get(normalizeUrl(article.url));
+    const peopleByName = matchPeopleByName(article.koryta_ids, peopleById);
     for (const fact of article.extracted_facts) {
       const doc: Record<string, unknown> = {
         url: fact.url,
@@ -99,6 +118,18 @@ export default defineEventHandler(async (event) => {
       };
       if (articleNodeId) {
         doc.articleNodeId = articleNodeId;
+      }
+      // Which of the article's confirmed people this particular fact is about.
+      // `person` for most types, `subject` for a personal_relation - the same
+      // pair `factSubject` reads on the card, so the name shown is the name
+      // matched.
+      const subject = fact.person || fact.subject;
+      const matched = subject
+        ? peopleByName.get(normalizePersonName(subject))
+        : undefined;
+      if (matched) {
+        doc.personNodeId = matched.id;
+        doc.personNodeName = matched.name;
       }
       // Add optional fact-type-specific fields
       if (fact.person !== undefined) doc.person = fact.person;
@@ -131,3 +162,60 @@ export default defineEventHandler(async (event) => {
     count: allDocs.length,
   };
 });
+
+/** The person nodes behind a batch's `koryta_ids`, by id.
+ *
+ * Only `name` and `type` are read - the rest of a person node is large and
+ * nothing here looks at it. Ids that name no document, or name something that
+ * is not a person, are simply absent from the map: the pipeline should only
+ * send people, and a fact linked to an institution's node would be worse than
+ * one linked to nobody.
+ */
+async function readPeople(
+  db: FirebaseFirestore.Firestore,
+  ids: string[],
+): Promise<Map<string, { id: string; name: string }>> {
+  const people = new Map<string, { id: string; name: string }>();
+  const unique = [...new Set(ids)];
+  // getAll is one round trip per call; chunked so a nightly batch of thousands
+  // of articles does not build a single unbounded request.
+  const CHUNK = 300;
+  for (let i = 0; i < unique.length; i += CHUNK) {
+    const refs = unique
+      .slice(i, i + CHUNK)
+      .map((id) => db.collection("nodes").doc(id));
+    const docs = await db.getAll(...refs, { fieldMask: ["name", "type"] });
+    for (const doc of docs) {
+      const data = doc.data();
+      if (!data || data.type !== "person" || typeof data.name !== "string") {
+        continue;
+      }
+      people.set(doc.id, { id: doc.id, name: data.name });
+    }
+  }
+  return people;
+}
+
+/** One article's confirmed people, keyed by their normalized name.
+ *
+ * A name that two of them share is dropped rather than guessed at: the whole
+ * point of the flag on the card is that a namesake is easy to match wrongly, so
+ * a case we already know is ambiguous should not be asserted at all.
+ */
+function matchPeopleByName(
+  korytaIds: string[] | undefined,
+  peopleById: Map<string, { id: string; name: string }>,
+): Map<string, { id: string; name: string }> {
+  const byName = new Map<string, { id: string; name: string }>();
+  const ambiguous = new Set<string>();
+  for (const id of korytaIds ?? []) {
+    const person = peopleById.get(id);
+    if (!person) continue;
+    const key = normalizePersonName(person.name);
+    if (!key) continue;
+    if (byName.has(key) && byName.get(key)!.id !== id) ambiguous.add(key);
+    byName.set(key, person);
+  }
+  for (const key of ambiguous) byName.delete(key);
+  return byName;
+}

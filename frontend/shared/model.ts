@@ -62,7 +62,21 @@ export interface NodeStats {
 }
 
 export type VoteCategory =
-  "interesting" | "quality" | "correct" | "insufficient";
+  | "interesting"
+  | "quality"
+  | "correct"
+  | "insufficient"
+  /** The person node an extracted fact was matched to is not the person the
+   * article is about. Its own axis, not a shade of `correct`: the sentence can
+   * be a perfectly good fact about a namesake the graph has never heard of, and
+   * the mention matcher is what needs telling.
+   *
+   * Like every other vote a person casts, it sets `humanVoted` - so flagging a
+   * match, on its own, takes the fact out of the unreviewed backlog. That is
+   * deliberate rather than incidental: somebody has looked at it. The review
+   * flow keeps the reviewer on the card afterwards, so the usual path is a flag
+   * and then a verdict. */
+  | "wrongPerson";
 
 export type Votes = Record<
   VoteCategory,
@@ -627,6 +641,16 @@ export interface ExtractionFact {
   articleUrl: string;
   articleDomain?: string;
   articleNodeId?: string; // linked node if URL matches an existing article node
+  /** The person node this fact's subject was matched to, when the pipeline
+   * confirmed that person is named in the article (`koryta_ids`) and the name
+   * on the fact is theirs. Resolved once at ingest, so reading a fact never
+   * costs a node lookup. Absent means nobody in the graph was matched - not
+   * that the person is unknown to it. */
+  personNodeId?: string;
+  /** The matched node's own spelling of the name, which is what its url slug is
+   * built from. Stored beside the id so a card can link without a read; the
+   * fact's own `person` is how the article spelled it, and the two differ. */
+  personNodeName?: string;
   tag: string; // extraction model tag (e.g. "v1_qwen3-32b")
   createdAt?: string;
   uploaderUid?: string;

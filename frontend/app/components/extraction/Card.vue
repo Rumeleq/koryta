@@ -2,15 +2,39 @@
   <v-card variant="outlined" class="extraction-card">
     <v-card-text class="pb-3">
       <div class="edge">
-        <!-- Source entity (left) -->
+        <!-- Source entity (left). A fact whose subject the pipeline matched to
+         somebody already in the graph says so, and links there: which person a
+         fact was attached to is the thing a reviewer most needs to see, and the
+         thing most easily got wrong between two people of the same name. -->
         <div class="edge__entity edge__entity--source">
           <div class="edge__name">
-            <v-icon size="16" class="edge__icon me-1">{{
-              mdiAccountOutline
-            }}</v-icon>
-            <span>{{ sourceName }}</span>
+            <v-icon
+              size="16"
+              class="edge__icon me-1"
+              :color="personNode ? 'primary' : undefined"
+              >{{
+                personNode ? mdiAccountCheckOutline : mdiAccountOutline
+              }}</v-icon
+            >
+            <NuxtLink
+              v-if="personNode"
+              :to="personNode.url"
+              class="edge__person-link"
+            >
+              {{ sourceName }}
+            </NuxtLink>
+            <span v-else>{{ sourceName }}</span>
           </div>
-          <div class="edge__kind">osoba</div>
+          <div class="edge__kind">
+            {{ personNode ? "osoba w bazie" : "osoba" }}
+          </div>
+          <ExtractionWrongPersonButton
+            v-if="personNode && fact.id"
+            :id="fact.id"
+            :person-name="personNode.name"
+            :reported="reportedWrongPerson"
+            class="edge__person-flag"
+          />
         </div>
 
         <!-- Connector (center) -->
@@ -76,6 +100,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import {
+  mdiAccountCheckOutline,
   mdiAccountOutline,
   mdiAccountGroupOutline,
   mdiArrowRight,
@@ -92,12 +117,38 @@ import {
   factConnector,
   factTargetKind,
 } from "~/utils/extraction";
+import { generateEntityUrl } from "~/composables/slugs";
+import { ExtractionWrongPersonButton } from "#components";
 
 const { fact } = defineProps<{
   fact: ExtractionFact;
 }>();
 
 const sourceName = computed(() => factSubject(fact));
+
+/** The graph person this fact was matched to, when it was matched to one.
+ *
+ * Both fields are written together at ingest, so a card missing the name has
+ * nothing to build a slug from and is treated as unmatched rather than linked
+ * to `/osoba/-<id>`. */
+const personNode = computed(() => {
+  const { personNodeId, personNodeName } = fact;
+  if (!personNodeId || !personNodeName) return undefined;
+  return {
+    id: personNodeId,
+    name: personNodeName,
+    url: generateEntityUrl("person", personNodeId, personNodeName),
+  };
+});
+
+// How many readers have already said the match is wrong, off the aggregate the
+// fact already carries. `computeVoteStats` only writes a category somebody has
+// voted in, so an unflagged fact has no field here at all.
+const reportedWrongPerson = computed(() => {
+  const votes = fact.stats?.votes as Record<string, unknown> | undefined;
+  const value = votes?.wrongPerson;
+  return typeof value === "number" ? value : 0;
+});
 const targetName = computed(() => factTarget(fact));
 const connectorLabel = computed(() => factConnector(fact));
 const connectorColor = computed(() => factTypeColor(fact));
@@ -198,6 +249,25 @@ const sourceCaption = computed(() => {
 }
 
 .edge__kind {
+  margin-top: 2px;
+}
+
+/* Underlined only on hover: the name is the card's heading first and a link
+   second. */
+.edge__person-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.edge__person-link:hover {
+  color: rgb(var(--v-theme-primary));
+  text-decoration: underline;
+}
+
+/* Pull the flag back into the column the name starts in - a v-btn carries its
+   own horizontal padding. */
+.edge__person-flag {
+  margin-left: -6px;
   margin-top: 2px;
 }
 

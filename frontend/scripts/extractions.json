@@ -23,6 +23,8 @@
     "url": "https://example.com/do-oceny",
     "articleUrl": "https://example.com/do-oceny",
     "articleDomain": "example.com",
+    "personNodeId": "3",
+    "personNodeName": "Anna Nowak",
     "fact_type": "employment",
     "person": "Anna Nowak",
     "organization": "Spolka Nieoceniona",
@@ -31,13 +33,19 @@
     "tag": "seed",
     "createdAt": "2026-07-21T10:00:00.000Z",
     "stats": {
-      "votes": { "interesting": 0, "quality": 0, "humanVoted": false }
+      "votes": {
+        "interesting": 0,
+        "quality": 0,
+        "humanVoted": false
+      }
     }
   },
   "seed-open-party": {
     "url": "https://example.com/do-oceny-partia",
     "articleUrl": "https://example.com/do-oceny-partia",
     "articleDomain": "example.com",
+    "personNodeId": "3",
+    "personNodeName": "Anna Nowak",
     "fact_type": "party_membership",
     "person": "Anna Nowak",
     "party": "Partia Testowa",
@@ -45,7 +53,11 @@
     "tag": "seed",
     "createdAt": "2026-07-22T10:00:00.000Z",
     "stats": {
-      "votes": { "interesting": 0, "quality": 0, "humanVoted": false }
+      "votes": {
+        "interesting": 0,
+        "quality": 0,
+        "humanVoted": false
+      }
     }
   }
 }
