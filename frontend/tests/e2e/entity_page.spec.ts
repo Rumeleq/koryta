@@ -61,10 +61,20 @@ test.describe("Entity page", () => {
 
   test("the /entity url redirects to the readable one", async ({ page }) => {
     // The Cypress specs addressed people as /entity/person/:id, which now
-    // 301s to the slug url. That redirect used to hang: it was issued from the
-    // page's setup, which does not stop the render, so the response never
+    // redirects to the slug url. That redirect used to hang: it was issued from
+    // the page's setup, which does not stop the render, so the response never
     // ended. Worth a test of its own - every indexed link is this shape.
-    await page.goto("/entity/person/1", { waitUntil: "domcontentloaded" });
+    const response = await page.goto("/entity/person/1", {
+      waitUntil: "domcontentloaded",
+    });
+
+    // 302 rather than 301, and asserted rather than assumed: a browser caches a
+    // 301 for the life of the profile, so shipping one here would freeze
+    // today's canonical url into every visitor beyond the reach of any deploy.
+    // See SLUG_REDIRECT_CODE in app/composables/slugs.ts.
+    const redirected = response?.request().redirectedFrom();
+    expect(redirected, "/entity/person/1 did not redirect at all").toBeTruthy();
+    expect((await redirected!.response())?.status()).toBe(302);
 
     await expect(page).toHaveURL(/\/osoba\/jan-kowalski-1/, {
       timeout: 30_000,

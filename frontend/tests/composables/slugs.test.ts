@@ -33,8 +33,8 @@ describe("generateNodeUrl", () => {
 
   it("gives an article the readable url the sitemap advertises", () => {
     // Articles used to fall past every branch and come back undefined, which
-    // [seoType]/[slug].vue then 301'd to the site root - so every article link
-    // in the sitemap, and every one ever shared, landed on the homepage.
+    // [seoType]/[slug].vue then redirected to the site root - so every article
+    // link in the sitemap, and every one ever shared, landed on the homepage.
     expect(
       generateNodeUrl({
         type: "article",

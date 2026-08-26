@@ -1,14 +1,14 @@
 import type { Node, NodeType } from "~~/shared/model";
-import { generateEntityUrl } from "~/composables/slugs";
+import { generateEntityUrl, SLUG_REDIRECT_CODE } from "~/composables/slugs";
 
 /** Sends /entity/:type/:id on to the readable url for that node.
  *
  * This belongs in middleware rather than in the page's setup: `navigateTo`
  * there schedules the redirect but does not stop the render, so on the server
- * the 301 headers went out and the detail view carried on rendering - the
+ * the redirect headers went out and the detail view carried on rendering - the
  * response never ended, and both curl and Chromium hung on every /entity url.
  * Returning it from middleware aborts the navigation, which is what makes the
- * 301 a complete response. */
+ * redirect a complete response. */
 export default defineNuxtRouteMiddleware(async (to) => {
   const id = to.params.id as string;
   const destination = to.params.destination as NodeType;
@@ -25,6 +25,8 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
   return navigateTo(
     seoUrl,
-    import.meta.server ? { redirectCode: 301 } : { replace: true },
+    import.meta.server
+      ? { redirectCode: SLUG_REDIRECT_CODE }
+      : { replace: true },
   );
 });
