@@ -42,8 +42,32 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
 /** Newest first. Prepend, never insert in the middle. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "wyniki-wyborow",
+    date: "2026-08-26",
+    title: "Wiadomo, kto wybory wygrał - i co robił ten, kto przegrał",
+    description:
+      "Przy każdej kandydaturze pokazujemy teraz wynik: „Mandat zdobyty”, " +
+      "„Bez mandatu” albo nic, jeśli PKW nie podała wyniku dla tych wyborów. " +
+      "Pod historią powiązań osoby jest nowa sekcja „Po wyborach”: zestawia " +
+      "kandydaturę ze stanowiskiem, które ta osoba objęła w roku wyborów albo " +
+      "w następnym - czyli mechanizm, o którym cały ten serwis jest. To " +
+      "zestawienie dat, a nie twierdzenie o przyczynie, i sekcja mówi to " +
+      "wprost. Uwaga: żadna z ~11,6 tys. zapisanych kandydatur nie ma jeszcze " +
+      "wyniku - dopóki ludzie nie zostaną ponownie zaimportowani, wszędzie " +
+      "będzie „wynik nieznany”, i to nie jest błąd.",
+    steps: [
+      "Wejdź na stronę osoby, która kandydowała (np. przez wyszukiwarkę), i znajdź w „Historii powiązań” wiersz z kandydaturą - obok partii i komitetu ma być plakietka z wynikiem albo, przy braku danych, nic.",
+      "Na stronie regionu (np. przez „Eksploruj region”) sprawdź karty kandydatów: tam wynik jest pokazywany zawsze, łącznie z „Wynik nieznany”.",
+      "W tabeli /eksploruj/tabela najedź na plakietkę w kolumnie „Wybory” - dymek ma mówić, czy kandydatura dała mandat, czy nie wiadomo.",
+      "Na stronie osoby, która objęła stanowisko w roku swoich wyborów albo w następnym, sprawdź sekcję „Po wyborach”: po lewej kandydatura z wynikiem, po prawej stanowisko, między nimi „w tym samym roku” albo „w następnym roku”.",
+      "Jeśli ta osoba kandydowała w tym oknie więcej niż raz, sekcja ma to przyznać - „rejestr nie mówi, po której z nich objęto stanowisko”.",
+      "W formularzu powiązania (Dodaj powiązanie → wybory) sprawdź, że wynik to lista z trzema odpowiedziami, domyślnie „Nie wiadomo” - a nie checkbox.",
+    ],
+    area: "public",
+  },
+  {
     id: "graf-osoby-dwa-kroki",
-    date: "2026-08-25",
+    date: "2026-08-26",
     title: "Strona osoby przemeblowana, graf czytelniejszy",
     description:
       "Na stronie osoby kolejność sekcji odpowiada teraz temu, po co się na " +
@@ -65,7 +89,7 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "kto-kogo-zastapil",
-    date: "2026-08-24",
+    date: "2026-08-26",
     title: "Kto kogo zastąpił w spółce",
     description:
       "Na stronie instytucji jest nowa sekcja „Kto kogo zastąpił”: pary " +
@@ -90,7 +114,7 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "instytucja-ma-wlasna-strone",
-    date: "2026-08-24",
+    date: "2026-08-26",
     title: "Instytucja ma znów własną stronę",
     description:
       "Kliknięcie w spółkę nie przenosi już do tabeli osób przefiltrowanej " +

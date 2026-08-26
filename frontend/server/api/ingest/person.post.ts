@@ -404,6 +404,14 @@ async function createElection(
   // has one - and why two candidacies in one town in one year are so often
   // indistinguishable. It is the strongest discriminator the payload carries.
   if (election.committee) edgeData.committee = election.committee;
+  // Whether the candidacy took the seat. Written when the payload says either
+  // way, including `false` - a candidacy that did not take one is the half of
+  // the record the site is about, and it is why `elected` cannot be treated as
+  // an ordinary "blank means false" flag. A payload that says nothing leaves
+  // the field off, which is what "PKW did not record a result" looks like.
+  if (typeof election.elected === "boolean") {
+    edgeData.elected = election.elected;
+  }
   if (election.election_year) {
     edgeData.start_date = `${election.election_year}-01-01`;
   }

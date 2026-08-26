@@ -152,6 +152,39 @@ def _committee(value: typing.Any) -> str | None:
     return text
 
 
+def _elected(value: typing.Any) -> bool | None:
+    """Whether PKW recorded this candidacy as taking the seat, or None.
+
+    Three states have to survive the trip. `scrapers/pkw/headers.py` reads the
+    "Czy uzyskał mandat" / "Czy przyznano mandat" / "Wybrany" columns through
+    `parse_yes_no`, which answers with the strings "TRUE" and "FALSE" - and the
+    years whose files have no such column at all leave the field unset, which
+    is the third state and by far the commonest. Collapsing that onto False
+    would tell a reader a named person lost an election nobody recorded a
+    result for.
+
+    The value arrives as a string from the PKW tables, but a jsonl round trip
+    or a hand-built fixture can make it a real bool, and duckdb hands a missing
+    one back as a float NaN - so all three shapes are read rather than assumed
+    away. Anything else is treated as "not recorded" rather than raised on: a
+    payload run covering a hundred thousand people should not die on one
+    unexpected cell, and the honest reading of a value nobody anticipated is
+    that the outcome is not known.
+    """
+    if value is None or isinstance(value, float):
+        # A float here is duckdb's NaN for a missing value; PKW never records
+        # a numeric result.
+        return None
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in {"true", "tak", "t"}:
+        return True
+    if text in {"false", "nie", "n"}:
+        return False
+    return None
+
+
 def _extract_elections(row: pd.Series) -> list[Election]:
     elections = []
     elec_list = row.get("elections")
@@ -166,6 +199,7 @@ def _extract_elections(row: pd.Series) -> list[Election]:
                     committee=committee,
                     party=party_of_candidacy(committee),
                     party_from_committee=bool(parties_of_committee(committee)),
+                    elected=_elected(e.get("candidacy_success")),
                 )
                 if e.get("election_year"):
                     election_payload.election_year = str(e.get("election_year"))

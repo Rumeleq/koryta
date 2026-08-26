@@ -148,6 +148,12 @@
               :relation-count="edges.length"
               class="mt-4"
             />
+            <!-- The other half of "what happened to them": the section above
+                 reads a seat and says who vacated it, this one reads a career
+                 and says which post followed which candidacy. Built from the
+                 relations already on the page, so it costs no request; it
+                 renders nothing where nothing lines up. -->
+            <PersonAfterElection :edges="edges" class="mt-4" />
           </template>
           <v-row v-else>
             <v-col

@@ -203,6 +203,10 @@ export interface ElectionRich {
   teryt?: string;
   position: string;
   committee?: string;
+  /** Whether the candidacy took the seat, in all three of its states - see
+   * `shared/election.ts`. Absent means PKW recorded no result, which is not
+   * the same as `false`. */
+  elected?: boolean;
 }
 
 export type PersonRich = Person & {

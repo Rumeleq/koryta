@@ -155,6 +155,7 @@ export async function useListWithStats(
                 : undefined,
             position: listPosition,
             committee: edge.committee,
+            elected: edge.elected,
           });
         }
       }

@@ -302,7 +302,7 @@ describe("EditEdge.vue", () => {
     expect(wrapper.find('[data-testid="edge-term-select"]').exists()).toBe(
       true,
     );
-    expect(wrapper.find('[data-testid="edge-elected-checkbox"]').exists()).toBe(
+    expect(wrapper.find('[data-testid="edge-elected-select"]').exists()).toBe(
       true,
     );
     expect(

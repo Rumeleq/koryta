@@ -96,9 +96,6 @@ describe.todo("Election Edge Form Flow", () => {
     const committeeField = wrapper.find(
       '[data-testid="edge-committee-field"] input',
     );
-    const electedCheckbox = wrapper.find(
-      '[data-testid="edge-elected-checkbox"] input',
-    );
     const byElectionCheckbox = wrapper.find(
       '[data-testid="edge-by-election-checkbox"] input',
     );
@@ -110,9 +107,15 @@ describe.todo("Election Edge Form Flow", () => {
       "KKW Koalicja Obywatelska",
     );
 
-    // We can also verify that checkboxes can be checked
-    await electedCheckbox.setValue(true);
-    expect((electedCheckbox.element as HTMLInputElement).checked).toBe(true);
+    // The outcome is a three-way select rather than a checkbox - an unticked
+    // box cannot tell "nobody recorded a result" from "stood and lost", and
+    // the second is a claim about a named person. It defaults to the first.
+    const electedSelect = wrapper.find(
+      '[data-testid="edge-elected-select"] input',
+    );
+    expect((electedSelect.element as HTMLInputElement).value).toBe(
+      "Nie wiadomo",
+    );
 
     await byElectionCheckbox.setValue(true);
     expect((byElectionCheckbox.element as HTMLInputElement).checked).toBe(true);

@@ -31,7 +31,12 @@ export default defineEventHandler(async (event) => {
     party: body.party || "",
     committee: body.committee || "",
     position: body.position || "",
-    elected: !!body.elected,
+    // Three states, and the form is the only writer that could confuse them.
+    // A blank checkbox used to post `false`, which reads as "stood and did not
+    // take the seat" now that `elected` is a tri-state (see `TRISTATE_FIELDS`
+    // in server/utils/edges.ts) - so an outcome nobody chose has to go in as
+    // null, or every hand-made candidacy would assert a lost election.
+    elected: typeof body.elected === "boolean" ? body.elected : null,
     term: body.term || "",
     by_election: !!body.by_election,
     update_automatic: body.update_automatic || undefined,

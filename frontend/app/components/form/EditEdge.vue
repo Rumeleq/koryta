@@ -151,14 +151,20 @@
             data-testid="edge-term-select"
           />
         </v-col>
-        <v-col cols="12" md="6" class="d-flex align-center">
-          <v-checkbox
-            v-model="newEdge.elected"
-            label="Uzyskano mandat"
+        <v-col cols="12" md="6">
+          <!-- Three choices, not a checkbox. An unticked box says "nobody
+               recorded a result" and "stood and did not take the seat" in the
+               same breath, and those are different claims about a named
+               person - the second is the one the site is about, so it has to
+               be sayable, and the first has to stay the default. -->
+          <v-select
+            :items="electedOptions"
+            :model-value="newEdge.elected ?? null"
+            label="Wynik wyborów"
             density="compact"
             hide-details="auto"
-            class="mb-0"
-            data-testid="edge-elected-checkbox"
+            data-testid="edge-elected-select"
+            @update:model-value="setElected"
           />
         </v-col>
         <v-col cols="12" md="6" class="d-flex align-center">
@@ -226,6 +232,7 @@ import {
   edgeTypeOptions,
 } from "~/composables/useEdgeTypes";
 import { parties, electionPositions, electionTerms } from "~~/shared/misc";
+import { electionOutcomeText } from "~~/shared/election";
 
 const props = defineProps<{
   nodeId: string;
@@ -298,6 +305,20 @@ const namePlaceholder = computed(() => {
 defineExpose({
   openEditEdge,
 });
+
+/** The three answers the form may give about how a candidacy ended, default
+ * first. `null` rather than `undefined` as the "nie wiadomo" value so that
+ * Vuetify has something to compare the select against - the form turns it back
+ * into an absent field on the way out. */
+const electedOptions = [
+  { title: "Nie wiadomo", value: null },
+  { title: electionOutcomeText.elected.label, value: true },
+  { title: electionOutcomeText.lost.label, value: false },
+];
+
+function setElected(value: boolean | null) {
+  newEdge.value.elected = value ?? undefined;
+}
 
 function dateRule(value: string) {
   if (!value) return true;

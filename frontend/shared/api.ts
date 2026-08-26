@@ -84,6 +84,15 @@ const electionRequestSchema = z.object({
     "Parlament Europejski",
   ]),
   teryt: z.string().optional(),
+  /** Whether PKW recorded the candidate as taking the seat.
+   *
+   * Three states, and the absent one is not the same as `false`. PKW publishes
+   * a "Czy uzyskał mandat" column for some years and not others, so a
+   * candidacy that carries nothing here is one nobody recorded a result for -
+   * and the site says so rather than printing "bez mandatu" under it. The
+   * uploader drops nulls (`clean_payload`), which is what turns the pipeline's
+   * `None` into an absent field rather than a stored `false`. */
+  elected: z.boolean().optional(),
 });
 
 export type ElectionRequest = {
@@ -93,6 +102,7 @@ export type ElectionRequest = {
   election_year?: string;
   election_type: ElectionPosition;
   teryt?: string;
+  elected?: boolean;
 };
 
 export const personRequestSchema = z.object({

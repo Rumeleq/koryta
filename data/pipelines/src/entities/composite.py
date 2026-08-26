@@ -34,6 +34,15 @@ class Election:
     # is usually a one-gmina KWW, but it is also where a misspelt national
     # committee hides, so those are proposed and left for review.
     party_from_committee: bool = False
+    # Whether PKW recorded the candidate as having taken the seat.
+    #
+    # Three states, not two. True is a mandate; False is a candidacy that did
+    # not take one, which is the half of the record this site is actually
+    # about; None is a listing that never said, and there are a lot of those -
+    # the older PKW files carry no "Czy uzyskał mandat" column at all. Reading
+    # None as False would print "bez mandatu" under candidacies nobody recorded
+    # a result for, which is a claim about a named person made on no evidence.
+    elected: bool | None = None
 
 
 @dataclass

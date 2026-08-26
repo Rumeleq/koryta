@@ -248,6 +248,88 @@ describe("api/ingest/person", () => {
     );
   });
 
+  it("stores whether the candidacy took the seat, including when it did not", async () => {
+    // Three states, and `false` is the one worth having. PKW's "Czy uzyskał
+    // mandat" column is what the site is about - somebody who did not get the
+    // seat and got a post instead - so it cannot be written off as a blank.
+    mockReadBody.mockResolvedValue({
+      name: "Test Person",
+      parties: [],
+      companies: [],
+      elections: [
+        {
+          election_year: "2024",
+          election_type: "Samorząd",
+          teryt: "1465",
+          elected: false,
+        },
+      ],
+    });
+
+    mockGet.mockReset();
+    mockDoc.mockReset();
+    mockDoc.mockReturnValue({ id: "new-doc-id", ref: mockRef });
+
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
+    mockDoc.mockReturnValueOnce({ id: "person-id", ref: mockRef });
+    mockGet.mockResolvedValueOnce({
+      empty: false,
+      docs: [{ ref: { id: "teryt1465" }, id: "teryt1465" }],
+    });
+    const edgeRef = { id: "edge-id" };
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
+    mockDoc.mockReturnValueOnce(edgeRef);
+
+    await handler({} as any);
+
+    expect(createRevisionTransaction).toHaveBeenNthCalledWith(
+      2,
+      mockDb,
+      expect.anything(),
+      expect.objectContaining({ uid: "test-user-id" }),
+      edgeRef,
+      expect.objectContaining({ type: "election", elected: false }),
+      { automatic: true, approve: false, published: false },
+    );
+  });
+
+  it("leaves the result off a candidacy PKW recorded none for", async () => {
+    // Absent rather than false. Every candidacy stored before the pipeline
+    // sent a result is in this state, and printing "bez mandatu" under all of
+    // them would be a claim about thousands of named people.
+    mockReadBody.mockResolvedValue({
+      name: "Test Person",
+      parties: [],
+      companies: [],
+      elections: [
+        {
+          election_year: "2024",
+          election_type: "Samorząd",
+          teryt: "1465",
+        },
+      ],
+    });
+
+    mockGet.mockReset();
+    mockDoc.mockReset();
+    mockDoc.mockReturnValue({ id: "new-doc-id", ref: mockRef });
+
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
+    mockDoc.mockReturnValueOnce({ id: "person-id", ref: mockRef });
+    mockGet.mockResolvedValueOnce({
+      empty: false,
+      docs: [{ ref: { id: "teryt1465" }, id: "teryt1465" }],
+    });
+    const edgeRef = { id: "edge-id" };
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
+    mockDoc.mockReturnValueOnce(edgeRef);
+
+    await handler({} as any);
+
+    const written = vi.mocked(createRevisionTransaction).mock.calls[1]![4];
+    expect(written).not.toHaveProperty("elected");
+  });
+
   describe("a candidacy the database already has", () => {
     /** The shape every one of the 10476 stored candidacies has today: written
      * before the ingest accepted a committee, so carrying none. */

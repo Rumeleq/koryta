@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from analysis.payloads import PeoplePayloads, RegionPayloads
-from analysis.payloads.person import _extract_elections
+from analysis.payloads.person import _elected, _extract_elections
 from scrapers.stores import Context, Pipeline, ProcessPolicy
 
 
@@ -136,6 +136,64 @@ def test_election_without_a_committee_sends_none(mock_ctx):
 
     assert len(elections) == 1
     assert elections[0].committee is None
+
+
+def test_elected_reads_all_three_states():
+    """PKW's mandate column has three answers and all three have to survive.
+
+    `parse_yes_no` in `scrapers/pkw/headers.py` writes the strings, a jsonl
+    round trip can turn them back into bools, and duckdb hands a missing one
+    back as a float NaN. Reading "nobody recorded a result" as "did not take
+    the seat" would print a lost election under half the register.
+    """
+    assert _elected("TRUE") is True
+    assert _elected("FALSE") is False
+    assert _elected(True) is True
+    assert _elected(False) is False
+    assert _elected(None) is None
+    assert _elected(float("nan")) is None
+    assert _elected("") is None
+    assert _elected("nan") is None
+    assert _elected("None") is None
+
+
+def test_election_carries_the_mandate_through(mock_ctx):
+    """The column the pipeline has always read and always dropped.
+
+    `people_pkw_merged` carries `candidacy_success` into the elections struct
+    and `_extract_elections` used to ignore it, so no stored candidacy says
+    whether it took the seat.
+    """
+    row = pd.Series(
+        {
+            "elections": [
+                {
+                    "election_type": "sejmu",
+                    "party": None,
+                    "election_year": 2023,
+                    "teryt_powiat": ["1465"],
+                    "candidacy_success": "FALSE",
+                },
+                {
+                    "election_type": "senatu",
+                    "party": None,
+                    "election_year": 2019,
+                    "teryt_powiat": ["1465"],
+                    "candidacy_success": "TRUE",
+                },
+                {
+                    "election_type": "samorządu",
+                    "party": None,
+                    "election_year": 2006,
+                    "teryt_powiat": ["1465"],
+                },
+            ]
+        }
+    )
+
+    elections = _extract_elections(row)
+
+    assert [e.elected for e in elections] == [False, True, None]
 
 
 def test_upload_payloads_region_shape(mock_ctx):

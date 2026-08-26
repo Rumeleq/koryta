@@ -244,7 +244,10 @@ function emptyEdge(direction?: "incoming" | "outgoing"): InternalEdge {
     end_date: "",
     direction: direction ?? "outgoing",
     references: [],
-    elected: false,
+    // Left out rather than defaulted to false: `false` now means "stood and
+    // did not take the seat", which is not something an untouched form may
+    // say about a person. The select offers "Nie wiadomo" as its first
+    // choice, and this is that choice.
     by_election: false,
   };
 }

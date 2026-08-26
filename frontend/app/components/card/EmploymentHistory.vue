@@ -45,6 +45,14 @@
           >
             {{ committeeOf(edge) }}
           </span>
+          <!-- How the candidacy ended. Silent where PKW recorded nothing,
+               which is most of the collection until the candidacies are
+               ingested again - a row per relation saying "wynik nieznany"
+               would be the loudest thing on the page and say the least. -->
+          <ChipElectionOutcome
+            v-if="edge.type === 'election'"
+            :elected="edge.elected"
+          />
           <ChipPublicCompany :company="asCompany(edge)" />
         </div>
 

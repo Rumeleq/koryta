@@ -199,6 +199,49 @@ describe("edgeRelation", () => {
     ).toBe("enriches");
   });
 
+  it("recognises a stored candidacy the payload now knows the result of", () => {
+    // `elected` is an annotation rather than a discriminator: it says
+    // something about the candidacy without saying which candidacy it is. It
+    // still has to be a reason to write, or the outcome could never reach the
+    // 11,585 candidacies stored before the pipeline sent one.
+    expect(
+      edgeRelation(withCommittee, { ...withCommittee, elected: true }),
+    ).toBe("enriches");
+  });
+
+  it("treats a lost election as something to add, not as a blank", () => {
+    // The trap this whole tri-state exists for. `false` reads as "unset"
+    // everywhere else - the relation form posts one per unticked box - and
+    // read that way here, "stood and did not take the seat" would be
+    // unstorable: nothing added, so nothing written, forever.
+    expect(
+      edgeRelation(withCommittee, { ...withCommittee, elected: false }),
+    ).toBe("enriches");
+  });
+
+  it("does not overwrite a result the stored edge already has", () => {
+    expect(
+      edgeRelation(
+        { ...withCommittee, elected: true },
+        { ...withCommittee, elected: false },
+      ),
+    ).toBe("conflict");
+    expect(
+      edgeRelation(
+        { ...withCommittee, elected: false },
+        { ...withCommittee, elected: false },
+      ),
+    ).toBe("same");
+  });
+
+  it("reads a payload that says nothing about the result as silence", () => {
+    // The asymmetry the discriminators already have: the pipeline not sending
+    // a field is not the pipeline saying "none".
+    expect(
+      edgeRelation({ ...withCommittee, elected: true }, withCommittee),
+    ).toBe("same");
+  });
+
   it("reads a committee spelled differently as the same committee", () => {
     // PKW writes it in whatever case and spacing the spreadsheet had, and
     // `committee_to_party` lists both wordings for that reason. Compared raw,
@@ -225,6 +268,23 @@ describe("enrichedEdge", () => {
       committee: withCommittee.committee,
       party: "PiS",
     });
+  });
+});
+
+describe("enrichedEdge with a result", () => {
+  it("writes a lost election onto a candidacy that has no result", () => {
+    expect(
+      enrichedEdge({ ...withCommittee }, { ...withCommittee, elected: false }),
+    ).toEqual({ ...withCommittee, elected: false });
+  });
+
+  it("leaves a stored result alone", () => {
+    expect(
+      enrichedEdge(
+        { ...withCommittee, elected: true },
+        { ...withCommittee, elected: false },
+      ),
+    ).toEqual({ ...withCommittee, elected: true });
   });
 });
 
@@ -293,6 +353,28 @@ describe("findEdgeMatches", () => {
       withCommittee,
     );
     expect(same).toEqual([]);
+    expect(enrichable).toEqual([]);
+  });
+
+  it("enriches a candidacy that matches exactly but has no result", async () => {
+    // The identity is the same - same office, year and committee - so the
+    // partition used to call it `same` and drop the payload's result on the
+    // floor. An annotation is exactly the case where "the same episode" and
+    // "everything already known about it" come apart.
+    const { same, enrichable } = await findEdgeMatches(
+      dbWith([withCommittee]),
+      { ...withCommittee, elected: false },
+    );
+    expect(same).toEqual([]);
+    expect(enrichable.map((c) => c.id)).toEqual(["stored-0"]);
+  });
+
+  it("is a no-op once the result is stored", async () => {
+    const { same, enrichable } = await findEdgeMatches(
+      dbWith([{ ...withCommittee, elected: false }]),
+      { ...withCommittee, elected: false },
+    );
+    expect(same).toEqual(["stored-0"]);
     expect(enrichable).toEqual([]);
   });
 

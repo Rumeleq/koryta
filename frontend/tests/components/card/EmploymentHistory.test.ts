@@ -58,6 +58,52 @@ describe("CardEmploymentHistory", () => {
   });
 });
 
+/** How a candidacy ended, on the row that lists it. */
+describe("EmploymentHistory election outcomes", () => {
+  function candidacy(elected?: boolean): EdgeNode {
+    return edge({
+      type: "election",
+      label: "kandydatura",
+      start_date: "2024-01-01",
+      position: "Rada powiatu",
+      richNode: { id: "teryt1465", type: "region", name: "Powiat Testowy" },
+      elected,
+    });
+  }
+
+  it("says when the candidacy took the seat", async () => {
+    const wrapper = await render([candidacy(true)]);
+    expect(wrapper.text()).toContain("Mandat zdobyty");
+  });
+
+  it("says when it did not", async () => {
+    // The half of the record the site is about, and the one an unticked
+    // checkbox could never have expressed.
+    const wrapper = await render([candidacy(false)]);
+    expect(wrapper.text()).toContain("Bez mandatu");
+  });
+
+  it("stays silent where PKW recorded no result", async () => {
+    // Which is every stored candidacy until the people are ingested again. A
+    // row per relation saying "wynik nieznany" would be the loudest thing on
+    // the page and say the least.
+    const wrapper = await render([candidacy(undefined)]);
+    expect(wrapper.text()).not.toContain("Mandat zdobyty");
+    expect(wrapper.text()).not.toContain("Bez mandatu");
+    expect(wrapper.text()).not.toContain("Wynik nieznany");
+  });
+
+  it("says nothing about the outcome of an employment", async () => {
+    // The check is on the edge type rather than on the field, so a relation of
+    // another kind that picked up a stray `elected` does not start claiming an
+    // election result on somebody's profile.
+    const wrapper = await render([
+      edge({ start_date: "2024-05-16", elected: false } as Partial<EdgeNode>),
+    ]);
+    expect(wrapper.text()).not.toContain("Bez mandatu");
+  });
+});
+
 /** The one-line hint that ties a row to the "Zmiany na stanowisku" section
  * below it: who sat in this seat before. */
 describe("EmploymentHistory predecessors", () => {

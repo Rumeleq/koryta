@@ -30,6 +30,17 @@ type EdgeSemantics = {
    * discriminator it does not have, rather than stored beside it as a second
    * fact. See `enriches`. */
   enrichable: boolean;
+  /** Fields that say something *about* the episode without saying which
+   * episode it is.
+   *
+   * They take part in enrichment - filling one in is a reason to write, and
+   * disagreeing about one is a conflict - but never in identity, so learning
+   * one cannot move an edge to a different document id. `elected` is the case
+   * this exists for: the outcome of a candidacy is worth storing and worth
+   * refusing to overwrite, but two candidacies are not made different episodes
+   * by one of them having won. Putting it in `discriminators` would hash every
+   * winning candidacy to a new id and store it a second time. */
+  annotations?: readonly string[];
 };
 
 export const EDGE_SEMANTICS: Record<string, EdgeSemantics> = {
@@ -104,6 +115,7 @@ export const EDGE_SEMANTICS: Record<string, EdgeSemantics> = {
     discriminators: ["position", "start_date", "party", "committee", "term"],
     identicalMeansSame: false,
     enrichable: true,
+    annotations: ["elected"],
   },
 
   // Written by hand through /api/edges/create, never by an ingest.
@@ -152,15 +164,32 @@ export type EdgeLike = Partial<Edge> & Pick<Edge, "source" | "target" | "type">;
  */
 const FOLDED_FIELDS = new Set(["committee"]);
 
+/** Fields where `false` is an answer rather than a blank.
+ *
+ * The rule below reads `false` as "not filled in", because the relation form
+ * posts one for every checkbox nobody ticked. `elected` cannot be read that
+ * way: "stood and did not take the seat" is the fact this site exists to
+ * record, and folding it onto "nobody said" would make it unstorable - an
+ * incoming `false` would add nothing, so nothing would be written, and the
+ * candidacy would read as unrecorded forever.
+ *
+ * The relation form is what makes this safe: it posts `null` rather than
+ * `false` for an outcome nobody chose (`/api/edges/create`), so a stored
+ * `false` is somebody saying so. Anything else that starts writing a
+ * defaulted `false` here would start asserting lost elections.
+ */
+const TRISTATE_FIELDS = new Set(["elected"]);
+
 /** One writer's "unset" has to equal another's.
  *
- * /api/edges/create writes `name: ""`, `party: ""` and `elected: false` for
- * every field the form left blank, while the ingest omits them entirely. Left
- * alone a hand-made edge could never match an ingested one asserting the same
- * thing, and the database would keep both.
+ * /api/edges/create writes `name: ""` and `party: ""` for every field the form
+ * left blank, while the ingest omits them entirely. Left alone a hand-made
+ * edge could never match an ingested one asserting the same thing, and the
+ * database would keep both.
  */
 function field(edge: EdgeLike, name: string): unknown {
   const value = (edge as Record<string, unknown>)[name];
+  if (value === false && TRISTATE_FIELDS.has(name)) return false;
   if (
     value === undefined ||
     value === null ||
@@ -250,12 +279,17 @@ export type EdgeRelation = "conflict" | "same" | "enriches";
  * 10476 candidacies stored before it did, instead of writing every one of them
  * a second time under a different document id.
  *
- * - `conflict`: they disagree about a discriminator they both know. A stored
- *   Sejm candidacy is not a fresh Samorząd one however much else lines up.
+ * - `conflict`: they disagree about a field they both know. A stored Sejm
+ *   candidacy is not a fresh Samorząd one however much else lines up.
  * - `enriches`: no disagreement, and the incoming edge fills in at least one
- *   discriminator the stored edge lacks.
+ *   field the stored edge lacks.
  * - `same`: no disagreement and nothing to add. The stored edge already says
  *   everything the payload says, and may say more.
+ *
+ * Annotations are read alongside the discriminators. They cannot make two
+ * edges different episodes - that is what keeps them out of `edgeIdentity` -
+ * but the outcome of a candidacy is worth writing when the stored edge does
+ * not have it, and worth refusing to overwrite when it does.
  *
  * The asymmetry in "no disagreement" is deliberate: where only the *stored*
  * edge knows a discriminator - a `term` a reviewer typed in, which the scrapers
@@ -272,10 +306,10 @@ export function edgeRelation(
   stored: EdgeLike,
   incoming: EdgeLike,
 ): EdgeRelation {
-  const { discriminators } = edgeSemantics(incoming.type);
+  const { discriminators, annotations } = edgeSemantics(incoming.type);
 
   let added = 0;
-  for (const name of discriminators) {
+  for (const name of [...discriminators, ...(annotations ?? [])]) {
     const before = field(stored, name);
     const after = field(incoming, name);
     if (before === null) {
@@ -362,7 +396,18 @@ export async function findEdgeMatches(
     ids.add(doc.id);
     const stored = doc.data();
     if (edgeIdentity(stored as EdgeLike) === identity) {
-      same.push(doc.id);
+      // The same episode, by every field that says which episode it is. It can
+      // still be missing an annotation the payload carries - whether the
+      // candidacy took the seat - and that is a reason to write even though
+      // nothing about *which* candidacy it is has changed. A disagreement
+      // about one is not: the stored answer is either a reviewer's or an
+      // earlier run's, and `enrichedEdge` fills blanks rather than overwriting,
+      // so there is nothing here for the payload to do.
+      const relation = mayEnrich
+        ? edgeRelation(stored as EdgeLike, edge)
+        : "same";
+      if (relation === "enriches") enrichable.push({ id: doc.id, stored });
+      else same.push(doc.id);
       continue;
     }
     if (!mayEnrich || !meetsEnrichFloor(stored as EdgeLike)) continue;

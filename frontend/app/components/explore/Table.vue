@@ -132,6 +132,7 @@
           size="small"
           class="mb-1"
           variant="outlined"
+          :prepend-icon="outcomeIcon(election.elected)"
         >
           <v-tooltip activator="parent" location="top" open-delay="200">
             <div v-if="election.location">{{ election.location }}</div>
@@ -143,6 +144,11 @@
               }}
             </div>
             <div v-if="election.committee">{{ election.committee }}</div>
+            <!-- Always said, including "wynik nieznany". A column of chips is
+                 exactly where a reader would otherwise read the absence of a
+                 marker as a loss, and the tooltip is the one place with room
+                 to say which of the two it is. -->
+            <div>{{ outcomeDetail(election.elected) }}</div>
           </v-tooltip>
           <span v-if="election.year" class="font-weight-bold mr-1">
             {{ election.year }}
@@ -214,10 +220,31 @@
 </template>
 
 <script setup lang="ts">
-import { mdiMagnify, mdiOpenInNew } from "@mdi/js";
+import {
+  mdiCheckCircleOutline,
+  mdiCloseCircleOutline,
+  mdiMagnify,
+  mdiOpenInNew,
+} from "@mdi/js";
 import { executeSearchAll } from "~/composables/usePersonSearch";
 import { voteScaleSummary } from "~/composables/votes";
+import { electionOutcome, electionOutcomeText } from "~~/shared/election";
 import type { PersonRich } from "~~/shared/model";
+
+/** A mark on the chip for a candidacy whose result is known, and nothing at
+ * all for one that is not. An icon rather than a colour: this theme's primary
+ * is a pale sage, and an outlined chip draws its label in the colour it is
+ * given - 1.85:1 on white. */
+function outcomeIcon(elected: boolean | undefined): string | undefined {
+  const outcome = electionOutcome(elected);
+  if (outcome === "elected") return mdiCheckCircleOutline;
+  if (outcome === "lost") return mdiCloseCircleOutline;
+  return undefined;
+}
+
+function outcomeDetail(elected: boolean | undefined): string {
+  return electionOutcomeText[electionOutcome(elected)].detail;
+}
 
 const userVoteTooltip = [
   "Twój osobisty głos dla tej osoby (widoczny tylko dla Ciebie).",

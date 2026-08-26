@@ -102,7 +102,10 @@ export const revisionFieldLabels: Record<string, string> = {
   party: "partia",
   committee: "komitet",
   references: "źródła",
-  elected: "wybrany",
+  // "mandat: tak / nie" rather than "wybrany", which is both gendered and
+  // ambiguous about the third state: an absent `elected` renders as no line at
+  // all, which is what "PKW recorded no result" should look like in a diff.
+  elected: "mandat",
   term: "kadencja",
   by_election: "wybory uzupełniające",
 };

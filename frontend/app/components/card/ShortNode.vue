@@ -14,6 +14,10 @@
           edge.position
         }}</span>
         <span v-if="edge.term" class="text-caption">({{ edge.term }})</span>
+        <!-- On a region's page every row is a candidacy, so the result is what
+             distinguishes them - and "wynik nieznany" is worth saying here,
+             where it is one line rather than one per relation. -->
+        <ChipElectionOutcome :elected="edge.elected" show-unknown />
       </div>
       <div>{{ edge.label }}</div>
       <div v-if="edge.start_date || edge.end_date" class="text-caption">
