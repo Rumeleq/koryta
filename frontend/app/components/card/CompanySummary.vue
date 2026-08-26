@@ -5,7 +5,19 @@
         <v-card-text class="d-flex flex-wrap align-center ga-4">
           <div class="d-flex align-center ga-2 mr-auto">
             <v-icon :icon="mdiOfficeBuildingOutline" class="flex-shrink-0" />
-            <span class="text-h6 text-wrap">{{ company.name }}</span>
+            <!-- On the company's own page this card is the heading, so the name
+                 is plain text there; everywhere else it is the way through to
+                 the page. `link-plain` because a heading that is already the
+                 largest thing on the card does not also need to be blue. -->
+            <NuxtLink
+              v-if="linkToPage && pageUrl"
+              :to="pageUrl"
+              class="text-h6 text-wrap link-plain"
+            >
+              {{ company.name }}
+              <v-icon :icon="mdiArrowRight" size="small" />
+            </NuxtLink>
+            <span v-else class="text-h6 text-wrap">{{ company.name }}</span>
           </div>
 
           <div class="d-flex flex-wrap align-center ga-4 text-body-2">
@@ -100,6 +112,7 @@
 
 <script lang="ts" setup>
 import {
+  mdiArrowRight,
   mdiNoteTextOutline,
   mdiOfficeBuildingOutline,
   mdiOpenInNew,
@@ -116,6 +129,10 @@ const props = defineProps<{
   company: Company;
   /** Region the company sits in, resolved by the caller from the owns edge. */
   location: string | undefined;
+  /** Turn the name into a link to the company's own page. Off by default: the
+   * page renders this card as its own heading, and a heading that links to the
+   * page you are already on is a dead end. */
+  linkToPage?: boolean;
 }>();
 
 const identifiers = computed(() => companyIdentifiers(props.company));
@@ -139,9 +156,17 @@ const canEditNotes = computed(
 
 const submittedRevisionId = ref<string | undefined>(undefined);
 
-const previewUrl = computed(() => {
-  if (!props.company.id || !submittedRevisionId.value) return undefined;
-  const base = generateEntityUrl("place", props.company.id, props.company.name);
-  return `${base}?revisionId=${submittedRevisionId.value}`;
-});
+/** The company's own page. A company that was never saved has no id and so no
+ * page - it is rendered from a revision that nothing points at yet. */
+const pageUrl = computed(() =>
+  props.company.id
+    ? generateEntityUrl("place", props.company.id, props.company.name)
+    : undefined,
+);
+
+const previewUrl = computed(() =>
+  pageUrl.value && submittedRevisionId.value
+    ? `${pageUrl.value}?revisionId=${submittedRevisionId.value}`
+    : undefined,
+);
 </script>
