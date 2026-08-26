@@ -24,4 +24,35 @@ describe("CardCompanySummary", () => {
     expect(wrapper.text().replace(/\s+/g, " ")).toContain("NIP: 5260250274");
     expect(wrapper.text().replace(/\s+/g, " ")).toContain("KRS: 0000357114");
   });
+
+  it("leads to the company's own page when asked to", async () => {
+    // Hyphen-free id: /instytucja/<slug>-<id> reads the id back off the last
+    // dash segment, so `chain-company` above would not round-trip.
+    const wrapper = await mountSuspended(CompanySummary, {
+      props: {
+        company: { ...company, id: "ZBcdQ9tUxVyv0o1mnpLH" } as Company,
+        location: "Powiat Testowy",
+        linkToPage: true,
+      },
+    });
+
+    const link = wrapper.find("a[href^='/instytucja/']");
+    expect(link.attributes("href")).toBe(
+      "/instytucja/firma-testowa-ZBcdQ9tUxVyv0o1mnpLH",
+    );
+    // The name keeps the ink colour it had as a heading, so the arrow is the
+    // only thing saying this goes somewhere - and it is under the visual
+    // suite's diff threshold, which is why it is asserted here instead.
+    expect(link.find(".v-icon").exists()).toBe(true);
+  });
+
+  it("leaves the name as text on the company's own page", async () => {
+    // place/DetailView renders this card as the heading of the page it links
+    // to, and a heading that links to itself is a dead end.
+    const wrapper = await mountSuspended(CompanySummary, {
+      props: { company, location: "Powiat Testowy" },
+    });
+
+    expect(wrapper.find("a[href^='/instytucja/']").exists()).toBe(false);
+  });
 });

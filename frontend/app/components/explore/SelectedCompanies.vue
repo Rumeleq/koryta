@@ -6,6 +6,7 @@
         :key="companyData.id"
         :company="companyData"
         :location="companyData.location"
+        link-to-page
       />
     </div>
 
@@ -33,6 +34,7 @@
           :key="companyData.id"
           size="small"
           label
+          :to="companyUrl(companyData)"
         >
           {{ companyData.name }}
         </v-chip>
@@ -49,6 +51,7 @@
               :key="companyData.id"
               :company="companyData"
               :location="companyData.location"
+              link-to-page
             />
           </v-card-text>
         </div>
@@ -64,6 +67,7 @@ import {
   mdiOfficeBuildingOutline,
 } from "@mdi/js";
 import { computed, ref } from "vue";
+import { generateEntityUrl } from "~/composables/slugs";
 import type { Company } from "~~/shared/model";
 
 const props = withDefaults(
@@ -82,4 +86,10 @@ const collapsible = computed(
 );
 
 const expanded = ref(false);
+
+// Collapsed, the chips are the only handle on a company there is - the
+// summaries, and the link on each of their names, are folded away.
+function companyUrl(company: Company & { id: string }) {
+  return generateEntityUrl("place", company.id, company.name);
+}
 </script>
