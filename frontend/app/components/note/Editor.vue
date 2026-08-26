@@ -1,32 +1,34 @@
 <template>
-  <v-card
+  <!-- A section, not a card. This sits between "Historia powiązań" and the
+       graph on a person's page and alongside "Zmiany na stanowisku", all of
+       which are headed sections on the page's own background - a raised card
+       with a title bar in the middle of them read as something pasted in from
+       another site. The same component is the notes on a company, an article
+       and a topic, and in the table's side panel, so restyling it here is what
+       makes notes look the same everywhere they appear. -->
+  <section
     v-if="user || otherSources.length > 0"
-    class="mb-4"
+    class="px-2 mb-4"
     data-testid="note-editor"
   >
-    <v-card-title>Notatki</v-card-title>
+    <div class="sec-head">
+      <v-icon :icon="mdiNoteTextOutline" size="18" class="sec-head__icon" />
+      <h3 class="text-h6">Notatki</h3>
+    </div>
 
-    <v-card-text v-if="user && !userNote && !isEditing">
-      <div>
-        <p class="text-body-1 mb-4">
-          Wiesz więcej na temat {{ subject }}? Podziel się dodatkowymi
-          informacjami i dodaj linki do źródeł. Możesz też zgłosić poprawkę albo
-          brakujące dane. Twoje notatki będą publiczne - w ten sposób pomożesz
-          innym w znajdowaniu powiązań.
-        </p>
-      </div>
-    </v-card-text>
+    <p v-if="user && !userNote && !isEditing" class="k-lead">
+      Wiesz więcej na temat {{ subject }}? Podziel się dodatkowymi informacjami
+      i dodaj linki do źródeł. Możesz też zgłosić poprawkę albo brakujące dane.
+      Twoje notatki będą publiczne - w ten sposób pomożesz innym w znajdowaniu
+      powiązań.
+    </p>
 
-    <v-card-text v-if="!user && otherSources.length > 0">
-      <div>
-        <p class="text-body-1 mb-4">
-          Zaloguj się, aby dodać własną notatkę i pomóc innym w znajdowaniu
-          powiązań.
-        </p>
-      </div>
-    </v-card-text>
+    <p v-if="!user && otherSources.length > 0" class="k-lead">
+      Zaloguj się, aby dodać własną notatkę i pomóc innym w znajdowaniu
+      powiązań.
+    </p>
 
-    <v-card-text>
+    <div>
       <v-row>
         <v-col
           v-for="(source, index) in otherSources"
@@ -82,12 +84,13 @@
           >Zapisz</v-btn
         >
       </div>
-    </v-card-text>
-  </v-card>
+    </div>
+  </section>
 </template>
 
 <script setup lang="ts">
 import { ref, toRaw, computed } from "vue";
+import { mdiNoteTextOutline } from "@mdi/js";
 import { useNotes, noteKindConfig } from "~/composables/notes";
 import { useAuthState } from "~/composables/auth";
 import type {
@@ -242,3 +245,27 @@ const save = async () => {
 
 // Automatically show editor if not created yet, wait, we have "startEditing" button for that
 </script>
+
+<style scoped>
+/* Kept in step with the other sections on an entity page - `sec-head` and
+   `k-lead` are the same rules `succession/PersonChanges.vue` carries, and a
+   note heading that did not match one sitting directly above it was the whole
+   complaint. */
+.sec-head {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.sec-head__icon {
+  color: rgba(var(--v-theme-on-surface), 0.38);
+}
+
+.k-lead {
+  color: rgba(var(--v-theme-on-surface), 0.6);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  margin: 4px 0 12px;
+  max-width: 78ch;
+}
+</style>
