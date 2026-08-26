@@ -23,10 +23,21 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const seoUrl = generateEntityUrl(destination, id, node.name);
   if (to.path === seoUrl) return;
 
+  // A push, not a replace, and that is what makes the back button work.
+  //
+  // The client reaches this url by following a link - from the graph, from a
+  // relation card, from the revision queue - so a `router.push` is already in
+  // flight when the guard runs. A guard redirect resolves before that push is
+  // committed, so at this moment the entry `replace` would overwrite is not
+  // the /entity/ url that is on its way in, it is the page the reader came
+  // from. Replacing it took the way back out of the history: double-clicking a
+  // company in a person's graph landed on the company and then back had
+  // nowhere to go.
+  //
+  // Pushing leaves no stray /entity/ entry behind either - the navigation this
+  // one supersedes never became one.
   return navigateTo(
     seoUrl,
-    import.meta.server
-      ? { redirectCode: SLUG_REDIRECT_CODE }
-      : { replace: true },
+    import.meta.server ? { redirectCode: SLUG_REDIRECT_CODE } : undefined,
   );
 });
