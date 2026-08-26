@@ -48,6 +48,24 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
  * before the list could be read at all. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "postep-weryfikacji-po-zalogowaniu",
+    title: "Postęp weryfikacji tylko dla zalogowanych",
+    description:
+      "Pasek „Postęp weryfikacji” nad tabelą na Eksploruj pokazuje się " +
+      "dopiero po zalogowaniu. Mówi, ile wpisów zostało sprawdzonych, i " +
+      "prowadzi do ekranu, na którym się je sprawdza - czyli do dwóch " +
+      "rzeczy, których niezalogowany czytelnik i tak nie zrobi. Na telefonie " +
+      "zabierał przy tym większość miejsca nad pierwszym wierszem tabeli.",
+    steps: [
+      "Wyloguj się i wejdź na /eksploruj/tabela. Nad tabelą nie ma paska „Postęp weryfikacji” - po filtrach od razu idzie tabela.",
+      "To samo na wąskim ekranie: pierwszy wiersz tabeli ma być widoczny bez przewijania.",
+      "Zaloguj się i odśwież. Pasek ma wrócić, razem z przyciskiem „Pomóż sprawdzać”.",
+      "Wejdź na /eksploruj/nowe (tylko dla zalogowanych). Pasek ma tam być jak wcześniej.",
+    ],
+    link: "/eksploruj/tabela",
+    area: "public",
+  },
+  {
     id: "wstecz-po-wejsciu-we-wpis",
     title: "Przycisk „wstecz” wraca tam, skąd się przyszło",
     description:

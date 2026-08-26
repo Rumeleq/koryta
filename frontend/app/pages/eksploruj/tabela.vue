@@ -68,7 +68,13 @@
         :show-visibility="!!user"
       />
 
-      <ExploreProgressBar :query="apiQuery" class="mb-4" />
+      <!-- How much of the base has been checked, and a link to go and check
+           some of it, is a progress report to the people doing the checking.
+           A reader who is not logged in cannot act on either, and on a phone
+           the bar and its legend cost most of the space above the first row -
+           the thing they came for. `/eksploruj/nowe` carries the same bar for
+           the people it is written for, behind the auth middleware. -->
+      <ExploreProgressBar v-if="user" :query="apiQuery" class="mb-4" />
 
       <v-card class="table-card">
         <ExploreTable
