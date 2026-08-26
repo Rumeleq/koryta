@@ -115,7 +115,11 @@ import { useCurrentUser } from "vuefire";
 import { authFetch } from "~/composables/auth";
 import { useDomainIcon } from "~/composables/useDomainIcon";
 import { polishCounting } from "~/composables/polish";
-import { parseEntityUrlSlug, generateEntityUrl } from "~/composables/slugs";
+import {
+  parseEntityUrlSlug,
+  generateEntityUrl,
+  SLUG_REDIRECT_CODE,
+} from "~/composables/slugs";
 import { entityDescription, SOCIAL_CARD } from "~/composables/entitySeo";
 import type { TopicArticle, TopicDetail } from "~~/server/api/topics/[id].get";
 
@@ -160,7 +164,7 @@ if (status.value === "success" && topic.value?.name) {
   const expected = generateEntityUrl("topic", topicId, topic.value.name);
   if (route.path !== expected) {
     if (import.meta.server) {
-      await navigateTo(expected, { redirectCode: 301 });
+      await navigateTo(expected, { redirectCode: SLUG_REDIRECT_CODE });
     } else {
       await navigateTo(expected, { replace: true });
     }

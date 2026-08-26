@@ -10,6 +10,27 @@ export const seoTypes: readonly SeoType[] = [
   "temat",
 ] as const;
 
+/** The status a slug-healing redirect goes out with on the server.
+ *
+ * 302, deliberately, and not 301. Every one of these redirects says "the id in
+ * this url resolves, but the slug in front of it is not the current canonical
+ * one" - and what is canonical is derived from the node's name and from which
+ * types have a page of their own, both of which change. A 301 is cached by the
+ * browser for the life of the profile and is never revalidated, so each such
+ * change would be frozen into every browser that saw the old answer, with no
+ * deploy able to reach it.
+ *
+ * That is not hypothetical: companies were forwarded to `/eksploruj/tabela`
+ * between 2026-05-31 and 2026-08-26, and after the page came back an
+ * `/instytucja/...` url still went to the table in any browser that had been
+ * there before - the request never left the machine.
+ *
+ * The cost is the search-engine signal a 301 carries and a 302 does not. It is
+ * worth paying: `_sitemap-urls.ts` advertises the canonical url directly, so a
+ * crawler is told the right address without having to be redirected to it.
+ */
+export const SLUG_REDIRECT_CODE = 302;
+
 export function createSlug(name: string): string {
   return name
     .normalize("NFD")

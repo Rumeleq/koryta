@@ -17,6 +17,7 @@ import {
   slugPrefixToNodeType,
   generateNodeUrl,
   seoTypes,
+  SLUG_REDIRECT_CODE,
   type SeoType,
 } from "~/composables/slugs";
 import type { NodeType, Node } from "~~/shared/model";
@@ -38,11 +39,11 @@ const { data, status } = await authFetch<{ node: Node }>(`/api/nodes/${id}`);
 if (status.value === "success" && data.value?.node?.name) {
   const expectedUrl = generateNodeUrl(data.value.node);
   // A node type with no canonical url of its own stays where it is. Without the
-  // guard the undefined fell through to navigateTo and 301'd the visitor to the
-  // site root, which is where every article link in the sitemap used to land.
+  // guard the undefined fell through to navigateTo and redirected the visitor to
+  // the site root, which is where every article link in the sitemap used to land.
   if (expectedUrl && route.path !== expectedUrl) {
     if (import.meta.server) {
-      await navigateTo(expectedUrl, { redirectCode: 301 });
+      await navigateTo(expectedUrl, { redirectCode: SLUG_REDIRECT_CODE });
     } else {
       await navigateTo(expectedUrl, { replace: true });
     }
