@@ -190,6 +190,18 @@ const { toCheck } = useStats();
   max-width: 400px;
 }
 
+/* Two thirds of the line on a desktop, which is where the 8/12 column this
+   row replaced used to end. Capped at 400px the search stopped a third of the
+   way across, and "Działaj z nami" - which is meant to read as its companion -
+   started near the middle of an otherwise empty line, looking like a control
+   that had come loose. The proportion is what matters here rather than a pixel
+   width: the section around it is capped at 1200px and centred. */
+@media (min-width: 960px) {
+  .home-actions :deep(.v-input) {
+    max-width: 66%;
+  }
+}
+
 .scroll-topic {
   scroll-margin-top: 100px; /* Adjust this value based on header height */
   /* For mobile you might want less, or use a media query */

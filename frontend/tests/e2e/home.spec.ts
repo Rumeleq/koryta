@@ -48,4 +48,30 @@ test.describe("Home", () => {
       await page.waitForURL(/\/pomoc/, { timeout: 2000 });
     }).toPass({ timeout: 30_000 });
   });
+
+  test("the search fills most of its line on a desktop", async ({ page }) => {
+    // Measured off the DOM rather than left to the page screenshot: the field
+    // is one band across a tall fullPage capture, so widening it by 300px sits
+    // under the 1% maxDiffPixelRatio the visual project allows and the
+    // baseline goes on passing either way.
+    //
+    // The number this guards is a proportion, not a width. Capped at 400px the
+    // search stopped a third of the way across and "Działaj z nami", which the
+    // row exists to keep beside it, started near the middle of an empty line,
+    // reading as a control that had come loose.
+    const field = page.locator(".home-actions .v-input").first();
+    await expect(field).toBeVisible({ timeout: 30_000 });
+
+    const ratio = await field.evaluate((el) => {
+      const line = el.closest(".home-actions")!;
+      const style = getComputedStyle(line);
+      const inner =
+        line.getBoundingClientRect().width -
+        parseFloat(style.paddingLeft) -
+        parseFloat(style.paddingRight);
+      return el.getBoundingClientRect().width / inner;
+    });
+
+    expect(ratio).toBeGreaterThan(0.5);
+  });
 });
