@@ -20,6 +20,17 @@ export const companyRequestSchema = z.object({
   teryt: z.string().optional(),
   /** PKD codes from KRS, e.g. "86.10.Z" */
   activity: z.array(z.string()).optional(),
+  /** Which sectors the company belongs to, decided by the pipelines in
+   * `data/pipelines/src/entities/company_categories.py`.
+   *
+   * Not validated against `companyCategoryValues`: the pipelines and the site
+   * deploy separately, so a payload naming a category this build has not heard
+   * of yet is stored rather than rejected - the filter simply does not offer it
+   * until `shared/companyCategories.ts` catches up. An empty array is a real
+   * answer, meaning the pipelines looked and the company is in no sector.
+   * Absent means they did not compute one at all, and the stored set is left
+   * alone. */
+  categories: z.array(z.string()).optional(),
   /** Whether the public sector owns the company, as far as KRS shows — not
    * whether it is publicly traded. Only `true` is an assertion, see
    * `Company.isPublic`. */
@@ -32,6 +43,7 @@ export type CompanyRequest = {
   owners?: string[];
   teryt?: string;
   activity?: string[];
+  categories?: string[];
   is_public?: boolean;
 };
 

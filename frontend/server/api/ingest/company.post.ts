@@ -9,7 +9,6 @@ import {
   companyRequestSchema,
   type CompanyRequest as Request,
 } from "#shared/api";
-import { categoriesFromActivity } from "#shared/companyCategories";
 import { pageIsPublic, type EdgeType } from "#shared/model";
 import { edgeDocumentId, findEdge } from "~~/server/utils/edges";
 
@@ -38,7 +37,21 @@ export default defineEventHandler(async (event) => {
   };
   if (body.activity && body.activity.length > 0) {
     revisionData.activity = body.activity;
-    revisionData.categories = categoriesFromActivity(body.activity);
+  }
+  // Worked out by the pipelines rather than here - see
+  // `data/pipelines/src/entities/company_categories.py`. An empty array is a
+  // real answer ("this company is in no sector we track") and is written; an
+  // absent one means the payload did not compute categories at all and leaves
+  // whatever is stored alone.
+  //
+  // A human answer wins permanently, on the same terms as `isPublic` below:
+  // the pipelines see PKD codes, and a code is a claim about activity, not
+  // about a sector.
+  if (
+    body.categories !== undefined &&
+    revisionData.categoriesSource !== "manual"
+  ) {
+    revisionData.categories = body.categories;
   }
   // A human answer wins. KRS cannot see who owns a spółka akcyjna, so the
   // scrapers' `false` is "no evidence" rather than "privately owned", and

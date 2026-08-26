@@ -319,6 +319,150 @@ describe("api/ingest/company", () => {
     );
   });
 
+  it("stores the categories the pipelines worked out", async () => {
+    // The site used to derive these from the PKD codes below. It does not any
+    // more - a register code says what a company does rather than what sector
+    // it is in - so the answer arrives already decided, from
+    // `data/pipelines/src/entities/company_categories.py`.
+    mockReadBody.mockResolvedValue({
+      krs: "0000076705",
+      name: "PKP Szybka Kolej Miejska w Trójmieście",
+      activity: ["49.12.Z", "49.31.Z"],
+      categories: ["koleje"],
+    });
+    mockGet.mockResolvedValue({ empty: true, docs: [] });
+
+    await handler({} as any);
+
+    expect(createRevisionTransaction).toHaveBeenNthCalledWith(
+      1,
+      mockDb,
+      expect.anything(),
+      { uid: "test-user-id" },
+      expect.anything(),
+      {
+        name: "PKP Szybka Kolej Miejska w Trójmieście",
+        type: "place",
+        krsNumber: "0000076705",
+        activity: ["49.12.Z", "49.31.Z"],
+        categories: ["koleje"],
+      },
+      expect.objectContaining({ automatic: true }),
+    );
+  });
+
+  it("stores an empty category set, which is an answer and not a gap", async () => {
+    // Instytut Badawczy Dróg i Mostów carries 42.12 among ten construction
+    // codes. The pipelines decided it is in no sector, and that has to reach
+    // the node - otherwise a company can never lose a category it was given.
+    mockReadBody.mockResolvedValue({
+      krs: "0000158240",
+      name: "Instytut Badawczy Dróg i Mostów",
+      activity: ["72.19.Z", "42.12.Z"],
+      categories: [],
+    });
+    const existingRef = { id: "existing-id" };
+    mockGet.mockResolvedValue({
+      empty: false,
+      docs: [
+        {
+          ref: existingRef,
+          data: () => ({ categories: ["koleje"], published: true }),
+        },
+      ],
+    });
+
+    await handler({} as any);
+
+    expect(createRevisionTransaction).toHaveBeenNthCalledWith(
+      1,
+      mockDb,
+      expect.anything(),
+      { uid: "test-user-id" },
+      existingRef,
+      expect.objectContaining({ categories: [] }),
+      expect.objectContaining({ automatic: true }),
+    );
+  });
+
+  it("leaves the stored categories alone when the payload states none", async () => {
+    // A payload from a pipeline that does not compute categories at all - the
+    // person uploader creating a missing employer, say - must not be read as
+    // "this company belongs to nothing".
+    mockReadBody.mockResolvedValue({
+      krs: "0000076705",
+      name: "PKP Szybka Kolej Miejska w Trójmieście",
+      activity: ["49.12.Z"],
+    });
+    const existingRef = { id: "existing-id" };
+    mockGet.mockResolvedValue({
+      empty: false,
+      docs: [
+        {
+          ref: existingRef,
+          data: () => ({ categories: ["koleje"], published: true }),
+        },
+      ],
+    });
+
+    await handler({} as any);
+
+    expect(createRevisionTransaction).toHaveBeenNthCalledWith(
+      1,
+      mockDb,
+      expect.anything(),
+      { uid: "test-user-id" },
+      existingRef,
+      expect.objectContaining({ categories: ["koleje"] }),
+      expect.objectContaining({ automatic: true }),
+    );
+  });
+
+  it("should leave manually set categories alone", async () => {
+    // The same contract `isPublic` has: the pipelines see PKD codes, a reader
+    // can see the company. Whoever answered on the page outranks them, and an
+    // empty answer is as binding as a full one.
+    mockReadBody.mockResolvedValue({
+      krs: "0000073875",
+      name: "Kopalnia Wapienia Czatkowice",
+      activity: ["08.11.Z", "49.20.Z"],
+      categories: ["koleje"],
+    });
+    const existingRef = { id: "existing-id" };
+    mockGet.mockResolvedValue({
+      empty: false,
+      docs: [
+        {
+          ref: existingRef,
+          data: () => ({
+            categories: [],
+            categoriesSource: "manual",
+            published: true,
+          }),
+        },
+      ],
+    });
+
+    await handler({} as any);
+
+    expect(createRevisionTransaction).toHaveBeenNthCalledWith(
+      1,
+      mockDb,
+      expect.anything(),
+      { uid: "test-user-id" },
+      existingRef,
+      {
+        name: "Kopalnia Wapienia Czatkowice",
+        type: "place",
+        krsNumber: "0000073875",
+        activity: ["08.11.Z", "49.20.Z"],
+        categories: [],
+        categoriesSource: "manual",
+      },
+      expect.objectContaining({ automatic: true }),
+    );
+  });
+
   it("should create edges for owned companies", async () => {
     mockReadBody.mockResolvedValue({
       krs: "12345",

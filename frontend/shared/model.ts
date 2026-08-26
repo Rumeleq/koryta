@@ -247,7 +247,17 @@ export interface Company extends Omit<Node, "type"> {
   location?: string;
   /** PKD codes from KRS, e.g. "86.10.Z" */
   activity?: string[];
-  /** Categories derived from PKD codes, see shared/companyCategories.ts */
+  /** Which sectors the company is filed under, e.g. `["koleje"]`.
+   *
+   * What the category filter on /eksploruj matches with `array-contains`. The
+   * pipelines work it out from the KRS entry - see
+   * `data/pipelines/src/entities/company_categories.py` - and the site names
+   * them in `shared/companyCategories.ts`.
+   *
+   * Empty and absent differ. Empty is an answer: the company belongs to no
+   * sector the site tracks. Absent means nobody has decided, which is the case
+   * for every company the pipelines have not reached since this became a
+   * field of its own. */
   categories?: string[];
   /** Whether the place is owned or run by the public sector.
    *
@@ -267,6 +277,28 @@ export interface Company extends Omit<Node, "type"> {
    * Absent means the scrapers wrote it, which is the case for every value
    * predating the edit form. */
   isPublicSource?: "manual";
+}
+
+/** A stored array field, however Firestore happens to be holding it.
+ *
+ * `sanitizeFirestoreData` leaves a top-level array as an array, but it rewrote
+ * every array it saw until 2026-07-28 and documents written before then still
+ * carry `{"0": "PiS"}` where an array belongs - which is also the shape a
+ * nested array is legitimately stored in. `array-contains` matches nothing
+ * against a map and does not raise, so a read that assumes the array shape
+ * silently loses the value rather than failing. Every read of `parties`,
+ * `activity`, `categories` and `references` goes through here.
+ *
+ * `scripts/migrate/unwrap-array-fields.ts` repairs the documents; this is what
+ * keeps reads working in the meantime, on both sides of the wire.
+ */
+export function asArray<T>(
+  value: T[] | Record<string, T> | undefined | null,
+): T[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === "object") return Object.values(value);
+  return [];
 }
 
 /** Whether anything is actually known about a place's ownership.
