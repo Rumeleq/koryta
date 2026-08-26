@@ -42,6 +42,33 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
 /** Newest first. Prepend, never insert in the middle. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "kategorie-firm-edytowalne",
+    date: "2026-08-26",
+    title: "Kategorie firmy można poprawić",
+    description:
+      "Kategoria firmy („Szpitale”, „Wodociągi i kanalizacja”, „Koleje”) " +
+      "przestała być tylko wyliczana z kodów PKD i jest teraz zwykłym polem " +
+      "wpisu: widać ją na stronie instytucji, jest w formularzu zmiany, " +
+      "przechodzi przez rewizje i ma swoją historię. Kod PKD mówi, czym " +
+      "firma się zajmuje, a nie do jakiej branży należy - kopalnia z własną " +
+      "bocznicą ma kod kolejowy - więc wyliczenie bywa błędne i musi dać się " +
+      "poprawić z poziomu strony. Jeśli ktoś ustawi kategorie ręcznie, " +
+      "kolejny import spółek już ich nie nadpisze; puste zaznaczenie też " +
+      "jest odpowiedzią i też jest chronione.",
+    steps: [
+      "Wejdź na stronę instytucji, która ma kategorię (np. spółka kolejowa). Obok „Instytucja publiczna” ma być szary znacznik z nazwą kategorii.",
+      "Kliknij ten znacznik - ma przenieść na /eksploruj/tabela z ustawionym filtrem tej kategorii.",
+      "Kliknij „Zaproponuj zmianę”. Pod pytaniem o właściciela ma być pole „Kategorie” z trzema pozycjami, wstępnie zaznaczone tym, co jest zapisane.",
+      "Zmień zaznaczenie i wyślij. W podglądzie rewizji ma się pokazać wiersz „kategorie” ze starą i nową wartością po polsku, a nie „categories”.",
+      "Wyczyść zaznaczenie do zera i wyślij. To też ma być rewizja ze zmianą „kategorie”, a nie „brak zmian”.",
+      "Zatwierdź rewizję w /admin/rewizje i sprawdź stronę instytucji oraz filtr na /eksploruj/tabela. Filtr czyta listę firm z godzinnego cache - jeśli nie widać od razu, odczekaj lub odśwież z `?latest=true`.",
+      "Sprawdź, że w podglądzie rewizji NIE ma osobnego wiersza „categoriesSource” - to pole techniczne.",
+      "Na stronie osoby to samo pole nie ma się pojawiać: kategorie ma tylko instytucja.",
+    ],
+    link: "/eksploruj/tabela",
+    area: "public",
+  },
+  {
     id: "karta-firmy-prowadzi-na-strone-spolki",
     date: "2026-08-26",
     title: "Karta firmy na Eksploruj prowadzi na stronę spółki",
@@ -112,16 +139,22 @@ export const QA_ITEMS: QaItem[] = [
     description:
       "Do filtra kategorii na Eksploruj doszła trzecia pozycja - „Koleje” - " +
       "obok szpitali oraz wodociągów i kanalizacji. Łapie przewoźników " +
-      "kolejowych (pasażerskich i towarowych) oraz spółki od infrastruktury " +
-      "torowej, po kodach PKD 49.10, 49.20 i 42.12. Kategorie wyliczane są " +
-      "przy imporcie spółki, więc firma dostaje etykietę „Koleje” dopiero po " +
-      "kolejnym przejściu importu spółek.",
+      "kolejowych (pasażerskich i towarowych), spółki od infrastruktury " +
+      "torowej i producentów taboru, a do tego imiennie te spółki grupy PKP, " +
+      "których po kodach PKD nie da się rozpoznać - i imiennie odsiewa firmy " +
+      "drogowe czy kopalnie, które mają kod kolejowy tylko dlatego, że mają " +
+      "własną bocznicę. Kategorie wylicza pipeline przy imporcie spółki, " +
+      "więc firma dostaje etykietę „Koleje” dopiero po kolejnym przejściu " +
+      "importu spółek.",
     steps: [
       "Wejdź na /eksploruj/tabela i rozwiń filtry. Lista „Kategoria” ma mieć trzy pozycje: Szpitale, Wodociągi i kanalizacja, Koleje.",
       "Wybierz „Koleje” - w tabeli mają zostać tylko osoby powiązane ze spółkami kolejowymi (np. PKP), a adres ma dostać `?category=koleje`.",
+      "Sprawdź, że są tam też przewoźnicy z nowszym PKD: PKP Szybka Kolej Miejska w Trójmieście, Łódzka Kolej Aglomeracyjna, Koleje Dolnośląskie, Koleje Wielkopolskie.",
+      "I spółki bez kolejowego PKD: Polskie Koleje Państwowe, PKP Informatyka, PKP Cargotabor, PGE Energetyka Kolejowa Operator.",
+      "A nie ma być: Instytutu Badawczego Dróg i Mostów, Kopalni Wapienia „Czatkowice”, Orlen Aviation ani Polskich Kolei Linowych.",
       "Odśwież stronę z tym adresem: filtr ma się odtworzyć z linku, a nie wrócić do „wszystkie”.",
       "To samo sprawdź na /eksploruj/nowe - ta sama lista kategorii, ta sama zawartość po wybraniu „Koleje”.",
-      "Jeśli lista wyników jest pusta, to znaczy, że import spółek nie przeliczył jeszcze kategorii - sprawdź na spółce, która ma w danych PKD 49.10/49.20/42.12.",
+      "Jeśli lista wyników jest pusta, to znaczy, że import spółek nie przeliczył jeszcze kategorii.",
     ],
     link: "/eksploruj/tabela",
     area: "public",

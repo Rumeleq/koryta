@@ -249,8 +249,9 @@ export interface Company extends Omit<Node, "type"> {
   activity?: string[];
   /** Which sectors the company is filed under, e.g. `["koleje"]`.
    *
-   * What the category filter on /eksploruj matches with `array-contains`. The
-   * pipelines work it out from the KRS entry - see
+   * What the category filter on /eksploruj matches with `array-contains`, and
+   * a node field like any other: revisioned, and editable from the page. The
+   * pipelines work a default out from the KRS entry - see
    * `data/pipelines/src/entities/company_categories.py` - and the site names
    * them in `shared/companyCategories.ts`.
    *
@@ -259,6 +260,12 @@ export interface Company extends Omit<Node, "type"> {
    * for every company the pipelines have not reached since this became a
    * field of its own. */
   categories?: string[];
+  /** Where `categories` came from, so an ingest does not overwrite a human.
+   *
+   * Absent means the pipelines wrote it, which is the case for every value
+   * predating the edit form. Set by `/api/revisions/create` whenever a
+   * proposal states the field, exactly as `isPublicSource` is. */
+  categoriesSource?: "manual";
   /** Whether the place is owned or run by the public sector.
    *
    * Only `true` is an assertion. `false` and absent both mean *not confirmed*,

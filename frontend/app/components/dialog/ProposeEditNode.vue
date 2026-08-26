@@ -125,6 +125,17 @@
                 persistent-hint
                 class="mb-2"
               />
+              <v-select
+                v-model="editData.categories"
+                :items="categoryOptions"
+                label="Kategorie"
+                hint="Branża, po której można filtrować na Eksploruj. Wyliczamy ją z kodów PKD, a te mówią, czym firma się zajmuje, a nie do jakiej branży należy - kopalnia z własną bocznicą ma kod kolejowy. Jeśli źle trafiliśmy, popraw."
+                persistent-hint
+                multiple
+                chips
+                clearable
+                class="mb-2"
+              />
             </template>
             <template v-if="type === 'topic'">
               <v-textarea
@@ -187,7 +198,11 @@ import { mdiAccountPlusOutline, mdiPencilOutline } from "@mdi/js";
 import { authRequest } from "@/composables/auth";
 import { generateEntityUrl } from "~/composables/slugs";
 import { parties } from "~~/shared/misc";
-import { publicSectorKnown, type NodeType } from "~~/shared/model";
+import { asArray, publicSectorKnown, type NodeType } from "~~/shared/model";
+import {
+  companyCategories,
+  isKnownCategory,
+} from "~~/shared/companyCategories";
 import { isValidNip, isValidRegon } from "~~/shared/identifiers";
 
 const props = defineProps<{
@@ -257,6 +272,14 @@ const ownershipOptions = [
   { title: "Podmiot prywatny", value: false },
 ];
 
+/** The sectors the filter on /eksploruj offers, which is the whole of what may
+ * be proposed: a value off this list would file the company under a category
+ * nothing can ever filter on. */
+const categoryOptions = companyCategories.map((category) => ({
+  title: category.title,
+  value: category.value,
+}));
+
 const editData = reactive({
   name: "",
   content: "",
@@ -268,6 +291,7 @@ const editData = reactive({
   regonNumber: "",
   nipNumber: "",
   isPublic: null as boolean | null,
+  categories: [] as string[],
   ktomaco: "",
   sourceURL: "",
   shortName: "",
@@ -306,6 +330,14 @@ watch(dialog, (val) => {
   // A scraped `false` prefills as "nie wiem": it means KRS had nothing to say,
   // so offering it back as an answer would launder a gap into a fact.
   editData.isPublic = publicSectorKnown(entity) ? !!entity.isPublic : null;
+  // Read through `asArray` because a node written before 2026-07-28 stores its
+  // arrays as `{"0": "koleje"}` maps. A stored value the site no longer offers
+  // is dropped rather than shown, since the select cannot render an option it
+  // has no entry for - and submitting the form would then silently delete it
+  // either way, so dropping it visibly is the honest version.
+  editData.categories = asArray<string>(entity.categories).filter(
+    isKnownCategory,
+  );
   editData.ktomaco = entity.ktomaco || "";
   editData.sourceURL = entity.sourceURL || "";
   editData.shortName = entity.shortName || "";
@@ -352,6 +384,12 @@ async function submit() {
       if (editData.isPublic !== null) {
         body.isPublic = editData.isPublic;
       }
+      // Always sent, unlike the ownership answer: an empty selection is a real
+      // claim - "this company is in none of these sectors" - and it is the only
+      // way to take a category off a company the pipelines got wrong. Stating
+      // it is what marks the field `categoriesSource: "manual"`, so a
+      // deliberately empty set stays empty through the next upload.
+      body.categories = [...editData.categories];
     }
 
     if (type.value === "article") {

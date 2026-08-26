@@ -12,6 +12,7 @@ import {
   normalizeRegon,
 } from "./identifiers";
 import { z } from "zod";
+import { companyCategoryValues } from "./companyCategories";
 
 export const companyRequestSchema = z.object({
   krs: z.string(),
@@ -202,6 +203,16 @@ function identifierField(
  * list the shareholders of a spółka akcyjna, and an institution outside KRS has
  * no entry to read at all. Whoever submits an answer is recorded in
  * `isPublicSource`, which is what stops a later ingest from overwriting it.
+ *
+ * `categories` is here on the same terms and records `categoriesSource`. The
+ * pipelines work a default out from the KRS entry, but a register code is a
+ * claim about activity rather than about a sector, and the cases it gets wrong
+ * are ones a reader can see and the data cannot - so the answer has to be
+ * correctable from the page. Unlike the ingest payload's `categories`, this is
+ * checked against the list the site offers: a proposal is typed by a person,
+ * and a value off the list would file the company under a category no filter
+ * can ever reach. An empty array is a legitimate answer meaning "none of
+ * these", which is why the field is not `.min(1)`.
  */
 export const companyEditSchema = z.object({
   name: z.string().min(1, "Nazwa jest wymagana"),
@@ -210,10 +221,23 @@ export const companyEditSchema = z.object({
   regonNumber: identifierField(normalizeRegon, isValidRegon, "REGON"),
   nipNumber: identifierField(normalizeNip, isValidNip, "NIP"),
   isPublic: z.boolean().optional(),
+  categories: z
+    .array(
+      z.enum(companyCategoryValues, {
+        message: "Nieznana kategoria",
+      }),
+    )
+    .optional(),
 }) satisfies z.ZodType<
   Pick<
     Company,
-    "name" | "content" | "krsNumber" | "regonNumber" | "nipNumber" | "isPublic"
+    | "name"
+    | "content"
+    | "krsNumber"
+    | "regonNumber"
+    | "nipNumber"
+    | "isPublic"
+    | "categories"
   >
 >;
 

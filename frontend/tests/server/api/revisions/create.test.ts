@@ -96,6 +96,114 @@ describe("api/revisions/create, place edits", () => {
     expect(writtenRevision().data).not.toHaveProperty("isPublicSource");
   });
 
+  it("records that a person set the categories, so an ingest leaves them", async () => {
+    // The pipelines derive categories from PKD codes, and a code says what a
+    // company does rather than what sector it is in. Whoever corrected it on
+    // the page outranks them, and the marker is what `ingest/company` checks.
+    vi.mocked(baseNodeFields).mockResolvedValueOnce({
+      type: "place",
+      name: "PKP Informatyka",
+      categories: [],
+    });
+    mockReadBody.mockResolvedValue({
+      node_id: "pkp-informatyka",
+      name: "PKP Informatyka",
+      categories: ["koleje"],
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await handler({} as any);
+
+    expect(writtenRevision().data).toMatchObject({
+      type: "place",
+      categories: ["koleje"],
+      categoriesSource: "manual",
+    });
+  });
+
+  it("pins an emptied category set as firmly as a filled one", async () => {
+    // Clearing is the only way to correct a company the pipelines filed under
+    // the wrong sector - Kopalnia Wapienia Czatkowice declares rail freight
+    // because it owns a siding - so an empty array has to set the marker too.
+    vi.mocked(baseNodeFields).mockResolvedValueOnce({
+      type: "place",
+      name: "Kopalnia Wapienia Czatkowice",
+      categories: ["koleje"],
+    });
+    mockReadBody.mockResolvedValue({
+      node_id: "czatkowice",
+      name: "Kopalnia Wapienia Czatkowice",
+      categories: [],
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await handler({} as any);
+
+    expect(writtenRevision().data).toMatchObject({
+      categories: [],
+      categoriesSource: "manual",
+    });
+  });
+
+  it("does not claim a person set categories they never mentioned", async () => {
+    vi.mocked(baseNodeFields).mockResolvedValueOnce({
+      type: "place",
+      name: "Szpital Powiatowy",
+      categories: ["szpitale"],
+    });
+    mockReadBody.mockResolvedValue({
+      node_id: "szpital",
+      name: "Szpital Powiatowy w Wołowie",
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await handler({} as any);
+
+    // The stored set is still carried through - a revision is a whole snapshot
+    // - but nothing claims a person decided it.
+    expect(writtenRevision().data).toMatchObject({ categories: ["szpitale"] });
+    expect(writtenRevision().data).not.toHaveProperty("categoriesSource");
+  });
+
+  it("rejects a category the site does not offer", async () => {
+    vi.mocked(baseNodeFields).mockResolvedValueOnce({
+      type: "place",
+      name: "Port Lotniczy Poznań-Ławica",
+    });
+    mockReadBody.mockResolvedValue({
+      node_id: "lawica",
+      name: "Port Lotniczy Poznań-Ławica",
+      categories: ["lotniska"],
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect(handler({} as any)).rejects.toMatchObject({
+      statusCode: 400,
+      message: "Nieznana kategoria",
+    });
+    expect(mockCommit).not.toHaveBeenCalled();
+  });
+
+  it("does not let a person edit smuggle in a category", async () => {
+    // `personEditSchema` has no `categories`, and parsing against the schema is
+    // what strips it - the same guard that stops `revision_id` being smuggled.
+    vi.mocked(baseNodeFields).mockResolvedValueOnce({
+      type: "person",
+      name: "Jan Kowalski",
+    });
+    mockReadBody.mockResolvedValue({
+      node_id: "jan",
+      name: "Jan Kowalski",
+      categories: ["koleje"],
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await handler({} as any);
+
+    expect(writtenRevision().data).not.toHaveProperty("categories");
+    expect(writtenRevision().data).not.toHaveProperty("categoriesSource");
+  });
+
   it("does not let a person edit smuggle in an ownership flag", async () => {
     vi.mocked(baseNodeFields).mockResolvedValueOnce({
       type: "person",

@@ -6,6 +6,7 @@ import {
   categoryTitle,
   isKnownCategory,
 } from "../../shared/companyCategories";
+import { companyEditSchema } from "../../shared/api";
 
 /** This module is the site's *vocabulary* of sectors, nothing more.
  *
@@ -91,5 +92,58 @@ describe("isKnownCategory", () => {
     expect(isKnownCategory("lotniska")).toBe(false);
     expect(isKnownCategory("")).toBe(false);
     expect(isKnownCategory("Koleje")).toBe(false);
+  });
+});
+
+describe("companyEditSchema.categories", () => {
+  it("accepts a proposal naming known categories", () => {
+    const parsed = companyEditSchema.safeParse({
+      name: "PKP Szybka Kolej Miejska w Trójmieście",
+      categories: ["koleje"],
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.categories).toEqual(["koleje"]);
+  });
+
+  it("accepts an empty selection, which means 'none of these'", () => {
+    // Clearing the categories is the only way to correct a company the
+    // pipelines filed under the wrong sector, so it has to be proposable.
+    const parsed = companyEditSchema.safeParse({
+      name: "Instytut Badawczy Dróg i Mostów",
+      categories: [],
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.categories).toEqual([]);
+  });
+
+  it("leaves the field absent when the proposal says nothing about it", () => {
+    const parsed = companyEditSchema.safeParse({ name: "Szpital Powiatowy" });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data && "categories" in parsed.data).toBe(false);
+  });
+
+  it("rejects a category no filter could ever reach", () => {
+    const parsed = companyEditSchema.safeParse({
+      name: "Port Lotniczy Poznań-Ławica",
+      categories: ["lotniska"],
+    });
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.issues[0]?.message).toBe("Nieznana kategoria");
+  });
+
+  it("rejects a typo among otherwise valid categories", () => {
+    const parsed = companyEditSchema.safeParse({
+      name: "Coś",
+      categories: ["koleje", "wodociagii"],
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("accepts every value the site offers", () => {
+    const parsed = companyEditSchema.safeParse({
+      name: "Wszystko naraz",
+      categories: [...companyCategoryValues],
+    });
+    expect(parsed.success).toBe(true);
   });
 });

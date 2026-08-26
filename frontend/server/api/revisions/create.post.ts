@@ -70,6 +70,17 @@ export default defineEventHandler(async (event) => {
     if (dataFields.isPublic !== undefined) {
       dataFields.isPublicSource = "manual";
     }
+
+    // Categories work the same way, and for the same reason: the pipelines
+    // derive a default from the company's KRS entry, but a register code says
+    // what a company does rather than what sector it is in - a quarry declares
+    // rail freight because it owns a siding - so a reader who can see the
+    // difference outranks them. Checked against `undefined` rather than for
+    // truthiness: an empty array is a person saying "none of these", and it
+    // has to pin the field just as firmly as a non-empty one.
+    if (dataFields.categories !== undefined) {
+      dataFields.categoriesSource = "manual";
+    }
   }
 
   // User-submitted fields override the base node fields
