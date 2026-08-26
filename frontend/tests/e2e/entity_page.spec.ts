@@ -83,4 +83,29 @@ test.describe("Entity page", () => {
       timeout: 30_000,
     });
   });
+
+  test("going back from a followed relation returns to the person", async ({
+    page,
+  }) => {
+    // The redirect above, taken from inside the app instead of from the
+    // address bar. Every in-app link into a node is a /entity/:type/:id - the
+    // relation cards, the graph, the revision queue - so the guard runs with a
+    // push already in flight, and it used to send the reader on with
+    // `replace: true`. A guard redirect resolves before that push is
+    // committed, so what got replaced was not the /entity/ url but the page
+    // being left, and back had nowhere to return to.
+    await page.goto(PERSON, { waitUntil: "domcontentloaded" });
+
+    await page
+      .getByTestId("relations-history")
+      .getByText("Orlen")
+      .first()
+      .click();
+    await expect(page).toHaveURL(/\/(instytucja|entity)\//, {
+      timeout: 30_000,
+    });
+
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(`${PERSON}$`), { timeout: 30_000 });
+  });
 });
