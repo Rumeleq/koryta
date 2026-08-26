@@ -113,6 +113,10 @@ export const onFeedbackCreated = onDocumentCreated(
       logger.info(`Feedback ${feedbackId} already handled, skipping`);
       return;
     }
+    if (claimed.userUid?.slice(0, 8) == "of0BKlwq") {
+      logger.info(`Feedback ${feedbackId} is from admin account, skipping`);
+      return;
+    }
 
     const client = new WebClient(token);
 
