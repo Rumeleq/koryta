@@ -69,6 +69,19 @@ would rather not start it.
   where the code fix lives — a migration without its cause is unreadable a month
   later.
 
+## Scripts that are meant to be re-run
+
+Most of these are one-offs kept as a record. A few are not:
+`recompute-company-categories.ts` re-derives `categories` on company nodes from
+the PKD codes already stored, so it is the thing to run after _any_ change to
+the category list in `shared/companyCategories.ts` — the filter offers a new
+category immediately and finds nothing under it until either the company upload
+runs again or this does. It reads the mapping from that file rather than naming
+any category, so it needs no edit when the list grows.
+
+Everything above still applies to one: the dry run reports, a clean run writes
+nothing, and it takes `--prod --commit` to touch production.
+
 ## Fixing the cause too
 
 A migration repairs documents that are already written; on its own it is
