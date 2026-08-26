@@ -44,6 +44,7 @@
               <strong>Lokalizacja:</strong> {{ location }}
             </span>
             <ChipPublicCompany :company="company" show-unknown />
+            <ChipCompanyCategories :company="company" />
           </div>
 
           <div class="d-flex flex-wrap ga-2">

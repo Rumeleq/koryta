@@ -33,9 +33,10 @@ export interface RevisionChange {
  *
  * Three groups. The structural ones say what the document *is* rather than what
  * it claims - an edge restates its own endpoints in every revision - and
- * `isPublicSource` is bookkeeping `/api/revisions/create` writes alongside
- * `isPublic`. Removal is rendered as its own thing, not as `deleted: — → tak`,
- * so both of its fields are dropped too.
+ * `isPublicSource` and `categoriesSource` are bookkeeping
+ * `/api/revisions/create` writes alongside `isPublic` and `categories`.
+ * Removal is rendered as its own thing, not as `deleted: — → tak`, so both of
+ * its fields are dropped too.
  *
  * The rest is `INTERNAL_FIELDS` from `server/utils/revisions.ts`: bookkeeping
  * the document owns rather than states. The stored side already has these
@@ -54,6 +55,7 @@ export const skippedChangeFields = new Set([
   "source",
   "target",
   "isPublicSource",
+  "categoriesSource",
   "deleted",
   "delete_reason",
   "stats",
@@ -89,6 +91,8 @@ export const revisionFieldLabels: Record<string, string> = {
   regonNumber: "REGON",
   nipNumber: "NIP",
   isPublic: "w rękach publicznych",
+  categories: "kategorie",
+  activity: "kody PKD",
   // article
   sourceURL: "adres źródła",
   shortName: "nazwa skrócona",
