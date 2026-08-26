@@ -6,6 +6,7 @@ import pandas as pd
 
 from analysis.interesting import Companies
 from entities.company import display_name
+from entities.company_categories import categories_for
 from scrapers.koryta.download import KorytaCompanies
 from scrapers.stores import Context, Pipeline
 
@@ -17,6 +18,14 @@ class CompaniesPayloads(Pipeline):
     spółka-publiczna flag) with the set of companies already on the site
     (`KorytaCompanies`), so a migration re-submits only companies that already
     exist.
+
+    The payloads carry `categories`, worked out here by
+    `entities.company_categories`. The site used to derive them itself from the
+    `activity` codes in the payload, which put the whole mapping - two vintages
+    of PKD, and an override list for the companies neither vintage places
+    correctly - behind a frontend constant that nothing could test against the
+    register. A category a person has edited on the site is not overwritten:
+    the ingest endpoint skips any node carrying `categoriesSource: "manual"`.
 
     The payloads carry `teryt_code`, which the uploader maps to the `teryt`
     field the ingest endpoint links a company to its region with. They still
@@ -82,6 +91,7 @@ class CompaniesPayloads(Pipeline):
                 "krs": krs,
                 "name": name,
                 "activity": list(activity),
+                "categories": categories_for(krs, list(activity)),
                 "is_public": is_public,
             }
 
@@ -98,6 +108,13 @@ class CompaniesPayloads(Pipeline):
         )
         if not payloads:
             return pd.DataFrame(
-                columns=["krs", "name", "activity", "is_public", "teryt_code"]
+                columns=[
+                    "krs",
+                    "name",
+                    "activity",
+                    "categories",
+                    "is_public",
+                    "teryt_code",
+                ]
             )
         return pd.DataFrame.from_records(payloads)

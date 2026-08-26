@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 import pandas as pd
 import pytest
 
-from analysis.payloads import PeoplePayloads, RegionPayloads
+from analysis.payloads import CompaniesPayloads, PeoplePayloads, RegionPayloads
 from analysis.payloads.person import _extract_elections
 from scrapers.stores import Context, Pipeline, ProcessPolicy
 
@@ -194,3 +194,61 @@ def test_upload_payloads_region_shape(mock_ctx):
     assert edge["source"] == "teryt14"
     assert edge["target"] == "teryt1465"
     assert edge["type"] == "owns"
+
+
+def test_upload_payloads_company_shape(mock_ctx, monkeypatch):
+    """A company payload carries the categories the site stores.
+
+    They used to be derived on the site from the `activity` codes below, which
+    is why this asserts on the payload rather than on the mapping: the mapping
+    has its own tests in `entities/tests/test_company_categories.py`, and what
+    matters here is that the answer actually reaches the ingest endpoint.
+    """
+    pipeline = Pipeline.create(CompaniesPayloads)
+    pipeline.companies = MockPipeline(
+        [
+            {
+                # PKP SKM w Trojmiescie: only a PKD 2025 rail code
+                "krs": "0000076705",
+                "name": "PKP Szybka Kolej Miejska w Trojmiescie",
+                "city": "Gdynia",
+                "activity": ["49.12.Z", "49.31.Z", "52.21.B"],
+                "is_public": True,
+                "teryt_code": "2262",
+            },
+            {
+                # Instytut Badawczy Drog i Mostow: carries 42.12 among ten
+                # construction codes, and is not a railway
+                "krs": "0000158240",
+                "name": "Instytut Badawczy Drog i Mostow",
+                "city": "Warszawa",
+                "activity": ["72.19.Z", "42.11.Z", "42.12.Z"],
+                "is_public": True,
+            },
+            {
+                "krs": "0000999999",
+                "name": "Szpital Powiatowy",
+                "city": "Wolow",
+                "activity": ["86.10.Z"],
+                "is_public": True,
+            },
+        ]
+    )
+    monkeypatch.setattr(
+        "analysis.payloads.company.KorytaCompanies",
+        lambda *args, **kwargs: MockPipeline(
+            [{"krs": krs} for krs in ("0000076705", "0000158240", "0000999999")]
+        ),
+    )
+
+    result_df = pipeline.process(mock_ctx)
+    by_krs = {row["krs"]: row for row in result_df.to_dict(orient="records")}
+    assert set(by_krs) == {"0000076705", "0000158240", "0000999999"}
+
+    assert by_krs["0000076705"]["categories"] == ["koleje"]
+    assert by_krs["0000076705"]["teryt_code"] == "2262"
+    # The raw codes still travel too - the site stores both
+    assert by_krs["0000076705"]["activity"] == ["49.12.Z", "49.31.Z", "52.21.B"]
+
+    assert by_krs["0000158240"]["categories"] == []
+    assert by_krs["0000999999"]["categories"] == ["szpitale"]

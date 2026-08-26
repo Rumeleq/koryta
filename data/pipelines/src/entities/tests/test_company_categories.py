@@ -1,0 +1,311 @@
+"""Tests for the company category mapping.
+
+The PKD code lists are copied verbatim from the `activity` field of the named
+company's node, so these pin the mapping against the register as it actually
+reads rather than against a tidied-up version of it. Companies are named by KRS
+number so an entry can be re-checked against the register.
+"""
+
+import unittest
+
+from entities.company_categories import (
+    CATEGORY_VALUES,
+    COMPANY_CATEGORIES,
+    KOLEJE,
+    categories_for,
+    matches_pkd,
+)
+
+
+class TestMatchesPkd(unittest.TestCase):
+    def test_matches_any_declared_code_not_just_the_first(self):
+        # PKP Cargo Connect's main activity is road freight; it hauls by rail
+        # as its tenth declared code
+        self.assertTrue(matches_pkd(["49.41.Z", "52.10.B", "49.20.Z"], ("49.20",)))
+
+    def test_prefix_is_directional(self):
+        self.assertTrue(matches_pkd(["49.20.Z"], ("49.20",)))
+        # A code truncated to the group is too coarse to place a company
+        self.assertFalse(matches_pkd(["49.2."], ("49.20",)))
+
+    def test_empty_and_missing_activity(self):
+        self.assertFalse(matches_pkd([], ("49.20",)))
+        self.assertFalse(matches_pkd(None, ("49.20",)))
+
+
+class TestCategoriesFor(unittest.TestCase):
+    def test_no_activity_and_no_override_is_no_category(self):
+        self.assertEqual(categories_for("0000999999", []), [])
+        self.assertEqual(categories_for(None, None), [])
+
+    def test_hospitals_and_water(self):
+        self.assertEqual(categories_for("0000999999", ["86.10.Z"]), ["szpitale"])
+        self.assertEqual(categories_for("0000999999", ["36.00.Z"]), ["wodociagi"])
+        self.assertEqual(categories_for("0000999999", ["37.00.Z"]), ["wodociagi"])
+
+    def test_more_than_one_category(self):
+        self.assertEqual(
+            categories_for("0000999999", ["36.00.Z", "49.20.Z"]),
+            ["wodociagi", "koleje"],
+        )
+
+    def test_krs_is_padded_before_lookup(self):
+        # The register writes 0000042646; a payload may carry it unpadded
+        self.assertIn("koleje", categories_for("42646", ["62.01.Z"]))
+
+    def test_order_is_stable(self):
+        # The value ends up in a Firestore document a diff is taken against
+        self.assertEqual(
+            categories_for("0000999999", ["49.20.Z", "86.10.Z", "36.00.Z"]),
+            list(CATEGORY_VALUES),
+        )
+
+
+class TestKolejeByPkd(unittest.TestCase):
+    """Companies the prefix rules alone place correctly."""
+
+    def assertKoleje(self, krs, activity):
+        self.assertIn("koleje", categories_for(krs, activity))
+
+    def assertNotKoleje(self, krs, activity):
+        self.assertNotIn("koleje", categories_for(krs, activity))
+
+    def test_pkp_intercity(self):
+        self.assertKoleje(
+            "0000296032",
+            [
+                "49.10.Z",
+                "49.20.Z",
+                "52.21.Z",
+                "49.31.Z",
+                "49.39.Z",
+                "77.39.Z",
+                "79.12.Z",
+                "79.90.B",
+                "82.20.Z",
+                "33.17.Z",
+            ],
+        )
+
+    def test_pkp_cargo(self):
+        self.assertKoleje(
+            "0000027702",
+            [
+                "49.20.Z",
+                "33.17.Z",
+                "45.20.Z",
+                "49.10.Z",
+                "52.10.A",
+                "52.10.B",
+                "52.21.Z",
+                "52.24.C",
+                "52.29.C",
+                "69.20.Z",
+            ],
+        )
+
+    def test_skm_trojmiasto_declares_only_the_2025_urban_rail_code(self):
+        # KRS 0000076705: no 49.10, no 49.20, no 42.12. The PKD 2025 revision
+        # split urban and suburban rail out of 49.31 into 49.12.
+        self.assertKoleje(
+            "0000076705",
+            [
+                "49.12.Z",
+                "49.31.Z",
+                "49.32.Z",
+                "52.21.B",
+                "52.32.Z",
+                "25.53.Z",
+                "33.12.Z",
+                "33.13.Z",
+                "33.14.Z",
+                "33.17.Z",
+            ],
+        )
+
+    def test_lodzka_kolej_aglomeracyjna(self):
+        self.assertKoleje(
+            "0000359408",
+            [
+                "49.12.Z",
+                "49.39.Z",
+                "77.39.Z",
+                "49.31.Z",
+                "49.32.Z",
+                "52.21.B",
+                "33.17.Z",
+                "35.1.",
+                "46.81.Z",
+                "85.59.B",
+            ],
+        )
+
+    def test_koleje_dolnoslaskie_declares_the_2025_interurban_code(self):
+        self.assertKoleje(
+            "0000298575",
+            [
+                "49.11.Z",
+                "25.5.",
+                "33.1.",
+                "49.3.",
+                "52.21.B",
+                "52.32.Z",
+                "81.2.",
+                "77.3.",
+                "85.5.",
+                "64.99.",
+            ],
+        )
+
+    def test_pkp_plk_is_reached_only_by_the_track_building_code(self):
+        # PLK's main activity is 52.21, which also covers roads, parking and
+        # bus terminals, so 42.12 is the only usable handle on it
+        self.assertKoleje(
+            "0000037568",
+            [
+                "52.21.B",
+                "42.12.Z",
+                "42.22.Z",
+                "43.99.Z",
+                "68.20.Z",
+                "74.99.Z",
+                "71.12.B",
+                "80.01.Z",
+                "85.59.D",
+                "62.90.Z",
+            ],
+        )
+
+    def test_rolling_stock_manufacture(self):
+        # 30.20 Produkcja lokomotyw kolejowych oraz taboru szynowego
+        self.assertKoleje(
+            "0000069009",
+            [
+                "30.20.Z",
+                "25.11.Z",
+                "25.61.Z",
+                "25.62.Z",
+                "27.12.Z",
+                "29.20.Z",
+                "33.11.Z",
+                "33.13.Z",
+                "33.17.Z",
+                "71.20.B",
+            ],
+        )
+        self.assertKoleje("0000093623", ["30.20.Z", "25.11.Z", "33.11.Z"])
+        self.assertKoleje("0000391105", ["30.20.Z", "25.11.Z", "29.20.Z"])
+
+    def test_urban_bus_and_road_codes_are_not_rail(self):
+        # 49.31 is trams, metro and buses together; 52.21 covers roads,
+        # parking and bus terminals; 49.32 is taxis
+        self.assertNotKoleje("0000999999", ["49.31.Z"])
+        self.assertNotKoleje("0000999999", ["52.21.Z"])
+        self.assertNotKoleje("0000999999", ["52.21.B"])
+        self.assertNotKoleje("0000999999", ["49.32.Z"])
+        self.assertNotKoleje("0000999999", ["49.39.Z"])
+        self.assertNotKoleje("0000999999", ["42.11.Z"])
+
+
+class TestKolejeOverrides(unittest.TestCase):
+    """Companies only the override lists get right."""
+
+    def test_pkp_group_companies_with_no_rail_pkd(self):
+        # The holding company itself files as 70.10, dzialalnosc firm centralnych
+        self.assertIn("koleje", categories_for("0000019193", ["70.10.Z", "68.20.Z"]))
+        self.assertIn("koleje", categories_for("0000042646", ["62.01.Z", "62.02.Z"]))
+        self.assertIn("koleje", categories_for("0000504917", ["95.10.Z"]))
+        self.assertIn("koleje", categories_for("0000377050", ["52.24.C"]))
+
+    def test_rolling_stock_repair_shops_that_only_carry_the_broad_33_17(self):
+        # 33.17 also holds water utilities and an orthopaedic workshop, so
+        # these are named rather than matched
+        self.assertIn("koleje", categories_for("0000327801", ["33.17.Z", "33.12.Z"]))
+        self.assertIn("koleje", categories_for("0000091303", ["33.17.Z", "38.31.Z"]))
+        self.assertNotIn("koleje", categories_for("0000999999", ["33.17.Z"]))
+
+    def test_traction_power_group(self):
+        for krs in ("0000541901", "0000610778", "0000610805"):
+            self.assertIn("koleje", categories_for(krs, ["64.21.Z"]))
+
+    def test_companies_krs_stores_no_pkd_for(self):
+        # No prefix list can reach a company with an empty activity, so the
+        # ones that matter are named
+        for krs in (
+            "0000014327",
+            "0000849277",
+            "0000249835",
+            "0000496856",
+            "0000569557",
+            "0000031521",
+            "0000034257",
+            "0000152612",
+        ):
+            self.assertEqual(categories_for(krs, []), ["koleje"], krs)
+
+    def test_cable_cars_are_not_railways(self):
+        for krs in ("0000312594", "0000079964", "0000527636"):
+            self.assertNotIn("koleje", categories_for(krs, []))
+
+    def test_railway_branded_hospitals_stay_hospitals(self):
+        self.assertEqual(
+            categories_for("0000074422", ["86.10.Z", "56.10.A"]), ["szpitale"]
+        )
+
+    def test_road_and_quarry_companies_that_carry_a_rail_code_incidentally(self):
+        # Instytut Badawczy Drog i Mostow: 42.12 is one of ten construction codes
+        self.assertNotIn(
+            "koleje",
+            categories_for("0000158240", ["72.19.Z", "42.11.Z", "42.12.Z"]),
+        )
+        # Kopalnia Wapienia Czatkowice declares 49.20 because it has a siding
+        self.assertNotIn("koleje", categories_for("0000073875", ["08.11.Z", "49.20.Z"]))
+        # Orlen Aviation, likewise
+        self.assertNotIn("koleje", categories_for("0000022177", ["52.23.Z", "49.20.Z"]))
+
+    def test_an_excluded_water_utility_keeps_its_own_category(self):
+        # Wikom carries 42.12; excluding it from koleje must not cost it wodociagi
+        self.assertEqual(
+            categories_for("0000209019", ["36.00.Z", "42.12.Z"]), ["wodociagi"]
+        )
+
+
+class TestOverrideListsAreWellFormed(unittest.TestCase):
+    def test_no_company_is_both_included_and_excluded(self):
+        for category in COMPANY_CATEGORIES:
+            overlap = category.included_krs & category.excluded_krs
+            self.assertEqual(overlap, frozenset(), f"{category.value}: {overlap}")
+
+    def test_krs_numbers_are_ten_digits(self):
+        for category in COMPANY_CATEGORIES:
+            for override in category.include + category.exclude:
+                self.assertRegex(override.krs, r"^\d{10}$", override.name)
+
+    def test_every_override_carries_a_reason(self):
+        for category in COMPANY_CATEGORIES:
+            for override in category.include + category.exclude:
+                self.assertTrue(override.reason.strip(), override.name)
+
+    def test_no_duplicate_krs_within_a_list(self):
+        for category in COMPANY_CATEGORIES:
+            for name, entries in (
+                ("include", category.include),
+                ("exclude", category.exclude),
+            ):
+                krs = [o.krs for o in entries]
+                # Polskie Koleje Linowe holds two separate registrations, so
+                # duplicate *names* are fine; duplicate numbers are not
+                self.assertEqual(len(krs), len(set(krs)), f"{category.value}.{name}")
+
+    def test_category_values_are_unique(self):
+        self.assertEqual(len(CATEGORY_VALUES), len(set(CATEGORY_VALUES)))
+
+    def test_koleje_carries_both_override_lists(self):
+        # The point of moving this out of the frontend: the prefix rules alone
+        # neither reach the PKP group nor keep the road builders out
+        self.assertTrue(KOLEJE.include)
+        self.assertTrue(KOLEJE.exclude)
+
+
+if __name__ == "__main__":
+    unittest.main()
