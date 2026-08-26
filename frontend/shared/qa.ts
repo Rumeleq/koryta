@@ -42,6 +42,27 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
 /** Newest first. Prepend, never insert in the middle. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "filtr-kategoria-koleje",
+    date: "2026-08-26",
+    title: "Filtr kategorii firm: koleje",
+    description:
+      "Do filtra kategorii na Eksploruj doszła trzecia pozycja - „Koleje” - " +
+      "obok szpitali oraz wodociągów i kanalizacji. Łapie przewoźników " +
+      "kolejowych (pasażerskich i towarowych) oraz spółki od infrastruktury " +
+      "torowej, po kodach PKD 49.10, 49.20 i 42.12. Kategorie wyliczane są " +
+      "przy imporcie spółki, więc firma dostaje etykietę „Koleje” dopiero po " +
+      "kolejnym przejściu importu spółek.",
+    steps: [
+      "Wejdź na /eksploruj/tabela i rozwiń filtry. Lista „Kategoria” ma mieć trzy pozycje: Szpitale, Wodociągi i kanalizacja, Koleje.",
+      "Wybierz „Koleje” - w tabeli mają zostać tylko osoby powiązane ze spółkami kolejowymi (np. PKP), a adres ma dostać `?category=koleje`.",
+      "Odśwież stronę z tym adresem: filtr ma się odtworzyć z linku, a nie wrócić do „wszystkie”.",
+      "To samo sprawdź na /eksploruj/nowe - ta sama lista kategorii, ta sama zawartość po wybraniu „Koleje”.",
+      "Jeśli lista wyników jest pusta, to znaczy, że import spółek nie przeliczył jeszcze kategorii - sprawdź na spółce, która ma w danych PKD 49.10/49.20/42.12.",
+    ],
+    link: "/eksploruj/tabela",
+    area: "public",
+  },
+  {
     id: "graf-osoby-dwa-kroki",
     date: "2026-08-25",
     title: "Strona osoby przemeblowana, graf czytelniejszy",
