@@ -10,6 +10,7 @@ import requests
 from analysis.interesting import Companies
 from conductor import setup_context
 from entities.company import display_name
+from entities.company_categories import categories_for
 from entities.composite import PersonScore
 from entities.person import is_pipeline_uid
 from scrapers.stores import iterate_pipeline_dict
@@ -226,6 +227,18 @@ class CompanyUploader(Uploader):
         payload["owners"] = owners
         if "teryt_code" in payload and payload["teryt_code"]:
             payload["teryt"] = payload["teryt_code"]
+        # `CompaniesPayloads` already worked these out, but a company created
+        # because somebody works there arrives straight from the `Companies`
+        # pipeline and has none. Filled in rather than recomputed, so the two
+        # paths cannot disagree about what a company is - and so an empty list
+        # from the payload producer stays empty rather than being taken for a
+        # missing value.
+        if "categories" not in payload:
+            activity = payload.get("activity")
+            payload["categories"] = categories_for(
+                payload.get("krs"),
+                list(activity) if isinstance(activity, (list, np.ndarray)) else [],
+            )
         # A company created because a person works there comes straight from
         # the Companies pipeline rather than through CompaniesPayloads, so it
         # needs the same disambiguation.
