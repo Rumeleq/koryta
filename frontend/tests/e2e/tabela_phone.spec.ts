@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { logIn, USERS } from "./helpers/auth";
 
 /** What "trzeba przescrollować 3 razy, żeby coś można było zobaczyć" means as
  * something a test can hold: on a phone the first row of the table has to be
@@ -63,5 +64,25 @@ test.describe("the table on a phone", () => {
     await expect(party).toBeHidden();
     await toggle.click();
     await expect(party).toBeVisible();
+  });
+
+  // Absence, which is what the reports asked for and what a screenshot states
+  // only by omission. The bar counts how much of the base has been checked and
+  // links to the screen where checking happens; a reader who is not signed in
+  // can act on neither, and on a phone it took most of the space above the
+  // first row. The signed-in half is here too, so that "hidden" cannot be
+  // passed by a bar that stopped rendering for everybody.
+  test("shows the progress bar only once signed in", async ({ page }) => {
+    test.setTimeout(120000);
+    const bar = page.getByTestId("explore-progress");
+
+    await page.goto("/eksploruj/tabela", { waitUntil: "load" });
+    await expect(
+      page.locator("tbody tr:first-child .text-primary.cursor-pointer").first(),
+    ).toBeVisible({ timeout: 60000 });
+    await expect(bar).toHaveCount(0);
+
+    await logIn(page, USERS.normal, "/eksploruj/tabela");
+    await expect(bar).toBeVisible({ timeout: 60000 });
   });
 });

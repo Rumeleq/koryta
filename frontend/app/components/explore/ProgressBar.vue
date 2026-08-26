@@ -1,5 +1,10 @@
 <template>
-  <v-card v-if="!stats || stats.total > 0" variant="outlined" class="pa-4">
+  <v-card
+    v-if="!stats || stats.total > 0"
+    variant="outlined"
+    class="pa-4"
+    data-testid="explore-progress"
+  >
     <div class="d-flex align-center flex-wrap ga-2">
       <span class="text-subtitle-1 font-weight-bold">Postęp weryfikacji</span>
       <span v-if="stats" class="text-body-2 text-medium-emphasis">
