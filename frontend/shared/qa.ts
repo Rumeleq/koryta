@@ -20,8 +20,6 @@ export type QaItem = {
   /** Stable, kebab-case, unique and never reused - it keys the stored checks.
    * Underscore free, so `${id}_${uid}` splits unambiguously. */
   id: string;
-  /** ISO date (YYYY-MM-DD) the change landed. */
-  date: string;
   /** What changed, in the language of somebody using the site. */
   title: string;
   /** Why it changed, or what it is for. One or two sentences. */
@@ -39,11 +37,18 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
   admin: { title: "Panel admina", color: "warning" },
 };
 
-/** Newest first. Prepend, never insert in the middle. */
+/** Newest first, and the order of this array is the only thing that says so -
+ * there is no date on an entry to fall back on. Prepend; never insert in the
+ * middle, and after a rebase move your entry back to the top rather than
+ * leaving it where the merge put it.
+ *
+ * A date was worse than nothing here: it was written by hand, so it recorded
+ * when the entry was typed rather than when the change reached anybody, and it
+ * disagreed with the order often enough that the two had to be reconciled
+ * before the list could be read at all. */
 export const QA_ITEMS: QaItem[] = [
   {
     id: "kategorie-firm-edytowalne",
-    date: "2026-08-26",
     title: "Kategorie firmy można poprawić",
     description:
       "Kategoria firmy („Szpitale”, „Wodociągi i kanalizacja”, „Koleje”) " +
@@ -70,7 +75,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "karta-firmy-prowadzi-na-strone-spolki",
-    date: "2026-08-26",
     title: "Karta firmy na Eksploruj prowadzi na stronę spółki",
     description:
       "Na /eksploruj/tabela zawężonej do firmy nazwa w karcie u góry jest " +
@@ -90,7 +94,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "przekierowanie-starego-adresu-nietrwale",
-    date: "2026-08-26",
     title: "Stary adres wpisu nie zapamiętuje się w przeglądarce na stałe",
     description:
       "Adres z nieaktualną nazwą w linku (np. po zmianie nazwy spółki albo " +
@@ -112,7 +115,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "tabela-firmy-wszystkich-wierszy",
-    date: "2026-08-26",
     title: "Kolumna „Firmy” znowu wypełniona w całej tabeli",
     description:
       "W tabeli na Eksploruj kolumna „Firmy” była pusta we wszystkich " +
@@ -134,7 +136,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "filtr-kategoria-koleje",
-    date: "2026-08-26",
     title: "Filtr kategorii firm: koleje",
     description:
       "Do filtra kategorii na Eksploruj doszła trzecia pozycja - „Koleje” - " +
@@ -161,7 +162,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "graf-osoby-dwa-kroki",
-    date: "2026-08-25",
     title: "Strona osoby przemeblowana, graf czytelniejszy",
     description:
       "Na stronie osoby kolejność sekcji odpowiada teraz temu, po co się na " +
@@ -183,7 +183,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "extraction-matched-person",
-    date: "2026-08-25",
     title: "Fakt z artykułu pokazuje, do kogo z bazy został przypisany",
     description:
       "Potok wyszukiwania faktów potrafi już powiedzieć, które osoby z naszej " +
@@ -206,7 +205,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "home-intro-and-no-cta-on-phone",
-    date: "2026-08-25",
     title: "Strona główna na telefonie: zdanie, wyszukiwarka, mapa",
     description:
       "Na wąskim ekranie nad wyszukiwarką jest jedno zdanie o tym, co ta " +
@@ -225,7 +223,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "tabela-starts-at-the-table",
-    date: "2026-08-25",
     title: "Tabela na telefonie zaczyna się od tabeli",
     description:
       "Na wąskim ekranie filtry są zwinięte pod jeden przycisk, nagłówek jest " +
@@ -246,7 +243,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "reviewer-queue-one-button",
-    date: "2026-08-25",
     title: "Kolejka rewizji: jeden przycisk zamiast pięciu",
     description:
       "Wiersz w kolejce ma teraz jeden przycisk - âRozpatrzâ - który otwiera " +
@@ -269,7 +265,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "drawer-admin-revisions-link",
-    date: "2026-08-25",
     title: "Skrót do rewizji także w panelu bocznym",
     description:
       "Przycisk âRewizjeâ, który admin ma na stronie osoby, jest teraz również " +
@@ -287,7 +282,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "admin-feedback-settled-dimmed",
-    date: "2026-08-25",
     title: "Załatwione zgłoszenia schodzą na drugi plan",
     description:
       "W kolejce zgłoszeń widać teraz na pierwszy rzut oka, czym nikt nie " +
@@ -306,7 +300,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "kto-kogo-zastapil",
-    date: "2026-08-24",
     title: "Kto kogo zastąpił w spółce",
     description:
       "Na stronie instytucji jest nowa sekcja „Kto kogo zastąpił”: pary " +
@@ -331,7 +324,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "instytucja-ma-wlasna-strone",
-    date: "2026-08-24",
     title: "Instytucja ma znów własną stronę",
     description:
       "Kliknięcie w spółkę nie przenosi już do tabeli osób przefiltrowanej " +
@@ -352,7 +344,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "entity-page-admin-revisions-link",
-    date: "2026-08-24",
     title: "Skrót do rewizji i publikacji ze strony osoby",
     description:
       "Admin na stronie osoby wchodzi wprost na jej listę rewizji, gdzie " +
@@ -372,7 +363,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "home-compact-on-phone",
-    date: "2026-08-24",
     title: "Strona główna na telefonie zaczyna się od wyszukiwarki",
     description:
       "Na wąskim ekranie strona główna nie otwiera się już logiem i nagłówkiem " +
@@ -393,7 +383,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "queue-plain-entry-links",
-    date: "2026-08-24",
     title: "Nazwy wpisów w kolejce bez niebieskiego",
     description:
       "Kolejka zmian pokazuje nazwy wpisów tak samo jak profil - czarnym " +
@@ -411,7 +400,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "profile-proposal-filters",
-    date: "2026-08-24",
     title: "Filtrowanie własnych propozycji, mniej niebieskiego",
     description:
       "Kafelki ze stanami na profilu nie tylko liczą propozycje - kliknięcie " +
@@ -430,7 +418,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "qa-link-in-admin-panel",
-    date: "2026-08-24",
     title: "Lista QA schodzi z paska na panel",
     description:
       "Pasek u góry nie nosi już przycisku „QA” ani licznika, który przy " +
@@ -447,7 +434,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "home-recent-employments",
-    date: "2026-08-23",
     title: "Ostatnie zatrudnienia na stronie głównej",
     description:
       "Na dole strony głównej lecą kolejne stanowiska, od najświeżej " +
@@ -468,7 +454,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "tabela-columns-on-phone",
-    date: "2026-08-23",
     title: "Tabela na telefonie tylko z czterema kolumnami",
     description:
       "Na wąskim ekranie tabela „Eksploruj” pokazuje już tylko imię i " +
@@ -489,7 +474,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "feedback-from-qa",
-    date: "2026-08-23",
     title: "Uwaga z listy QA idzie prosto do zespołu",
     description:
       "Zgłoszony tu problem - i każda uwaga dopisana do wpisu - trafia tam, " +
@@ -508,7 +492,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "feedback-button",
-    date: "2026-08-23",
     title: "Przycisk „Zgłoś” na każdej stronie",
     description:
       "Każdy - także niezalogowany - może powiedzieć, co jest nie tak, bez " +
@@ -525,7 +508,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "admin-feedback-queue",
-    date: "2026-08-23",
     title: "Kolejka zgłoszeń w panelu admina",
     description:
       "Wszystkie zgłoszenia w jednym miejscu, ze statusem i notatką, a na " +
@@ -541,7 +523,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "person-notes-require-login",
-    date: "2026-08-23",
     title: "Notatki o osobie tylko dla zalogowanych",
     description:
       "Na stronie osoby karta „Notatki” pokazuje się dopiero po " +
@@ -557,7 +538,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "elections-column-narrower",
-    date: "2026-08-23",
     title: "Węższa kolumna wyborów i przewijanie tabeli w bok",
     description:
       "Nazwa komitetu wyborczego i pełna nazwa okręgu przeniosły się z " +
@@ -577,7 +557,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "drawer-bottom-on-phone",
-    date: "2026-08-23",
     title: "Panel boczny od dołu na telefonie",
     description:
       "Na wąskim ekranie panel osoby wysuwa się od dołu i zajmuje prawie " +
@@ -595,7 +574,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "qa-changelog",
-    date: "2026-08-22",
     title: "Lista zmian do sprawdzenia",
     description:
       "Ta strona. Każda nowa zmiana na stronie dostaje tu wpis z instrukcją, " +
@@ -614,7 +592,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "person-places-map",
-    date: "2026-08-22",
     title: "Mapa miejsc osoby w panelu bocznym",
     description:
       "Panel boczny osoby rysuje na mapie Polski województwa, w których " +
@@ -629,7 +606,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "vote-label-under-pill",
-    date: "2026-08-22",
     title: "Opis oceny pod pigułką, nie obok",
     description:
       "Etykieta oceny („Grube koryto”, „Ciekawe”) trafiła pod przycisk, żeby " +
@@ -642,7 +618,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "my-contributions",
-    date: "2026-08-21",
     title: "Co się stało z moimi zgłoszeniami",
     description:
       "Profil pokazuje rewizje zgłoszone przez zalogowanego użytkownika wraz " +
@@ -657,7 +632,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "reviewer-queue",
-    date: "2026-08-21",
     title: "Jeden ekran do przeglądania kolejki rewizji",
     description:
       "Kolejka rewizji pokazuje różnicę, przycisk przyjęcia i odrzucenia w " +
@@ -672,7 +646,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "cite-existing-relation",
-    date: "2026-08-19",
     title: "Artykuł jako źródło istniejącej relacji",
     description:
       "Można wskazać artykuł jako źródło powiązania, które już jest w bazie, " +
@@ -686,7 +659,6 @@ export const QA_ITEMS: QaItem[] = [
   },
   {
     id: "person-search-by-city",
-    date: "2026-08-19",
     title: "Szukanie osoby po mieście, w którym pracowała",
     description:
       "Wyszukiwarka osób dopasowuje też miasta pracodawców, nie tylko imię i " +

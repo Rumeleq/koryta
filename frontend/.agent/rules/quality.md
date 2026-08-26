@@ -12,8 +12,9 @@
 
 1. **Changelog for QA**:
    Every change a user can see gets an entry at the top of `shared/qa.ts`, in
-   the same commit as the change. The entry says what changed and what to click
-   to see it - `/qa` is where contributors work through that list and report
+   the same commit as the change. Entries carry no date - the order of the array
+   is what says which is newest, so prepend, and after a rebase move yours back
+   to the top. The entry says what changed and what to click to see it - `/qa` is where contributors work through that list and report
    what is broken, each on their own (one person's verdict does not check the
    entry off for anybody else). An `id` is never renamed or reused: it is what
    somebody's stored verdict points at, and what a report written there links

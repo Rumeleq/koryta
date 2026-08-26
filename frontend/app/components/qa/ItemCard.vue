@@ -8,7 +8,6 @@
       </template>
       <v-card-title class="text-wrap">{{ item.title }}</v-card-title>
       <v-card-subtitle class="d-flex align-center flex-wrap ga-2 mt-1">
-        <span>{{ item.date }}</span>
         <v-chip size="x-small" :color="qaAreaConfig[item.area].color" label>
           {{ qaAreaConfig[item.area].title }}
         </v-chip>
