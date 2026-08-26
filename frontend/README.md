@@ -128,7 +128,6 @@ same commit as the change itself:
 ```ts
 {
   id: "person-places-map",       // never renamed or reused - stored verdicts point at it
-  date: "2026-08-22",
   title: "Mapa miejsc osoby w panelu bocznym",
   description: "Co się zmieniło, w języku osoby korzystającej ze strony.",
   steps: ["Wejdź na /eksploruj/tabela", "Kliknij wiersz z osobą"],
@@ -136,6 +135,11 @@ same commit as the change itself:
   area: "public",                // public | contributor | admin
 }
 ```
+
+There is no date on an entry: the order of the array is what says which change
+is newest, so prepend rather than inserting, and after a rebase move your entry
+back to the top instead of leaving it where the merge put it. Nothing checks
+this - the array is the only record of it.
 
 Logged in users work through that list at `/qa`: an entry they have not been
 through shows up under "Do sprawdzenia" with its instructions open, and they

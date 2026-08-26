@@ -33,14 +33,11 @@ describe("QA_ITEMS", () => {
     }
   });
 
-  it("is ordered newest first", () => {
-    const dates = QA_ITEMS.map((item) => item.date);
-    expect(dates).toEqual([...dates].sort().reverse());
-  });
-
-  it("dates every entry and says how to check it", () => {
+  // Nothing here can check that the newest entry is on top: the order of the
+  // array is the only record of it, so there is no second source to compare
+  // against. It is a review question, not a test.
+  it("says how to check every entry", () => {
     for (const item of QA_ITEMS) {
-      expect(item.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       expect(item.title.length).toBeGreaterThan(0);
       expect(item.description.length).toBeGreaterThan(0);
       expect(item.steps.length).toBeGreaterThan(0);

@@ -10,7 +10,6 @@ const vuetify = createVuetify({ components, directives });
 
 const item: QaItem = {
   id: "example-change",
-  date: "2026-08-22",
   title: "Przykładowa zmiana",
   description: "Co się zmieniło.",
   steps: ["Wejdź na stronę", "Kliknij przycisk"],

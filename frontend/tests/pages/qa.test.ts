@@ -12,7 +12,6 @@ const vuetify = createVuetify({ components, directives });
 const items: QaItem[] = [
   {
     id: "new-thing",
-    date: "2026-08-22",
     title: "Nowa rzecz",
     description: "Świeżo dodana.",
     steps: ["Kliknij nową rzecz"],
@@ -20,7 +19,6 @@ const items: QaItem[] = [
   },
   {
     id: "broken-thing",
-    date: "2026-08-21",
     title: "Zepsuta rzecz",
     description: "Ktoś zgłosił problem.",
     steps: ["Kliknij zepsutą rzecz"],
@@ -28,7 +26,6 @@ const items: QaItem[] = [
   },
   {
     id: "done-thing",
-    date: "2026-08-20",
     title: "Sprawdzona rzecz",
     description: "Ktoś potwierdził.",
     steps: ["Kliknij sprawdzoną rzecz"],
