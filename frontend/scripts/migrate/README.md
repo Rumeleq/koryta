@@ -72,12 +72,20 @@ would rather not start it.
 ## Scripts that are meant to be re-run
 
 Most of these are one-offs kept as a record. A few are not:
-`recompute-company-categories.ts` re-derives `categories` on company nodes from
-the PKD codes already stored, so it is the thing to run after _any_ change to
-the category list in `shared/companyCategories.ts` — the filter offers a new
+`apply-company-categories.ts` brings `categories` on company nodes in line with
+what the pipelines say, so it is the thing to run after _any_ change to
+`data/pipelines/src/entities/company_categories.py` — the filter offers a
 category immediately and finds nothing under it until either the company upload
-runs again or this does. It reads the mapping from that file rather than naming
-any category, so it needs no edit when the list grows.
+runs again or this does. It holds no mapping of its own: point it with
+`--input` at a file of `{krs, categories}` records, which is the shape
+`CompaniesPayloads` emits, so it needs no edit when the rules change. Each
+change is filed as a revision rather than written past one, and a node a person
+has edited (`categoriesSource: "manual"`) is left alone.
+
+It replaced `recompute-company-categories.ts`, which derived the categories
+itself from the PKD codes on the node. That could not survive the mapping
+moving to Python: keeping it would have meant a second copy of the answer in
+TypeScript, which is the thing the move was for.
 
 Everything above still applies to one: the dry run reports, a clean run writes
 nothing, and it takes `--prod --commit` to touch production.

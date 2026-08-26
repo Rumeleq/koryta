@@ -1,47 +1,95 @@
 import { describe, it, expect } from "vitest";
-import { categoriesFromActivity } from "../../shared/companyCategories";
+import {
+  companyCategories,
+  companyCategoryValues,
+  categoryFilterUrl,
+  categoryTitle,
+  isKnownCategory,
+} from "../../shared/companyCategories";
 
-describe("categoriesFromActivity", () => {
-  it("returns no categories for empty or missing activity", () => {
-    expect(categoriesFromActivity(undefined)).toEqual([]);
-    expect(categoriesFromActivity([])).toEqual([]);
-  });
-
-  it("tags hospitals by PKD 86.10", () => {
-    expect(categoriesFromActivity(["86.10.Z"])).toEqual(["szpitale"]);
-  });
-
-  it("tags water and sewage companies by PKD 36.00 and 37.00", () => {
-    expect(categoriesFromActivity(["36.00.Z"])).toEqual(["wodociagi"]);
-    expect(categoriesFromActivity(["37.00.Z"])).toEqual(["wodociagi"]);
-  });
-
-  it("tags railways by PKD 49.10, 49.20 and 42.12", () => {
-    expect(categoriesFromActivity(["49.10.Z"])).toEqual(["koleje"]);
-    expect(categoriesFromActivity(["49.20.Z"])).toEqual(["koleje"]);
-    expect(categoriesFromActivity(["42.12.Z"])).toEqual(["koleje"]);
-  });
-
-  it("matches any code on the list, not just the main activity", () => {
-    expect(categoriesFromActivity(["68.20.Z", "86.10.Z"])).toEqual([
+/** This module is the site's *vocabulary* of sectors, nothing more.
+ *
+ * Which company belongs to which sector is decided by the pipelines, in
+ * `data/pipelines/src/entities/company_categories.py`, and tested there against
+ * real KRS numbers - see `entities/tests/test_company_categories.py`. It used
+ * to be decided here by matching PKD prefixes, and the tests that pinned that
+ * moved with the logic.
+ */
+describe("companyCategories", () => {
+  it("offers the three sectors the filter knows about", () => {
+    expect(companyCategories.map((c) => c.value)).toEqual([
       "szpitale",
-    ]);
-  });
-
-  it("ignores unrelated PKD codes", () => {
-    expect(categoriesFromActivity(["68.20.Z", "68.32.Z"])).toEqual([]);
-    // 86.21 (medical practice) is not a hospital
-    expect(categoriesFromActivity(["86.21.Z"])).toEqual([]);
-    // 52.21 (support activities for land transport) and 49.31 (urban and
-    // suburban transport) both cover roads and buses, so neither is rail
-    expect(categoriesFromActivity(["52.21.Z"])).toEqual([]);
-    expect(categoriesFromActivity(["49.31.Z"])).toEqual([]);
-  });
-
-  it("can return more than one category", () => {
-    expect(categoriesFromActivity(["49.10.Z", "36.00.Z"])).toEqual([
       "wodociagi",
       "koleje",
     ]);
+  });
+
+  it("gives every category a Polish title", () => {
+    for (const category of companyCategories) {
+      expect(category.title.trim().length).toBeGreaterThan(0);
+      expect(category.title).not.toBe(category.value);
+    }
+  });
+
+  it("has no duplicate values", () => {
+    expect(new Set(companyCategoryValues).size).toBe(
+      companyCategoryValues.length,
+    );
+  });
+
+  it("exposes the values as a non-empty tuple, which z.enum needs", () => {
+    expect(companyCategoryValues.length).toBeGreaterThan(0);
+    expect(companyCategoryValues).toEqual(
+      companyCategories.map((c) => c.value),
+    );
+  });
+});
+
+describe("categoryTitle", () => {
+  it("names a category the site knows", () => {
+    expect(categoryTitle("koleje")).toBe("Koleje");
+    expect(categoryTitle("wodociagi")).toBe("Wodociągi i kanalizacja");
+  });
+
+  it("falls back to the stored value for one it does not", () => {
+    // The pipelines and the site deploy separately, so a node can carry a
+    // category this build has never heard of. Showing the raw value beats an
+    // empty chip: it is visible that something needs adding here.
+    expect(categoryTitle("lotniska")).toBe("lotniska");
+  });
+});
+
+describe("categoryFilterUrl", () => {
+  it("points at the table filtered to that sector", () => {
+    expect(categoryFilterUrl("koleje")).toBe(
+      "/eksploruj/tabela?category=koleje",
+    );
+  });
+
+  it("escapes a value that is not URL-safe", () => {
+    expect(categoryFilterUrl("a b&c")).toBe(
+      "/eksploruj/tabela?category=a%20b%26c",
+    );
+  });
+
+  it("builds a working url for every category the site offers", () => {
+    for (const category of companyCategories) {
+      const url = new URL(
+        categoryFilterUrl(category.value),
+        "https://koryta.pl",
+      );
+      expect(url.pathname).toBe("/eksploruj/tabela");
+      expect(url.searchParams.get("category")).toBe(category.value);
+    }
+  });
+});
+
+describe("isKnownCategory", () => {
+  it("accepts the offered values and rejects anything else", () => {
+    expect(isKnownCategory("szpitale")).toBe(true);
+    expect(isKnownCategory("koleje")).toBe(true);
+    expect(isKnownCategory("lotniska")).toBe(false);
+    expect(isKnownCategory("")).toBe(false);
+    expect(isKnownCategory("Koleje")).toBe(false);
   });
 });
