@@ -849,6 +849,42 @@ def test_a_company_can_be_told_apart_from_the_others(nodes):
     )
 
 
+def test_every_company_is_published(nodes):
+    """A company node is published, or nothing on the site can link to it.
+
+    Unlike a person, a company is never somebody's unverified claim: the nodes
+    come from the KRS ingest, out of the register, and the site treats them as
+    reference data. Every path that reaches one assumes as much - a person's
+    employer is rendered as a link on their page whether or not the company
+    behind it is published, and `/instytucja/<slug>-<id>` then answers "Strona
+    nieznaleziona" to a logged out reader.
+
+    That asymmetry is deliberate for people, where an unpublished node is the
+    invitation to log in and help review it. It is not deliberate here, and it
+    is the reason `PKP Cargotabor` could be found in the search box and not on
+    the page the hit led to.
+
+    `page_is_public` rather than the raw flag, so a company retired through an
+    approved removal is not reported as a hole - `deleted` is how a company
+    stops having a page on purpose.
+    """
+    # 136 of 4024 companies on the export of 2026-08-26T02:00Z, which is what
+    # scripts/migrate/publish-places.ts reports and publishes. Zero afterwards.
+    UNPUBLISHED_COMPANIES = 136
+
+    unpublished = [
+        document["id"]
+        for document in nodes
+        if document.get("type") == "place" and not page_is_public(document)
+    ]
+
+    assert len(unpublished) <= UNPUBLISHED_COMPANIES, (
+        f"{len(unpublished)} companies are not published, so every link to one "
+        f"of them is a dead end for a logged out reader - up from the "
+        f"{UNPUBLISHED_COMPANIES} the migration knows about: {sample(unpublished)}"
+    )
+
+
 def test_regions_are_identified_by_teryt(nodes):
     """Every region has a TERYT code, and no two regions share one.
 
