@@ -19,9 +19,9 @@ process.env.FIREBASE_AUTH_EMULATOR_HOST = "127.0.0.1:9099";
 const RUN = Date.now();
 const COUNT = 25;
 
-/** One more than a page, so the last of these is only reachable by loading a
- * second one. Kept in step with `PAGE_SIZE` in the feed component. */
-const PAGE_SIZE = 20;
+/** More than a page, so the last of these is only reachable by asking for
+ * another one. Kept in step with `PAGE_SIZE` in the feed component. */
+const PAGE_SIZE = 10;
 
 const personId = (i: number) => `recentemp${RUN}p${String(i).padStart(2, "0")}`;
 const personName = (i: number) =>
@@ -105,20 +105,15 @@ test.afterAll(async () => {
   await batch.commit();
 });
 
-/** Scrolls until `testId` is in the document, which is what the sentinel at
- * the end of the feed reacts to.
+/** Presses "Pokaż więcej" until `testId` is in the document.
  *
- * The last card already rendered is what gets scrolled to rather than a blind
- * wheel from wherever the mouse happens to be: the sentinel sits directly
- * below it, so this puts it in view whatever the feed's height has grown to.
+ * The feed pages on a button rather than on a sentinel at its end, so that the
+ * footer below it stays where a reader can reach it - see the component.
  */
 async function loadUntil(page: Page, testId: string) {
   await expect(async () => {
-    await page
-      .locator('[data-testid^="recent-employment-"]')
-      .last()
-      .scrollIntoViewIfNeeded();
-    await page.mouse.wheel(0, 2000);
+    if ((await page.getByTestId(testId).count()) > 0) return;
+    await page.getByTestId("recent-employments-more").click();
     await expect(page.getByTestId(testId)).toHaveCount(1, { timeout: 2000 });
   }).toPass({ timeout: 60_000 });
 }
@@ -188,7 +183,7 @@ test.describe("Home - ostatnie zatrudnienia", () => {
     ).toBeVisible({ timeout: 30_000 });
   });
 
-  test("scrolling reaches a spell that the first page did not carry", async ({
+  test("pressing for more reaches a spell the first page did not carry", async ({
     page,
   }) => {
     const feed = page.getByTestId("recent-employments");
@@ -204,6 +199,29 @@ test.describe("Home - ostatnie zatrudnienia", () => {
 
     await loadUntil(page, `recent-employment-${edgeId(COUNT - 1)}`);
     await expect(seededCards(page)).toHaveCount(COUNT);
+  });
+
+  /** The reason the feed pages on a button. It is the last section on the home
+   * page and the footer sits directly under it - and on a phone the footer is
+   * the only navigation there is, the app bar carrying Tematy, O nas and
+   * Działaj z nami only above 960px. A feed that fetched another page whenever
+   * its end came into view pushed the footer one screen further away every
+   * time somebody scrolled towards it. */
+  test("leaves the footer reachable at the bottom of the page", async ({
+    page,
+  }) => {
+    await expect(page.getByTestId("recent-employments")).toBeVisible({
+      timeout: 30_000,
+    });
+
+    const footerLink = page
+      .locator("footer")
+      .getByRole("link", { name: "Działaj z nami" });
+
+    await expect(async () => {
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await expect(footerLink).toBeInViewport({ timeout: 2000 });
+    }).toPass({ timeout: 30_000 });
   });
 
   test("never shows an employment nobody published", async ({ page }) => {

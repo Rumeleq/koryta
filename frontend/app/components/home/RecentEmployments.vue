@@ -4,13 +4,10 @@
     subtitle="Kto ostatnio objął stanowisko. Kliknij, żeby zobaczyć stronę tej osoby."
   />
 
-  <v-infinite-scroll
+  <div
     v-if="employments.length > 0"
     class="employment-feed"
     data-testid="recent-employments"
-    empty-text="To już wszystkie zatrudnienia, jakie znamy."
-    mode="intersect"
-    @load="loadMore"
   >
     <div class="employment-feed__grid">
       <CardEmployment
@@ -19,7 +16,41 @@
         :employment
       />
     </div>
-  </v-infinite-scroll>
+
+    <div class="employment-feed__end text-center">
+      <v-alert
+        v-if="loadError"
+        class="mb-4 text-start"
+        data-testid="recent-employments-error"
+        text="Nie udało się pobrać kolejnych zatrudnień. Spróbuj jeszcze raz."
+        type="warning"
+        variant="tonal"
+      />
+
+      <!-- A button rather than a sentinel that loads on its own. This feed is
+           the last thing on the home page and the footer is directly under it,
+           and on a phone the footer is the only navigation there is - the app
+           bar carries Tematy, O nas and Działaj z nami only above 960px. A feed
+           that grows every time the reader reaches its end puts the footer
+           permanently one screen further away, so nobody ever arrives at it. -->
+      <v-btn
+        v-if="cursor"
+        class="text-none"
+        color="primary"
+        data-testid="recent-employments-more"
+        :loading="loadingMore"
+        rounded="lg"
+        variant="tonal"
+        @click="loadMore"
+      >
+        Pokaż więcej
+      </v-btn>
+
+      <p v-else class="text-body-2 text-medium-emphasis">
+        To już wszystkie zatrudnienia, jakie znamy.
+      </p>
+    </div>
+  </div>
 
   <!-- Only ever seen on a client-side navigation into the home page: under SSR
        Nuxt settles the fetch before it renders, so the list arrives with the
@@ -28,8 +59,8 @@
     <v-progress-circular indeterminate />
   </div>
 
-  <!-- Not the infinite scroll's own `empty-text`: that one ends a list somebody
-       has scrolled, and this is the whole section having nothing to show -
+  <!-- Not the end-of-feed line above: that one ends a list somebody has read
+       to the bottom, and this is the whole section having nothing to show -
        which on a working site only happens against a fresh local stack. -->
   <v-alert
     v-else
@@ -48,14 +79,29 @@ import type {
 } from "~~/server/api/edges/recentEmployments.get";
 
 /** How many cards a page carries. Two columns on a desktop, so an even number
- * leaves no half row behind while the next one is loading. */
-const PAGE_SIZE = 20;
+ * leaves no half row behind.
+ *
+ * Ten rather than the twenty this used to fetch, because a phone draws the
+ * grid in one column: twenty cards were some two thousand pixels of feed
+ * between the reader and the footer below it, and the footer is the only
+ * navigation a phone has. Ten is five rows on a desktop, and whoever wants
+ * more says so. */
+const PAGE_SIZE = 10;
 
 const ENDPOINT = "/api/edges/recentEmployments";
 
 /** The `useAsyncData` key the first page is stored under, and so what the
  * server hands the browser in the payload. */
 const FIRST_PAGE_KEY = "home-recent-employments";
+
+/** How many times one press of "Pokaż więcej" may go back to the endpoint.
+ *
+ * A page can come back empty and still carry a cursor - the endpoint stops
+ * scanning before it has filled one - and a button that visibly does nothing
+ * reads as broken in a way an intersection sentinel never did. So it keeps
+ * asking until something arrives, bounded so that a long stretch of unpublished
+ * edges cannot turn one press into an unbounded scan. */
+const MAX_FETCHES_PER_PRESS = 5;
 
 const route = useRoute();
 
@@ -86,12 +132,15 @@ const { data, status } = authFetch<RecentEmployments>(ENDPOINT, {
  * - replaces it instead of being appended to what is already on screen. */
 const more = ref<RecentEmployment[]>([]);
 const cursor = ref<string | null>(null);
+const loadingMore = ref(false);
+const loadError = ref(false);
 
 watch(
   data,
   () => {
     more.value = [];
     cursor.value = data.value?.nextCursor ?? null;
+    loadError.value = false;
   },
   { immediate: true },
 );
@@ -101,41 +150,45 @@ const employments = computed(() => [
   ...more.value,
 ]);
 
-type LoadOptions = { done: (status: "ok" | "empty" | "error") => void };
-
-/** The next page, once the reader has scrolled far enough to want one.
+/** The next page, once the reader has asked for one.
  *
  * Plain `$fetch` rather than `authFetch`, which is a `useFetch` and so cannot
- * be called for a page somebody asked for by scrolling. Nothing is lost by it:
- * the endpoint answers with published employments whoever asks, and `latest`
- * would only skip the response cache.
+ * be called for a page somebody asked for by pressing a button. Nothing is lost
+ * by it: the endpoint answers with published employments whoever asks, and
+ * `latest` would only skip the response cache.
  */
-async function loadMore({ done }: LoadOptions) {
-  if (!cursor.value) {
-    done("empty");
-    return;
-  }
+async function loadMore() {
+  if (loadingMore.value || !cursor.value) return;
+
+  loadingMore.value = true;
+  loadError.value = false;
 
   try {
-    const page = await $fetch<RecentEmployments>(ENDPOINT, {
-      query: { ...query.value, cursor: cursor.value },
-    });
-    more.value.push(...page.employments);
-    cursor.value = page.nextCursor;
-    // A page can come back empty and still carry a cursor - the endpoint stops
-    // scanning before it has filled one - so it is the cursor, not the count,
-    // that says whether there is anything behind it.
-    done(page.nextCursor ? "ok" : "empty");
+    for (let fetched = 0; fetched < MAX_FETCHES_PER_PRESS; fetched++) {
+      // Annotated, and it has to be: the query carries `cursor.value`, and
+      // `cursor.value` is assigned from `page` further down the loop body, so
+      // inferring `page` means inferring `cursor` means inferring `page`.
+      const page: RecentEmployments = await $fetch<RecentEmployments>(
+        ENDPOINT,
+        {
+          query: { ...query.value, cursor: cursor.value },
+        },
+      );
+      more.value.push(...page.employments);
+      // It is the cursor, not the count, that says whether there is anything
+      // behind this page.
+      cursor.value = page.nextCursor;
+      if (page.employments.length > 0 || !cursor.value) break;
+    }
   } catch {
-    done("error");
+    loadError.value = true;
+  } finally {
+    loadingMore.value = false;
   }
 }
 </script>
 
 <style scoped>
-/* The infinite scroll makes its root a scroll container, and a v-row's
-   negative margins would hang 12px past it and raise a horizontal scrollbar
-   inside the section. A grid with a gap owes nothing to the edges. */
 .employment-feed__grid {
   display: grid;
   gap: 16px;
@@ -150,5 +203,9 @@ async function loadMore({ done }: LoadOptions) {
   .employment-feed__grid {
     grid-template-columns: repeat(2, 1fr);
   }
+}
+
+.employment-feed__end {
+  padding-top: 24px;
 }
 </style>

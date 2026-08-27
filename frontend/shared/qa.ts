@@ -48,6 +48,26 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
  * before the list could be read at all. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "stopka-na-dole-strony-glownej",
+    title: "Stopka znowu da się dojść na stronie głównej",
+    description:
+      "„Ostatnie zatrudnienia” dociągały kolejną stronę wyników za każdym " +
+      "razem, gdy czytelnik doszedł do końca listy, więc stopka pod nimi " +
+      "odsuwała się w nieskończoność i nikt nigdy do niej nie docierał. Na " +
+      "telefonie boli to najbardziej, bo stopka jest tam jedyną nawigacją - " +
+      "pasek u góry pokazuje „Tematy”, „O nas” i „Działaj z nami” dopiero " +
+      "powyżej 960 px. Teraz kolejne wyniki dokłada przycisk „Pokaż " +
+      "więcej”, a jedna porcja to dziesięć kart zamiast dwudziestu.",
+    steps: [
+      "Wejdź na stronę główną i przewiń na sam dół - pod „Ostatnimi zatrudnieniami” ma być przycisk „Pokaż więcej”, a pod nim stopka z logo i linkami.",
+      "Na telefonie (albo zwęź okno poniżej 960 px) przewiń na sam dół - stopka ma być osiągalna, a lista sama z siebie nie ma rosnąć.",
+      "Naciśnij „Pokaż więcej” - ma dojść kolejne dziesięć kart i nic nie ma zniknąć z tych, które już były.",
+      "Naciskaj, aż wyników zabraknie - przycisk ma zniknąć, a w jego miejscu ma się pojawić „To już wszystkie zatrudnienia, jakie znamy.”",
+      "Kliknij w stopce „Działaj z nami” - ma otworzyć /pomoc.",
+    ],
+    area: "public",
+  },
+  {
     id: "eksploruj-nowe-uporzadkowana-strona",
     title:
       "„Eksploruj nowe” czytelniejsze: trzy kroki i powiązania na wierzchu",
