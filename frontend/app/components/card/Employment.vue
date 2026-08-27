@@ -31,7 +31,12 @@
         }}</span>
       </div>
 
-      <div class="d-flex align-center flex-wrap ga-2">
+      <!-- When it started, on a line of its own. It shares this card with the
+           ownership chip and one chip per party, and somebody filed under three
+           parties put six things on one 24px line - none of them clipped, all
+           of them unreadable. The date is what a reader of a feed called
+           "Ostatnie zatrudnienia" came for, so it gets the line. -->
+      <div>
         <span
           class="employment-card__period text-caption d-inline-flex align-center ga-1"
           :class="{ 'employment-card__period--ongoing': ongoing }"
@@ -39,6 +44,13 @@
           <v-icon :icon="mdiCalendarBlankOutline" size="13" />
           {{ period }}
         </span>
+      </div>
+
+      <!-- `:empty` because both of these can come to nothing - a company whose
+           ownership nobody has established, on a person filed under no party -
+           and an empty row would still take the body's 12px gap. A `v-if`
+           would have to duplicate ChipPublicCompany's own conditions to know. -->
+      <div class="employment-card__meta d-flex align-center flex-wrap ga-2">
         <ChipPublicCompany :company="company" />
         <PartyChip
           v-for="party in employment.parties"
@@ -189,6 +201,21 @@ const period = computed(() => {
 .employment-card:hover .employment-card__go {
   color: rgb(var(--v-theme-primary));
   transform: translateX(3px);
+}
+
+/* Nothing to show - see the template - so nothing to space. */
+.employment-card__meta:empty {
+  display: none;
+}
+
+/* A chip wraps to the next line rather than giving up width. Every party chip
+   is `white-space: nowrap` inside, so a flex item's default `flex-shrink: 1`
+   would take the width out of the background and leave the label to run across
+   its neighbour. `max-width` keeps a label longer than the whole row inside the
+   chip that owns it rather than hanging out of the card. */
+.employment-card__meta > * {
+  flex: 0 0 auto;
+  max-width: 100%;
 }
 
 /* A pill, so the date sits on the same line as the chips without looking like

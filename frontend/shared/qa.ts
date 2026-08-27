@@ -48,6 +48,24 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
  * before the list could be read at all. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "data-i-partie-w-osobnych-liniach",
+    title: "Karty ostatnich zatrudnień dają się przeczytać",
+    description:
+      "Na karcie w „Ostatnich zatrudnieniach” data, znacznik „Instytucja " +
+      "publiczna” i po jednym znaczniku na każdą partię stały w jednej " +
+      "linii. Przy osobie przypisanej do trzech partii dawało to sześć " +
+      "rzeczy w jednym pasku wysokim na 24 px - nic nie było ucięte, ale nie " +
+      "dało się tego przeczytać. Teraz data ma własną linię, a znaczniki " +
+      "schodzą pod nią i zawijają się do kolejnych linii zamiast ściskać.",
+    steps: [
+      "Wejdź na stronę główną i przewiń do „Ostatnich zatrudnień”. Na karcie osoby z kilkoma partiami data ma stać w osobnej linii, a znaczniki partii pod nią.",
+      "Sprawdź, że żaden znacznik nie nachodzi na sąsiedni i że napis mieści się w swoim kolorowym tle.",
+      "Na telefonie (albo zwęź okno poniżej 960 px) sprawdź to samo - znaczniki mają się zawijać do drugiej linii, a nie ściskać.",
+      "Znajdź kartę osoby bez partii i bez znanego właściciela spółki - pod datą nie ma być pustego odstępu.",
+    ],
+    area: "public",
+  },
+  {
     id: "mniej-belek-nad-tabela",
     title: "Mniej belek nad tabelą na Eksploruj",
     description:
