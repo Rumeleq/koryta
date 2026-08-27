@@ -6,6 +6,10 @@
  * `data/pipelines/src/entities/company_categories.py`, and arrives on the node
  * through `/api/ingest/company`.
  *
+ * The order matches `COMPANY_CATEGORIES` in the pipelines, because that is the
+ * order a company's categories are stored in and the filter reads better when
+ * the two agree.
+ *
  * It used to be decided here, by matching PKD prefixes against the `activity`
  * codes in the ingest payload. That does not survive contact with the register:
  * KRS carries two vintages of PKD at once (the 2025 revision split passenger
@@ -23,8 +27,14 @@
 
 export const companyCategories = [
   { value: "szpitale", title: "Szpitale" },
+  { value: "przychodnie", title: "Przychodnie i opieka ambulatoryjna" },
   { value: "wodociagi", title: "Wodociągi i kanalizacja" },
+  { value: "cieplownictwo", title: "Ciepłownictwo" },
+  { value: "energetyka", title: "Energetyka" },
+  { value: "odpady", title: "Odpady i recykling" },
   { value: "koleje", title: "Koleje" },
+  { value: "komunikacja-miejska", title: "Komunikacja miejska i autobusowa" },
+  { value: "sport", title: "Sport i rekreacja" },
 ] as const satisfies readonly { value: string; title: string }[];
 
 export type CompanyCategory = (typeof companyCategories)[number]["value"];

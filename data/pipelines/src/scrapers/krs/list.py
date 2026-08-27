@@ -535,6 +535,7 @@ def company_from_api_krs(pcs: DataFrame, data: dict) -> KrsCompany | None:
             activity = parse_activity_from_api_krs(dane.get("dzial3", {}))
 
         is_public = "organPodmiotZalozycielskiMinisterNadzorujacy" in dzial1
+        form = dzial1.get("danePodmiotu", {}).get("formaPrawna")
 
         teryt_code = get_teryt(pcs, miejscowosc, postal_code)
         owners: list[Owner] = []
@@ -575,6 +576,7 @@ def company_from_api_krs(pcs: DataFrame, data: dict) -> KrsCompany | None:
             regon=regon,
             parents=owners,
             activity=activity,
+            form=form,
             is_public=is_public,
         )
     except KeyError as e:

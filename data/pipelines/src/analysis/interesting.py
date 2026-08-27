@@ -90,6 +90,9 @@ class Companies(Pipeline[Company]):
                     teryt_code=teryt_code,
                     sources=merge.sources,
                     activity=krs.activity if krs is not None else [],
+                    # Only KRS has it, and it is what places the SPZOZ hospitals
+                    # -- see `entities.company_categories`.
+                    form=krs.form if krs is not None else None,
                     is_public=krs.is_public if krs is not None else False,
                     # Only KRS carries these, so there is nothing to reconcile
                     # -- but without them this output cannot be joined to any

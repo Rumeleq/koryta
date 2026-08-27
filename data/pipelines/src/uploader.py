@@ -235,9 +235,11 @@ class CompanyUploader(Uploader):
         # missing value.
         if "categories" not in payload:
             activity = payload.get("activity")
+            form = payload.get("form")
             payload["categories"] = categories_for(
                 payload.get("krs"),
                 list(activity) if isinstance(activity, (list, np.ndarray)) else [],
+                form if isinstance(form, str) and form.strip() else None,
             )
         # A company created because a person works there comes straight from
         # the Companies pipeline rather than through CompaniesPayloads, so it
