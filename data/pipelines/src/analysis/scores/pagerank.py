@@ -24,7 +24,12 @@ that cancels out.
 
 import networkx as nx
 
-from analysis.scores.base import PeopleScoreModel, Population
+from analysis.scores.base import (
+    QUEUE_THRESHOLD,
+    PeopleScoreModel,
+    Population,
+    ScoreRange,
+)
 from scrapers.stores import Context
 
 #: Teleport probability is 1 - alpha. The usual 0.85 lets a walk run about six
@@ -125,6 +130,16 @@ def walk_from(graph: nx.DiGraph, seeds: dict[str, float]) -> dict[str, float]:
 class PeopleScoresPageRank(PeopleScoreModel):
     filename = "people_scores_pagerank"
     model_tag = "pipeline-pagerank"
+
+    #: Capped at the queue threshold: this model may still nominate somebody,
+    #: but it can no longer outrank one whose bands mean something. Of 120
+    #: people it had named, 66 % were called interesting - the base rate, so
+    #: being on its list says nothing either way (p = 0.75). Nor does the band:
+    #: 1-2 scored 64 % and 3-5 scored 68 % (p = 0.70), which is about what a
+    #: random walk over a graph everybody in local government is connected in
+    #: should be expected to produce. Its 490 people at 3 or above were a third
+    #: of the queue and 169 of them were there for no other reason.
+    score_range = ScoreRange(ceiling=QUEUE_THRESHOLD)
 
     def raw_scores(self, ctx: Context, population: Population) -> dict[str, float]:
         graph = build_graph(population)

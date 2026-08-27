@@ -11,10 +11,21 @@ employers, `PeopleScoresPageRank` reads the shape of the graph around them,
 can nominate somebody the others miss, which is why the site takes the best
 score across models rather than the sum.
 
+Taking the best only works if a 5 means the same thing whoever said it, and the
+first measurement against human verdicts says it did not - so each model now
+carries a `ScoreRange` bounding the part of the 1-5 axis its accuracy supports.
+`base` holds the numbers and `scripts/score_model_accuracy.py` recomputes them.
+
 See `base.PeopleScoreModel` for what they share.
 """
 
-from analysis.scores.base import PeopleScoreModel, Population
+from analysis.scores.base import (
+    FULL_RANGE,
+    QUEUE_THRESHOLD,
+    PeopleScoreModel,
+    Population,
+    ScoreRange,
+)
 from analysis.scores.capture import PeopleScoresCapture
 from analysis.scores.coappointment import PeopleScoresCoappointment
 from analysis.scores.company import CompanyScores, PeopleScores
@@ -34,6 +45,8 @@ PEOPLE_SCORE_MODELS: list[type[PeopleScoreModel]] = [
 ]
 
 __all__ = [
+    "FULL_RANGE",
+    "QUEUE_THRESHOLD",
     "CompanyScores",
     "PEOPLE_SCORE_MODELS",
     "PeopleScoreModel",
@@ -44,4 +57,5 @@ __all__ = [
     "PeopleScoresSuccession",
     "PeopleScoresTurnover",
     "Population",
+    "ScoreRange",
 ]

@@ -17,6 +17,40 @@ by rank, not by value: raw model outputs are on wildly different scales - a
 PageRank mass is ~1e-5, a co-appointment count is an integer - and with the
 frontend taking the maximum across models, whichever model scaled itself most
 generously would otherwise win every tie.
+
+Ranking within a model is not the same as being right, though, and `ScoreRange`
+is what the first measurement of that cost. `scripts/score_model_accuracy.py`
+matches every human vote cast since the models went live on 2026-08-08 to the
+scores standing on that person just before somebody looked at them, and asks
+what the reader then said. Over 132 people:
+
+    model      n    said interesting    wasted a click    band orders?
+    turnover   43   88 %               12 %              no  (87 % -> 90 %)
+    pagerank  120   66 %               34 %              no  (64 % -> 68 %)
+    company   124   65 %               35 %              yes (54 % -> 88 %)
+    capture   130   65 %               35 %              yes (56 % -> 80 %)
+    together   51   51 %               49 %              no  (56 % -> 41 %)
+
+against a base rate of 65 % interesting and 35 % wasted over everybody a reader
+judged. "Band orders" compares the model saying 1-2 against it saying 3-5, and
+the arrow is what the reader concluded; the split is significant for `company`
+(p = 0.0002) and `capture` (p = 0.008) and not for the other three. Being named
+at all is significant only for `turnover` (88 % against 65 %, p = 0.0001) and
+for `together`, which is significantly *worse* than the pool it draws from
+(51 %, p = 0.009).
+
+So a 5 does not mean the same thing from every model: `turnover` is right about
+almost everybody it names and its own ordering adds nothing, `company` and
+`capture` earn their scale, and `pagerank` and `together` emit a 5 that carries
+no more information than their 1 - and with the site taking the maximum, that 5
+is what decides the queue.
+
+`ScoreRange` therefore gives each model the part of the 1-5 axis its measured
+accuracy supports, and `banded_scores` folds the rank bands onto it. A model
+whose ceiling is 2 can never on its own put somebody in the queue, which starts
+at 3; a model floored at 3 puts everybody it names there. Nothing about the
+site changes - it still takes the highest score any model gave - but the
+highest score now comes from whichever model has earned the right to say it.
 """
 
 import dataclasses
@@ -45,6 +79,45 @@ SCORE_BANDS: tuple[tuple[float, int], ...] = (
     (0.60, 2),
     (0.0, 1),
 )
+
+#: The score a person needs before the site's default queue shows them at all.
+#: Mirrors `DEFAULT_MIN_VOTES` in `frontend/app/pages/eksploruj/nowe.vue`, and
+#: it is the number the ranges below are drawn around: a ceiling under it keeps
+#: a model out of the queue, a floor on it puts everybody it names in.
+QUEUE_THRESHOLD = 3
+
+
+@dataclasses.dataclass(frozen=True)
+class ScoreRange:
+    """How much of the 1-5 axis a model has earned.
+
+    The band a model hands out is a rank within its own output, and a rank says
+    nothing about whether the model is right. Measuring that against what
+    readers concluded (see the module docstring) put the models a long way
+    apart, so each gets the span its accuracy supports rather than all of them
+    getting all five points.
+    """
+
+    floor: int = 1
+    ceiling: int = 5
+
+    def __post_init__(self) -> None:
+        if not 1 <= self.floor <= self.ceiling <= 5:
+            raise ValueError(f"{self} is not a range inside 1-5")
+
+    def rescale(self, band: int) -> int:
+        """Where a 1-5 rank band lands once folded onto this range.
+
+        Rounded up at the halves, so a model with a narrow range still reaches
+        its own ceiling - a range of 1-2 whose top band came out as 1 would be
+        a model that cannot say anything at all.
+        """
+        width = self.ceiling - self.floor
+        return self.floor + int((band - 1) * width / 4 + 0.5)
+
+
+#: What a model that has not been measured gets: the whole axis, as before.
+FULL_RANGE = ScoreRange()
 
 
 def iter_dicts(value: typing.Any) -> typing.Iterator[dict]:
@@ -138,14 +211,21 @@ class Population:
         return bool(self.candidacies.get(name))
 
 
-def banded_scores(raw: typing.Mapping[str, float]) -> dict[str, int]:
-    """Put a model's raw output on the shared 1-5 scale.
+def banded_scores(
+    raw: typing.Mapping[str, float], span: ScoreRange = FULL_RANGE
+) -> dict[str, int]:
+    """Put a model's raw output on the shared 1-5 scale, inside its own range.
 
     By rank, so the shape of the raw distribution does not matter: PageRank
     masses are a power law and co-appointment counts are small integers with
     ties everywhere, and both need to come out as a usable shortlist. People
     scoring zero or less are dropped rather than banded - a model saying
     nothing about somebody is not a vote.
+
+    The rank band is then folded onto `span`, which is how a model that ranks
+    its own people perfectly well but is wrong about most of them stops
+    outranking one that is right. Ranking and being right are separate
+    questions and only the first is knowable without a reader.
     """
     series = pd.Series(raw, dtype="float64")
     positive = series[series > 0]
@@ -160,7 +240,7 @@ def banded_scores(raw: typing.Mapping[str, float]) -> dict[str, int]:
                 return points
         return 1
 
-    return {str(name): band(value) for name, value in percentile.items()}
+    return {str(name): span.rescale(band(value)) for name, value in percentile.items()}
 
 
 class PeopleScoreModel(Pipeline):
@@ -174,6 +254,12 @@ class PeopleScoreModel(Pipeline):
     #: "pipeline" reads as non-human to the frontend; the tag after it is what
     #: tells two models apart in `stats.votes.models`.
     model_tag: str = "pipeline"
+
+    #: How much of the 1-5 axis this model has earned, measured against what
+    #: readers said about the people it named. A model nobody has checked yet
+    #: keeps the whole axis - the range is a record of a measurement, not a
+    #: guess, and guessing one would be worse than leaving it alone.
+    score_range: ScoreRange = FULL_RANGE
 
     people_payloads: PeoplePayloads
     people_koryta: KorytaPeople
@@ -200,7 +286,8 @@ class PeopleScoreModel(Pipeline):
         raw = self.raw_scores(ctx, population)
         eligible = set(population.shortlist)
         banded = banded_scores(
-            {name: score for name, score in raw.items() if name in eligible}
+            {name: score for name, score in raw.items() if name in eligible},
+            self.score_range,
         )
 
         records = [

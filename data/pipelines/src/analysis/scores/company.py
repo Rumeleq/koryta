@@ -19,7 +19,12 @@ import dataclasses
 import pandas as pd
 
 from analysis.payloads.person import PeoplePayloads
-from analysis.scores.base import IS_PUBLIC_SCORE, PeopleScoreModel, Population
+from analysis.scores.base import (
+    FULL_RANGE,
+    IS_PUBLIC_SCORE,
+    PeopleScoreModel,
+    Population,
+)
 from analysis.utils import as_sequence
 from scrapers.koryta.download import KorytaPeople, KorytaVotes
 from scrapers.stores import Context, Pipeline
@@ -154,6 +159,15 @@ class PeopleScores(PeopleScoreModel):
 
     filename = "people_scores"
     model_tag = "pipeline"
+
+    #: The whole 1-5 axis, which this model is the clearest case for having
+    #: earned - by ordering rather than by picking. Of 124 people it had named,
+    #: 65 % were called interesting, which is the base rate, so being on its
+    #: list means nothing on its own. Its bands separate sharply though: 1-2
+    #: scored 54 % and 3-5 scored 88 % (p = 0.0002), the widest split measured.
+    #: Whatever a person's employers' ratings are worth, they are worth it in
+    #: order.
+    score_range = FULL_RANGE
 
     company_scores: CompanyScores
 

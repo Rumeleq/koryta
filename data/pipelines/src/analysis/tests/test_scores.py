@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from analysis.scores import (
+    PEOPLE_SCORE_MODELS,
     CompanyScores,
     PeopleScoresCapture,
     PeopleScoresCoappointment,
@@ -14,11 +15,14 @@ from analysis.scores import (
     PeopleScoresTurnover,
 )
 from analysis.scores.base import (
+    FULL_RANGE,
+    QUEUE_THRESHOLD,
     Candidacy,
     CompanyFacts,
     Employment,
     PeopleScoreModel,
     Population,
+    ScoreRange,
     banded_scores,
 )
 from analysis.scores.succession import as_date, successions
@@ -93,6 +97,66 @@ class TestBandedScores:
 
     def test_a_lone_score_lands_in_the_top_band(self):
         assert banded_scores({"a": 0.001}) == {"a": 5}
+
+    def test_a_range_folds_the_bands_onto_itself(self):
+        raw = {f"p{i}": float(i) for i in range(1, 101)}
+
+        capped = banded_scores(raw, ScoreRange(ceiling=3))
+
+        assert max(capped.values()) == 3
+        assert min(capped.values()) == 1
+        # Still ordered: a capped model ranks its own people as before, it just
+        # cannot outrank a model that has earned the top of the scale.
+        assert capped["p100"] >= capped["p90"] >= capped["p1"]
+
+    def test_a_floor_puts_everybody_the_model_named_in_the_queue(self):
+        raw = {f"p{i}": float(i) for i in range(1, 101)}
+
+        floored = banded_scores(raw, ScoreRange(floor=QUEUE_THRESHOLD))
+
+        assert min(floored.values()) == QUEUE_THRESHOLD
+        assert max(floored.values()) == 5
+
+    def test_a_narrow_range_still_reaches_its_ceiling(self):
+        # Rounding down at the halves would leave a 1-2 model unable to say 2
+        # for anybody but the very top percentile, which is not a model.
+        raw = {f"p{i}": float(i) for i in range(1, 101)}
+
+        assert set(banded_scores(raw, ScoreRange(ceiling=2)).values()) == {1, 2}
+
+    def test_the_default_range_changes_nothing(self):
+        raw = {f"p{i}": float(i) for i in range(1, 101)}
+
+        assert banded_scores(raw, FULL_RANGE) == banded_scores(raw)
+
+    def test_a_range_outside_the_scale_is_refused(self):
+        with pytest.raises(ValueError):
+            ScoreRange(floor=4, ceiling=2)
+        with pytest.raises(ValueError):
+            ScoreRange(ceiling=6)
+
+
+class TestScoreRanges:
+    """What each model is allowed to say, and why it is written down at all."""
+
+    def test_every_model_states_a_range(self):
+        for model_type in PEOPLE_SCORE_MODELS:
+            assert isinstance(model_type.score_range, ScoreRange), model_type
+
+    def test_the_measured_models_carry_their_verdict(self):
+        # The three the 2026-08 measurement moved, pinned so that changing any
+        # of them is a change somebody had to write down rather than a constant
+        # that drifted. The numbers behind them are in `analysis.scores.base`.
+        assert PeopleScoresTurnover.score_range == ScoreRange(
+            floor=QUEUE_THRESHOLD, ceiling=5
+        )
+        assert PeopleScoresPageRank.score_range == ScoreRange(ceiling=QUEUE_THRESHOLD)
+        assert PeopleScoresCoappointment.score_range == ScoreRange(ceiling=2)
+
+    def test_a_capped_model_cannot_reach_the_queue_on_its_own(self):
+        # The whole point of the cap: `together` may still colour somebody the
+        # other models found, but it can no longer put one in front of a reader.
+        assert PeopleScoresCoappointment.score_range.ceiling < QUEUE_THRESHOLD
 
 
 class TestPopulation:
