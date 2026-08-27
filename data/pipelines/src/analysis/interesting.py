@@ -100,7 +100,14 @@ class Companies(Pipeline[Company]):
                     # is what public-procurement sources do.
                     nip=krs.nip if krs is not None else None,
                     regon=krs.regon if krs is not None else None,
-                    # TODO add owners=[],
+                    # Who owns it, as `company_from_api_krs` read it out of
+                    # dzial1: a company by KRS number, a gmina/powiat/
+                    # wojewodztwo by the TERYT code its register name resolved
+                    # to. Dropped here until now - the TODO that stood in this
+                    # spot - which is why `CompaniesPayloads` emitted no owners
+                    # however hard it looked for them, and why `RegionPayloads`
+                    # found no gmina worth a node.
+                    parents=krs.parents if krs is not None else [],
                 )
             )
 

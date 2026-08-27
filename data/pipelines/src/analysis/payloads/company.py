@@ -124,9 +124,17 @@ class CompaniesPayloads(Pipeline):
 
             payloads.append(payload)
 
+        # Counted and printed because the failure mode here is silence: when
+        # `Companies` dropped `parents`, every payload came out with two empty
+        # lists and the run reported nothing wrong. A zero on either of these is
+        # worth noticing - the register names a company owner for 837 of the
+        # companies on the site and a JST owner for 1,354.
+        with_owners = sum(1 for p in payloads if p["owners"])
+        with_jst = sum(1 for p in payloads if p["owner_teryts"])
         print(
             f"Emitting {len(payloads)} company payloads "
-            f"({with_teryt} with a TERYT code)"
+            f"({with_teryt} with a TERYT code, {with_owners} with a company "
+            f"owner, {with_jst} with a JST owner)"
         )
         if not payloads:
             return pd.DataFrame(
