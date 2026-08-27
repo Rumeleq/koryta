@@ -30,16 +30,36 @@
              sits under the other two controls on the page rather than in a row
              of its own, because it is the same kind of thing: what this reader
              may do to the entity they are looking at. -->
-        <v-btn
-          v-if="isAdmin && entity?.id"
-          variant="tonal"
-          size="small"
-          :prepend-icon="mdiHistory"
-          :to="`/admin/rewizje/${entity.id}`"
-          data-testid="admin-revisions-link"
-        >
-          Rewizje
-        </v-btn>
+        <div v-if="isAdmin && entity?.id" class="d-flex ga-1">
+          <!-- The table's "Eksploruj" icon, in words, for the reader who
+               arrived on the page directly. It opens the same tabs - rejestr.io,
+               Wikipedia and a Google query per place the person is tied to -
+               so that checking somebody found through search costs the same
+               one click as checking somebody found through /eksploruj. -->
+          <v-tooltip :text="SEARCH_ALL_TOOLTIP" open-delay="600" location="top">
+            <template #activator="{ props: tooltipProps }">
+              <v-btn
+                v-bind="tooltipProps"
+                variant="tonal"
+                size="small"
+                :prepend-icon="mdiOpenInNew"
+                data-testid="admin-explore-link"
+                @click="searchAll()"
+              >
+                Eksploruj
+              </v-btn>
+            </template>
+          </v-tooltip>
+          <v-btn
+            variant="tonal"
+            size="small"
+            :prepend-icon="mdiHistory"
+            :to="`/admin/rewizje/${entity.id}`"
+            data-testid="admin-revisions-link"
+          >
+            Rewizje
+          </v-btn>
+        </div>
       </div>
     </v-card-title>
     <template #append> </template>
@@ -101,14 +121,34 @@ import {
   mdiHistory,
   mdiMapMarkerRadiusOutline,
   mdiOfficeBuildingOutline,
+  mdiOpenInNew,
 } from "@mdi/js";
-import type { Person, Company, Article, Region } from "~~/shared/model";
+import { toRef } from "vue";
+import type {
+  Person,
+  Company,
+  Article,
+  Region,
+  PersonRich,
+} from "~~/shared/model";
 import { companyIdentifiers } from "~~/shared/identifiers";
+import {
+  SEARCH_ALL_TOOLTIP,
+  usePersonSearch,
+} from "~/composables/usePersonSearch";
 
-const props = defineProps<{
-  entity: Company | Person | Article | Region;
-  type: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    entity: Company | Person | Article | Region;
+    type: string;
+    /** Places to search the person in besides the ones the node carries.
+     * A node fetched by id has no `elections` - only the table builds those,
+     * from the subgraph it fetches - so the page derives them from its edges
+     * and hands them down. */
+    extraLocations?: string[];
+  }>(),
+  { extraLocations: undefined },
+);
 
 const { isAdmin } = useAuthState();
 
@@ -130,5 +170,17 @@ const region = computed(() =>
 
 const personEntity = computed(() =>
   props.type === "person" ? (props.entity as Person) : undefined,
+);
+
+/** The node as the search composable wants it. A page loads a plain `Person`,
+ * whose extra rich fields are simply absent - `usePersonSearch` reads them
+ * optionally, and `extraLocations` covers the one that matters here. */
+const richPerson = computed(() => personEntity.value as PersonRich | undefined);
+
+const { searchAll } = usePersonSearch(
+  richPerson,
+  undefined,
+  undefined,
+  toRef(props, "extraLocations"),
 );
 </script>

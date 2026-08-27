@@ -21,6 +21,14 @@ test.describe("Admin shortcut from an entity page", () => {
     ).toBeVisible();
   });
 
+  /** Only that it is there. Clicking it opens a browser tab per query - what
+   * the tabs are is settled in `tests/composables/usePersonSearch.test.ts`,
+   * and driving half a dozen popups here would test the pop-up blocker. */
+  test("the explore shortcut sits alongside it", async ({ page }) => {
+    await logIn(page, USERS.admin, PERSON_URL);
+    await expect(page.getByTestId("admin-explore-link")).toBeVisible();
+  });
+
   test("a signed in reader without the claim never sees it", async ({
     page,
   }) => {
@@ -30,6 +38,7 @@ test.describe("Admin shortcut from an entity page", () => {
     // about what is absent cannot pass on a page that never loaded.
     await expect(page.getByText("Jan Kowalski").first()).toBeVisible();
     await expect(page.getByTestId("admin-revisions-link")).toHaveCount(0);
+    await expect(page.getByTestId("admin-explore-link")).toHaveCount(0);
   });
 });
 
