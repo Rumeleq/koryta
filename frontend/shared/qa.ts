@@ -48,6 +48,65 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
  * before the list could be read at all. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "menu-nawigacji-w-pasku-na-telefonie",
+    title: "Menu nawigacji w pasku u góry na telefonie",
+    description:
+      "„Tematy”, „Źródła”, „O nas” i „Działaj z nami” były na telefonie " +
+      "tylko w stopce, na samym dole strony - a więc tym dalej, im dłuższa " +
+      "strona. W pasku u góry jest teraz ikona menu z tymi czterema " +
+      "pozycjami. Stopka zostaje bez zmian; menu jest drugą drogą, nie " +
+      "zamiennikiem. Powyżej 960 px pasek wygląda jak wcześniej i menu się " +
+      "nie pokazuje.",
+    steps: [
+      "Na telefonie (albo zwęź okno poniżej 960 px) wejdź na dowolną stronę - z prawej strony paska, obok ikony konta, ma być ikona menu (trzy kreski).",
+      "Dotknij jej - ma się rozwinąć lista: Tematy, Źródła, O nas, Działaj z nami.",
+      "Wybierz „Działaj z nami” - ma otworzyć /pomoc.",
+      "Rozszerz okno powyżej 960 px - menu ma zniknąć, a w pasku mają być przyciski „Tematy”, „O nas” i „Działaj z nami” jak wcześniej.",
+    ],
+    area: "public",
+  },
+  {
+    id: "lupa-w-pasku-na-telefonie",
+    title: "Wyszukiwarka na telefonie - lupa w pasku u góry",
+    description:
+      "Na telefonie nie dało się nic wyszukać. Pole wyszukiwarki ma 300 px, " +
+      "a w pasku u góry mieści się obok logo i ikony konta tylko na " +
+      "szerszym ekranie - na wąskim było ucięte, a na stronie głównej, " +
+      "która chowa je celowo, nie było go wcale, więc po przewinięciu " +
+      "pierwszego ekranu wyszukiwarka znikała na dobre. Teraz w pasku jest " +
+      "lupa: po jej dotknięciu pole zajmuje cały pasek, a krzyżyk obok " +
+      "wraca do logo i konta. Na szerokim ekranie nic się nie zmienia.",
+    steps: [
+      "Na telefonie (albo zwęź okno poniżej 960 px) wejdź na stronę osoby - w pasku u góry, obok ikony konta, ma być lupa.",
+      "Dotknij lupy: pole wyszukiwarki ma zająć cały pasek, logo i ikona konta mają zniknąć, a kursor ma od razu stać w polu.",
+      "Wpisz nazwisko i wybierz podpowiedź - strona ma się otworzyć, a pasek wrócić do zwykłego wyglądu z logo.",
+      "Dotknij lupy jeszcze raz i zamknij krzyżykiem - pasek ma wrócić bez przechodzenia gdziekolwiek.",
+      "Zrób to samo na stronie głównej, przewiniętej w dół - lupa ma działać tak samo, mimo że strona ma własną wyszukiwarkę u góry.",
+      "Rozszerz okno powyżej 960 px - w pasku ma być pole wyszukiwarki jak wcześniej i żadnej lupy, a na stronie głównej ani jednego, ani drugiego.",
+    ],
+    area: "public",
+  },
+  {
+    id: "krotsze-podpowiedzi-wyszukiwarki-na-telefonie",
+    title: "Mniej podpowiedzi w wyszukiwarce na telefonie",
+    description:
+      "Lista pod wyszukiwarką potrafiła zasłonić na telefonie całą stronę: " +
+      "zanim ktokolwiek zdążył cokolwiek wpisać, było w niej osiem filtrów " +
+      "partyjnych, a po wpisaniu - do dwudziestu wyników i jeszcze trzy " +
+      "pozycje „Dodaj…”. Na telefonie filtry partyjne czekają teraz na " +
+      "pierwszą literę (wpisanie „Konf” nadal je znajduje), wyników jest " +
+      "najwyżej osiem, a „Dodaj…” pokazuje się dopiero wtedy, gdy nic się " +
+      "nie znalazło. Na szerokim ekranie lista jest bez zmian.",
+    steps: [
+      "Na telefonie (albo zwęź okno poniżej 960 px) dotknij wyszukiwarki, nic nie wpisując - ma być jedna pozycja, „Lista wszystkich osób”, bez listy partii.",
+      "Wpisz „Konf” - „Konfederacja” ma się pojawić jako filtr partii.",
+      "Wpisz nazwisko, które ma dużo trafień - podpowiedzi ma być najwyżej osiem.",
+      "Wpisz coś, czego na pewno nie ma w bazie - dopiero wtedy mają się pokazać „Dodaj nową osobę”, „Dodaj instytucję lub spółkę” i „Dodaj źródło”.",
+      "Rozszerz okno powyżej 960 px i powtórz: lista partii ma być widoczna od razu, a „Dodaj…” na końcu każdego wyszukiwania.",
+    ],
+    area: "public",
+  },
+  {
     id: "stopka-na-dole-strony-glownej",
     title: "Stopka znowu da się dojść na stronie głównej",
     description:

@@ -1,7 +1,7 @@
 <template>
   <div style="display: contents">
     <v-autocomplete
-      id="omni-search"
+      :id="fieldId"
       v-model="nodeGroupPicked"
       v-model:focused="autocompleteFocus"
       v-model:search="search"
@@ -39,9 +39,11 @@
         </v-list-item>
       </template>
       <!-- Rendered after the results and, when nothing matched, as the empty
-         state. Adding a person is the main way new entries get created. -->
+         state. Adding a person is the main way new entries get created.
+         On a phone only as the empty state: three more rows under a menu that
+         already answered the question is most of what makes it a wall. -->
       <template #append-item>
-        <template v-if="createName">
+        <template v-if="createName && offerToCreate">
           <v-divider class="my-1" />
           <v-list-item
             v-for="option in createOptions"
@@ -86,13 +88,41 @@ import { generateEntityUrl } from "~/composables/slugs";
 import type { NodeType } from "~~/shared/model";
 import type { ProposableNodeType } from "~~/shared/api";
 import { refDebounced } from "@vueuse/core";
+import { useDisplay } from "vuetify";
 
 const { push, currentRoute } = useRouter();
 
+/** Below Vuetify's `md`, i.e. a phone.
+ *
+ * Safe to read here although the component is server rendered, because nothing
+ * it decides is in the document until somebody focuses the field: the menu is
+ * an overlay Vuetify does not draw until it opens, and by then the browser has
+ * a viewport to answer with. */
+const { smAndDown } = useDisplay();
+
+/** How many hits a phone's menu offers.
+ *
+ * The endpoint answers with twenty. On a desktop that is a list to run an eye
+ * down; on a phone it is a menu longer than the page it opened over, and the
+ * hit somebody wants is almost always in the first few - the query is ordered
+ * by how much the site knows about each node. */
+const PHONE_RESULT_LIMIT = 8;
+
 const props = defineProps<{
   width?: string;
+  /** The element id the field carries, for the caller that needs a second one
+   * of these in the same document. The home page draws its own search and the
+   * app bar keeps one behind a magnifier for a phone, so on that page the two
+   * are on screen together and cannot both be `omni-search`. Everything that
+   * addresses the search by id - `openSearch` in the layout, the e2e helpers -
+   * means the canonical one, so the default stays. */
+  inputId?: string;
 }>();
 const { width = "300px" } = props;
+
+// A computed rather than another destructure: the bar's instance changes id as
+// the reader navigates onto and off the home page.
+const fieldId = computed(() => props.inputId ?? "omni-search");
 
 const loading = ref(false);
 const search = ref();
@@ -208,6 +238,14 @@ async function performSearch(searchTerm: string) {
 //   }
 // });
 
+/** Whether "dodaj nową osobę" and its neighbours belong under this menu.
+ *
+ * Always on a desktop, where they are three rows at the end of a list. On a
+ * phone only when the search found nothing, which is the case they exist for. */
+const offerToCreate = computed(
+  () => !smAndDown.value || searchData.value.length === 0,
+);
+
 const items = computed<ListItem[]>(() => {
   const result: ListItem[] = [];
   result.push({
@@ -221,25 +259,36 @@ const items = computed<ListItem[]>(() => {
     },
   });
 
-  parties.forEach((item) => {
-    result.push({
-      id: `party-${item}`,
-      title: item,
-      icon: mdiFlag,
-      subtitle: "Partia",
-      path: "/eksploruj/tabela",
-      query: {
-        party: item,
-      },
-      logEventKey: {
-        content_id: item,
-        content_type: "party",
-      },
+  // Held back on a phone until the reader has typed something. Before that
+  // these eight party filters are the entire menu - a screenful of shortcuts
+  // nobody asked for, thrown over whatever they were reading. Typing still
+  // reaches them, because VAutocomplete filters the list it is given on the
+  // item title, so "Konf" still offers Konfederacja.
+  if (!smAndDown.value || search.value) {
+    parties.forEach((item) => {
+      result.push({
+        id: `party-${item}`,
+        title: item,
+        icon: mdiFlag,
+        subtitle: "Partia",
+        path: "/eksploruj/tabela",
+        query: {
+          party: item,
+        },
+        logEventKey: {
+          content_id: item,
+          content_type: "party",
+        },
+      });
     });
-  });
+  }
 
   if (searchData.value) {
-    searchData.value.forEach((item) => {
+    const hits = smAndDown.value
+      ? searchData.value.slice(0, PHONE_RESULT_LIMIT)
+      : searchData.value;
+
+    hits.forEach((item) => {
       const itemType = (item.type || "place") as NodeType;
 
       // Choose icon based on type
