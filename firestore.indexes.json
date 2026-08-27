@@ -439,6 +439,32 @@
           "order": "ASCENDING"
         },
         {
+          "fieldPath": "stats.votes.humanVoted",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "stats.edges.all.latestEmploymentStart",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "stats.votes.interesting",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "nodes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "stats.isApproved",
+          "order": "ASCENDING"
+        },
+        {
           "fieldPath": "type",
           "order": "ASCENDING"
         }

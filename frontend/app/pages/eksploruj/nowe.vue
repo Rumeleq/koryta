@@ -4,7 +4,11 @@
       <h1 class="text-h4 mb-4">Eksploruj nowe osoby</h1>
 
       <div class="d-flex align-start ga-4 mb-4 flex-wrap">
-        <ExploreProgressBar hide-cta :query="apiQuery" class="flex-grow-1" />
+        <ExploreProgressBar
+          hide-cta
+          :query="progressQuery"
+          class="flex-grow-1"
+        />
         <v-select
           v-model="filterCategory"
           :items="availableCategories"
@@ -15,6 +19,43 @@
           clearable
           style="min-width: 220px; max-width: 280px"
         />
+      </div>
+
+      <div class="d-flex align-center ga-4 mb-4 flex-wrap">
+        <v-btn-toggle
+          v-model="filterOrder"
+          mandatory
+          divided
+          variant="outlined"
+          density="comfortable"
+        >
+          <v-btn value="recent" class="text-none" :prepend-icon="mdiClockFast">
+            Najnowsze zatrudnienia
+          </v-btn>
+          <v-btn value="votes" class="text-none" :prepend-icon="mdiStarOutline">
+            Najwyżej oceniane
+          </v-btn>
+        </v-btn-toggle>
+
+        <v-text-field
+          v-if="orderRecent"
+          v-model="minVotes"
+          type="number"
+          :min="0"
+          label="Min. suma głosów"
+          variant="outlined"
+          density="comfortable"
+          hide-details
+          style="max-width: 180px"
+        />
+
+        <span class="text-body-2 text-medium-emphasis">
+          {{
+            orderRecent
+              ? `Osoby, które zaczęły pracę najpóźniej, z sumą ocen co najmniej ${minVotes} i bez głosu od żadnej osoby.`
+              : "Osoby z najwyższą sumą ocen, bez głosu od żadnej osoby."
+          }}
+        </span>
       </div>
 
       <!-- CLOSED STATE -->
@@ -218,8 +259,10 @@
 import {
   mdiCheckboxBlankCircleOutline,
   mdiCheckboxMarkedCircle,
+  mdiClockFast,
   mdiInformation,
   mdiCircleSmall,
+  mdiStarOutline,
 } from "@mdi/js";
 import { ref, computed, watch } from "vue";
 import { useListWithStats } from "~/composables/entity/listWithStats";
@@ -250,11 +293,43 @@ const availableCategories = companyCategories.map((c) => ({
   title: c.title,
   value: c.value,
 }));
-const { stringFilter } = useQueryFilters();
+const { stringFilter, choiceFilter, numberFilter } = useQueryFilters();
 const filterCategory = stringFilter("category");
 
+/** Which end of the queue to work through.
+ *
+ * `recent` is the default: somebody who started a job last month is worth
+ * looking at while it is still news, and the pipeline's own rating is enough to
+ * tell an interesting one from the rest. `votes` is the older behaviour - the
+ * highest rated first, however long ago they were hired.
+ */
+const filterOrder = choiceFilter<"recent" | "votes">("order", "recent");
+const orderRecent = computed(() => filterOrder.value === "recent");
+
+/** The aggregate score a person needs to show up in `recent`. Three is where
+ * the pipeline's rating starts to mean something - 1,050 of the ~5,200
+ * unpublished people clear it, against a maximum observed score of 5 - so the
+ * queue stays a shortlist rather than everyone ever ingested. */
+const DEFAULT_MIN_VOTES = 3;
+const filterMinVotes = numberFilter("minVotes");
+/** Kept out of the url while it equals the default, like every other filter
+ * here. Clearing the field therefore reads back as the default rather than as
+ * "no minimum" - the two are the same absent-from-the-url state. */
+const minVotes = computed<number, number | string | null>({
+  get: () => filterMinVotes.value ?? DEFAULT_MIN_VOTES,
+  set: (value) => {
+    // The text field hands back a string, and an empty one once it is cleared.
+    const parsed =
+      typeof value === "number"
+        ? value
+        : Number.parseInt(String(value ?? ""), 10);
+    filterMinVotes.value =
+      !Number.isFinite(parsed) || parsed === DEFAULT_MIN_VOTES ? null : parsed;
+  },
+});
+
 // The card stack is paged in memory rather than through the url.
-watch(filterCategory, () => {
+watch([filterCategory, filterOrder, minVotes], () => {
   page.value = 1;
 });
 
@@ -278,9 +353,13 @@ watch(page, () => {
   actionVoted.value = false;
 });
 
-const sortBy = ref([
-  { key: "stats.votes.interesting", order: "desc" as const },
-]);
+/** The column the api sorts on, which is also the one the table marks as
+ * sorted. Both modes read top-down, so the direction is always descending. */
+const sortKey = computed(() =>
+  orderRecent.value ? "latestEmploymentStart" : "stats.votes.interesting",
+);
+
+const sortBy = computed(() => [{ key: sortKey.value, order: "desc" as const }]);
 
 const headers = computed(() => {
   const baseHeaders = [
@@ -330,19 +409,34 @@ const headers = computed(() => {
   return baseHeaders;
 });
 
+// Sorting on `latestEmploymentStart` leaves out the people who have no
+// employment edge to date at all - 135 of the 1,050 above the default score.
+// That is the point of the mode rather than a gap in it: "hired recently" has
+// nothing to say about somebody with no known job.
 const apiQuery = computed(
   () =>
     ({
       type: "person",
       limit: 1,
       page: page.value,
-      sortBy: "stats.votes.interesting",
+      sortBy: sortKey.value,
       sortDesc: "true",
       visibility: "private",
       hideVoted: "no_votes",
       category: filterCategory.value || undefined,
+      minVotes: orderRecent.value ? minVotes.value : undefined,
     }) as Query,
 );
+
+/** The bar counts the same people it always did: everybody the reader could be
+ * asked to check, narrowed only by the filters that say who that is. The score
+ * threshold decides the order of the queue, not its scope, so folding it in
+ * would silently redefine "sprawdzono N z M" the moment the page loads - and
+ * the denominator would move again every time somebody nudged the threshold. */
+const progressQuery = computed(() => ({
+  ...apiQuery.value,
+  minVotes: undefined,
+}));
 
 // Same as /eksploruj/tabela: the template is a single <ClientOnly>, so nothing
 // this returns is rendered on the server.

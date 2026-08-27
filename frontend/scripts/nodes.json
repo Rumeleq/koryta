@@ -255,7 +255,15 @@
       "nodeGroupSize": 1,
       "votes": {
         "humanVoted": false,
-        "interesting": 0
+        "interesting": 3
+      },
+      "edges": {
+        "all": {
+          "latestEmploymentStart": "2026-02-01"
+        },
+        "approved": {
+          "latestEmploymentStart": "2026-02-01"
+        }
       }
     },
     "content": "Test person not yet approved"
