@@ -72,9 +72,22 @@ async function main() {
   console.info(
     `  owns  region->region: ${regionToRegion}   (hierarchy, untouched)`,
   );
-  console.info(
-    `  companies with >1 seat: ${[...seats.values()].filter((v) => v.length > 1).length}`,
-  );
+  // 66 companies arrive with two seat documents already - 65 exact duplicate
+  // pairs from before edge ids were derived from (source, target, type), plus
+  // Koleje Śląskie claimed by both teryt24 and teryt2469. Anything past that is
+  // the ingest resolving a seat to a region the stored one did not come from,
+  // which is worth naming rather than counting.
+  const multiSeat = [...seats.entries()].filter(([, v]) => v.length > 1);
+  const twoDistinct = multiSeat.filter(([, v]) => new Set(v).size > 1);
+  console.info(`  companies with >1 seat: ${multiSeat.length}`);
+  console.info(`    of which two DIFFERENT regions: ${twoDistinct.length}`);
+  for (const [placeId, regionIds] of twoDistinct.slice(0, 20)) {
+    const place = byId.get(placeId);
+    console.info(
+      `      ${place?.krsNumber ?? placeId} ${String(place?.name).slice(0, 40)}: ` +
+        `${[...new Set(regionIds)].map((r) => byId.get(r)?.name ?? r).join(" + ")}`,
+    );
+  }
   console.info(`  companies with an owner: ${owners.size}`);
 
   const cats = new Map<string, number>();

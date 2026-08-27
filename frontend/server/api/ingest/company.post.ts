@@ -76,10 +76,29 @@ export default defineEventHandler(async (event) => {
   // Who holds shares, per dział 1 of the register. A company owner is looked up
   // by KRS; a gmina, powiat or województwo has no KRS and arrives as the TERYT
   // code its register name was resolved to.
+  let unknownOwners = 0;
   if (body.owners && Array.isArray(body.owners)) {
     for (const parent of body.owners) {
       if (!parent) continue;
-      const { ref: parentRef } = await findCompanyByKRS(db, parent, false);
+      let parentRef;
+      try {
+        ({ ref: parentRef } = await findCompanyByKRS(db, parent, false));
+      } catch {
+        // The register names 238 companies as shareholders that koryta.pl does
+        // not track. `findCompanyByKRS` throws a 404 for those, and the throw
+        // used to escape the handler - so a company whose parent is missing was
+        // rejected whole, losing its categories and its seat along with the one
+        // edge that could not be drawn. 266 of 3,928 in a real run.
+        //
+        // Skipped rather than created: minting a place node as a side effect of
+        // an ownership edge would add those 238 companies to the site, and that
+        // is a decision about what the site covers, not about this request.
+        console.warn(
+          `Owner KRS ${parent} is not on the site (krs=${body.krs}), skipping the edge`,
+        );
+        unknownOwners += 1;
+        continue;
+      }
       await createEdge(dbb, parentRef.id, nodeRef.id, "owns", publish);
     }
   }
@@ -88,7 +107,7 @@ export default defineEventHandler(async (event) => {
       if (!owner) continue;
       const regionNodeId = await findRegionByTeryt(db, owner);
       if (!regionNodeId) {
-        // 706 gminy have a region node because they own something; a code that
+        // 985 gminy have a region node because they own something; a code that
         // resolves to no node is one the region ingest has not reached yet.
         // Reported rather than fatal, the same way an unknown seat is.
         console.warn(
@@ -109,14 +128,39 @@ export default defineEventHandler(async (event) => {
   if (body.teryt) {
     const regionNodeId = await findRegionByTeryt(db, body.teryt);
     if (regionNodeId) {
-      const added = await createEdge(
-        dbb,
-        regionNodeId,
+      // A company has one registered seat, so a second one from a different
+      // region is not a second fact - it is a disagreement. 13 companies on the
+      // site have one: their stored seat predates the current register and is
+      // simply wrong (ELZAT of Mikołów is filed under Tarnów, Centrum Medyczne
+      // Żelazna of Warsaw under Olsztyn), and the register now resolves them
+      // correctly.
+      //
+      // The correct one is reported and NOT written, rather than the stale one
+      // being deleted. Deleting takes an edge's revisions with it, and
+      // `functions/src/revisions.ts` creates a typeless phantom node under the
+      // edge's id when the last revision for it goes - so a fix for 13 rows
+      // would introduce a worse problem. They need a hand, or a migration that
+      // knows about revisions; either way not silently, in an ingest.
+      const conflicting = await findSeatFromAnotherRegion(
+        db,
         nodeRef.id,
-        "seat",
-        publish,
+        regionNodeId,
       );
-      region = added ? "added" : "existing";
+      if (conflicting) {
+        console.warn(
+          `Company krs=${body.krs} is already seated in ${conflicting}; the register says ${regionNodeId}. Leaving the stored seat alone.`,
+        );
+        region = "existing";
+      } else {
+        const added = await createEdge(
+          dbb,
+          regionNodeId,
+          nodeRef.id,
+          "seat",
+          publish,
+        );
+        region = added ? "added" : "existing";
+      }
     } else {
       // A company whose registered seat has no region node is still worth
       // ingesting for its other fields, so this is reported, not fatal.
@@ -245,6 +289,29 @@ async function findCompanyByKRS(
  * Codes longer than a powiat are truncated to one, which is the level the
  * region nodes are complete at. Returns null rather than throwing so a bulk
  * ingest is not aborted by a single unmappable seat. */
+/** The region already recorded as this company's seat, if it is a different one.
+ *
+ * Returns null when there is no seat yet or when the stored seat is the region
+ * about to be written - the ordinary case, which `createEdge` then skips on its
+ * own.
+ */
+async function findSeatFromAnotherRegion(
+  db: FirebaseFirestore.Firestore,
+  placeId: string,
+  regionNodeId: string,
+): Promise<string | null> {
+  const snapshot = await db
+    .collection("edges")
+    .where("target", "==", placeId)
+    .where("type", "==", "seat")
+    .get();
+  for (const doc of snapshot.docs) {
+    const source = doc.data().source;
+    if (source && source !== regionNodeId) return source as string;
+  }
+  return null;
+}
+
 async function findRegionByTeryt(
   db: FirebaseFirestore.Firestore,
   terytArg: string,
