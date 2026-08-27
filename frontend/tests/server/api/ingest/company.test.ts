@@ -543,7 +543,11 @@ describe("api/ingest/company", () => {
     );
   });
 
-  it("should throw 404 if owned parent company does not exist", async () => {
+  it("skips an owner the site does not have instead of rejecting the company", async () => {
+    // The register names 238 companies as shareholders that koryta.pl does not
+    // track. This used to throw the 404 out of the handler, so a company whose
+    // parent is missing was rejected whole and lost its categories and its seat
+    // over the one edge that could not be drawn - 266 of 3,928 in a real run.
     mockReadBody.mockResolvedValue({
       krs: "12345",
       name: "Child Company",
@@ -557,10 +561,50 @@ describe("api/ingest/company", () => {
     // Mock Parent get -> returns empty
     mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
 
-    await expect(handler({} as any)).rejects.toMatchObject({
-      statusCode: 404,
-      message: "Company with KRS 99999 not found",
+    const result = await handler({} as any);
+
+    expect(result).toMatchObject({ id: "child-id", code: 200 });
+    // The company's own revision, and no ownership edge.
+    expect(createRevisionTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a stored seat alone when the register names a different region", async () => {
+    // A company has one registered seat, so a second from a different region is
+    // a disagreement rather than a second fact. 13 companies on the site have a
+    // stored seat that predates the current register and is simply wrong;
+    // writing the right one beside it would leave them with two.
+    mockReadBody.mockResolvedValue({
+      krs: "123456",
+      name: "Regional Company",
+      teryt: "1061",
     });
+
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
+    mockDoc.mockReturnValueOnce({ id: "company-id" });
+    mockDoc.mockReturnValueOnce({
+      id: "teryt1061",
+      get: vi.fn().mockResolvedValue({ exists: true }),
+    });
+    // A seat is already stored, from somewhere else entirely.
+    mockGet.mockResolvedValueOnce({
+      empty: false,
+      docs: [
+        {
+          id: "stale",
+          data: () => ({
+            source: "teryt1261",
+            target: "company-id",
+            type: "seat",
+          }),
+        },
+      ],
+    });
+
+    const result = await handler({} as any);
+
+    expect(result).toMatchObject({ region: "existing" });
+    // The company's own revision only; no second seat.
+    expect(createRevisionTransaction).toHaveBeenCalledTimes(1);
   });
 
   it("falls back to the powiat when the exact teryt has no node", async () => {
@@ -753,6 +797,9 @@ describe("api/ingest/company", () => {
     // `scripts/migrate/split-seat-edges.ts` has run. Writing a `seat` edge
     // beside it would give the company two seats, and the ingest runs nightly,
     // so it would win the race against the migration.
+    // Three lookups now: is there a seat from another region, is there a `seat`
+    // edge for this pair, is there a pre-split `owns` one.
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
     mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
     mockGet.mockResolvedValueOnce({
       empty: false,
@@ -790,6 +837,9 @@ describe("api/ingest/company", () => {
     });
     // A seat is a state edge: the region either seats the company or it does
     // not, so a date somebody once put on the link does not make a second one.
+    // Three lookups now: is there a seat from another region, is there a `seat`
+    // edge for this pair, is there a pre-split `owns` one.
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
     mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
     mockGet.mockResolvedValueOnce({
       empty: false,
