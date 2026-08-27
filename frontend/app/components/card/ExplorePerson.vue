@@ -1,11 +1,10 @@
 <template>
   <v-card v-if="person" class="ma-2" flat>
     <v-card-title class="text-wrap text-h5 mb-2 d-flex align-center ga-2">
-      <NuxtLink
-        :to="`/osoba/${person.id}`"
-        class="text-decoration-none text-primary"
-        target="_blank"
-      >
+      <!-- Not `text-primary`. Sage on white is 1.85:1, and this is the
+           person's name - the one thing on the card a reader has to be able
+           to read. Default ink, with the underline kept for the hover. -->
+      <NuxtLink :to="`/osoba/${person.id}`" class="person-link" target="_blank">
         {{ person.name }}
       </NuxtLink>
       <PartyChip
@@ -28,12 +27,14 @@
         <div class="text-caption text-medium-emphasis mb-2">
           Wyszukaj w internecie informacji:
         </div>
+        <!-- Outlined and uncoloured, for the reason the title above is:
+             `tonal` + `primary` is pale sage type on a paler sage fill, and
+             these carry the search terms a reader picks between. -->
         <v-btn
           v-for="query in queries"
           :key="query"
           :prepend-icon="mdiGoogle"
-          variant="tonal"
-          color="primary"
+          variant="outlined"
           class="ma-1"
           @click="searchInGoogle(query)"
         >
@@ -74,3 +75,14 @@ const { queries, searchInGoogle } = usePersonSearch(
   toRef(props, "workLocations"),
 );
 </script>
+
+<style scoped>
+.person-link {
+  color: rgba(var(--v-theme-on-surface), 0.87);
+  text-decoration: none;
+}
+
+.person-link:hover {
+  text-decoration: underline;
+}
+</style>

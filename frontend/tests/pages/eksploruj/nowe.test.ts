@@ -11,9 +11,12 @@ const vuetify = createVuetify({ components, directives });
 
 // The route query is what the filters read and write, so it is a live object
 // the tests rewrite between mounts rather than a fixed one.
-const { routeQuery, lastQuery } = vi.hoisted(() => ({
+const { routeQuery, lastQuery, items } = vi.hoisted(() => ({
   routeQuery: { value: {} as Record<string, string> },
   lastQuery: { value: null as { value: Query } | null },
+  // What the list composable hands back. Empty unless a test asks for a
+  // focused person, because most of them only look at the query it built.
+  items: { value: [] as Record<string, unknown>[] },
 }));
 
 vi.mock("vue-router", async (importOriginal) => {
@@ -37,8 +40,8 @@ vi.mock("~/composables/entity/listWithStats", () => ({
   useListWithStats: vi.fn((apiQuery: { value: Query }) => {
     lastQuery.value = apiQuery;
     return Promise.resolve({
-      tableItems: ref([]),
-      totalItems: ref(0),
+      tableItems: ref(items.value),
+      totalItems: ref(items.value.length),
       pending: ref(false),
     });
   }),
@@ -47,8 +50,8 @@ vi.mock("~~/app/composables/entity/listWithStats", () => ({
   useListWithStats: vi.fn((apiQuery: { value: Query }) => {
     lastQuery.value = apiQuery;
     return Promise.resolve({
-      tableItems: ref([]),
-      totalItems: ref(0),
+      tableItems: ref(items.value),
+      totalItems: ref(items.value.length),
       pending: ref(false),
     });
   }),
@@ -109,7 +112,6 @@ async function mountPage(query: Record<string, string> = {}) {
         stubs: {
           ClientOnly: { template: "<div><slot></slot></div>" },
           ExploreProgressBar: true,
-          ExploreNewButtons: true,
           ExploreTable: true,
           ExploreProposeChange: true,
           CardExplorePerson: true,
@@ -132,6 +134,7 @@ function currentQuery(): Query {
 describe("/eksploruj/nowe", () => {
   beforeEach(() => {
     lastQuery.value = null;
+    items.value = [];
   });
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -168,5 +171,48 @@ describe("/eksploruj/nowe", () => {
     // The threshold only means something for the recent queue, so its field
     // goes away with it.
     expect(wrapper.find('input[type="number"]').exists()).toBe(false);
+  });
+
+  it("advances the queue by at least one person", async () => {
+    const wrapper = await mountPage();
+
+    expect(currentQuery().page).toBe(1);
+    // The step is random, so several contributors working the same queue do
+    // not all land on the same person - but never zero, which used to leave
+    // the reader where they were on a tenth of the clicks.
+    for (let click = 0; click < 25; click++) {
+      const before = currentQuery().page as number;
+      await wrapper.get('[data-testid="next-person"]').trigger("click");
+      expect(currentQuery().page as number).toBeGreaterThan(before);
+    }
+  });
+
+  it("ticks the three steps off rather than listing five instructions", async () => {
+    const wrapper = await mountPage();
+
+    const steps = wrapper.get('[data-testid="explore-steps"]');
+    expect(steps.findAll("li.step").map((s) => s.text())).toEqual([
+      "1Eksploruj",
+      "2Notatka",
+      "3Głos",
+    ]);
+    expect(steps.findAll("li.step--done")).toHaveLength(0);
+
+    // The long version is one click away rather than open on the page.
+    expect(steps.text()).toContain("Jak to działa?");
+  });
+
+  it("puts the relations above the person card and the notes", async () => {
+    items.value = [{ id: "person-1", name: "Testowa Osoba", type: "person" }];
+    const wrapper = await mountPage();
+
+    const html = wrapper.html();
+    const relations = html.indexOf("explore-relations");
+    const person = html.indexOf("card-explore-person-stub");
+    const notes = html.indexOf("note-editor-stub");
+
+    expect(relations).toBeGreaterThan(-1);
+    expect(person).toBeGreaterThan(relations);
+    expect(notes).toBeGreaterThan(relations);
   });
 });

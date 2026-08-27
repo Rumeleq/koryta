@@ -1,196 +1,193 @@
 <template>
   <ClientOnly>
-    <div class="align-self-center">
-      <h1 class="text-h4 mb-4">Eksploruj nowe osoby</h1>
-
-      <div class="d-flex align-start ga-4 mb-4 flex-wrap">
-        <ExploreProgressBar
-          hide-cta
-          :query="progressQuery"
-          class="flex-grow-1"
-        />
-        <v-select
-          v-model="filterCategory"
-          :items="availableCategories"
-          label="Typ podmiotu"
-          variant="outlined"
-          density="comfortable"
-          hide-details
-          clearable
-          style="min-width: 220px; max-width: 280px"
-        />
+    <div class="w-100 align-self-center">
+      <div class="d-flex align-center flex-wrap ga-2 mb-2 mb-md-4">
+        <h1 class="text-h6 text-md-h4">Eksploruj nowe osoby</h1>
+        <v-spacer />
+        <v-btn
+          variant="text"
+          size="small"
+          class="text-none"
+          :prepend-icon="mdiTable"
+          to="/eksploruj/tabela?visibility=private&hideVoted=no_votes&sortBy=votes.interesting&sortDesc=true"
+        >
+          Tabela
+        </v-btn>
+        <v-btn
+          variant="text"
+          size="small"
+          class="text-none"
+          :prepend-icon="mdiChartLine"
+          to="/eksploruj/statystyki"
+        >
+          Statystyki
+        </v-btn>
       </div>
 
-      <div class="d-flex align-center ga-4 mb-4 flex-wrap">
-        <v-btn-toggle
-          v-model="filterOrder"
-          mandatory
-          divided
-          variant="outlined"
-          density="comfortable"
-        >
-          <v-btn value="recent" class="text-none" :prepend-icon="mdiClockFast">
-            Najnowsze zatrudnienia
-          </v-btn>
-          <v-btn value="votes" class="text-none" :prepend-icon="mdiStarOutline">
-            Najwyżej oceniane
-          </v-btn>
-        </v-btn-toggle>
+      <ExploreProgressBar hide-cta :query="progressQuery" class="mb-4" />
 
-        <v-text-field
-          v-if="orderRecent"
-          v-model="minVotes"
-          type="number"
-          :min="0"
-          label="Min. suma głosów"
-          variant="outlined"
-          density="comfortable"
-          hide-details
-          style="max-width: 180px"
-        />
+      <!-- Everything that decides who is in the queue, in one strip. The order
+           toggle, the category and the score threshold used to sit on two rows
+           either side of the progress bar, which read as three unrelated
+           controls rather than as one filter. -->
+      <v-card variant="outlined" class="pa-3 mb-4" data-testid="queue-filters">
+        <div class="d-flex align-center flex-wrap ga-3">
+          <!-- The labels shorten and the icons go on a phone: at 375px the
+               full pair is 344px wide inside a 319px card, and the toggle
+               does not wrap - the second button hung out over the edge. -->
+          <v-btn-toggle
+            v-model="filterOrder"
+            mandatory
+            divided
+            variant="outlined"
+            density="comfortable"
+            class="order-toggle"
+          >
+            <v-btn
+              value="recent"
+              class="text-none"
+              :prepend-icon="mdiClockFast"
+            >
+              <span class="label-long">Najnowsze zatrudnienia</span>
+              <span class="label-short">Najnowsze</span>
+            </v-btn>
+            <v-btn
+              value="votes"
+              class="text-none"
+              :prepend-icon="mdiStarOutline"
+            >
+              Najwyżej oceniane
+            </v-btn>
+          </v-btn-toggle>
 
-        <span class="text-body-2 text-medium-emphasis">
-          {{
-            orderRecent
-              ? `Osoby, które zaczęły pracę najpóźniej, z sumą ocen co najmniej ${minVotes} i bez głosu od żadnej osoby.`
-              : "Osoby z najwyższą sumą ocen, bez głosu od żadnej osoby."
-          }}
-        </span>
-      </div>
+          <v-spacer />
 
-      <!-- CLOSED STATE -->
-      <div v-if="!showInstructions" class="d-flex align-center ga-3 mb-4">
-        <v-alert
-          class="flex-grow-1 cursor-pointer mb-0"
-          :color="allActionsDone ? 'success' : undefined"
-          variant="tonal"
-          :icon="mdiInformation"
-          @click="showInstructions = true"
-        >
-          <div class="text-subtitle-1 font-weight-bold">
-            {{
-              allActionsDone
-                ? "Wszystkie akcje wykonane - gotowe!"
-                : "Pokaż instrukcje"
-            }}
-          </div>
-        </v-alert>
+          <v-text-field
+            v-if="orderRecent"
+            v-model="minVotes"
+            type="number"
+            :min="0"
+            label="Min. suma głosów"
+            variant="outlined"
+            density="compact"
+            hide-details
+            style="max-width: 170px"
+          />
 
-        <ExploreNewButtons
-          :pending="pending"
-          :all-actions-done="allActionsDone"
-          @next="page += Math.round(Math.random() * 5)"
-        />
-      </div>
+          <v-select
+            v-model="filterCategory"
+            :items="availableCategories"
+            label="Typ podmiotu"
+            variant="outlined"
+            density="compact"
+            hide-details
+            clearable
+            style="min-width: 200px; max-width: 260px"
+          />
+        </div>
 
-      <!-- OPEN STATE -->
-      <div v-else class="d-flex align-start ga-4 mb-4">
-        <v-alert
-          v-model="showInstructions"
-          closable
-          type="info"
-          variant="tonal"
-          class="mb-0 flex-grow-1"
-          :icon="mdiInformation"
-        >
-          <div class="text-subtitle-1 font-weight-bold mb-2">Instrukcje:</div>
-          <ul class="pl-0 mt-2" style="list-style: none">
+        <div class="text-caption text-medium-emphasis mt-2">
+          {{ queueDescription }}
+          <template v-if="!pending && totalItems">
+            W kolejce:
+            {{ polishCounting(totalItems, "osoba", "osoby", "osób") }}.
+          </template>
+        </div>
+      </v-card>
+
+      <!-- What to do, as three steps rather than as five sentences. The list
+           ticks itself off as the reader works, so the block is both the
+           instructions and the progress through them - the long version is a
+           click away for whoever needs it, and stays out of the way of
+           everybody who has done this before. -->
+      <v-card
+        variant="outlined"
+        class="steps mb-4"
+        :class="{ 'steps--done': allActionsDone }"
+        data-testid="explore-steps"
+      >
+        <div class="d-flex align-center flex-wrap ga-2 pa-3">
+          <ol class="steps__list">
             <li
-              class="d-flex align-center mb-2"
-              :class="{
-                'text-medium-emphasis': actionExplored,
-              }"
+              v-for="(step, index) in steps"
+              :key="step.key"
+              class="step"
+              :class="{ 'step--done': step.done }"
+              :title="step.hint"
             >
               <v-icon
-                :color="actionExplored ? 'success' : 'medium-emphasis'"
-                class="mr-2"
-              >
-                {{
-                  actionExplored
-                    ? mdiCheckboxMarkedCircle
-                    : mdiCheckboxBlankCircleOutline
-                }}
-              </v-icon>
-              <span>
-                Kliknij ikonkę "Eksploruj" w tabeli poniżej aby otworzyć
-                odnośniki wyszukiwania do powiązanych z daną osobą informacji
-                (wyłącz blokowanie wyskakujących okien).
+                v-if="index > 0"
+                :icon="mdiChevronRight"
+                size="16"
+                class="step__sep"
+                aria-hidden="true"
+              />
+              <span class="step__badge">
+                <v-icon v-if="step.done" :icon="mdiCheck" size="14" />
+                <template v-else>{{ index + 1 }}</template>
               </span>
+              <span class="step__label">{{ step.label }}</span>
             </li>
-            <li class="d-flex align-center mb-2">
-              <v-icon
-                color="medium-emphasis"
-                class="mr-2"
-                :icon="mdiCircleSmall"
-              ></v-icon>
-              <span
-                >Spróbuj znaleźć interesujące i istotne informacje na temat tej
-                osoby.</span
-              >
-            </li>
-            <li
-              class="d-flex align-center mb-2"
-              :class="{
-                'text-medium-emphasis': actionNoted,
-              }"
-            >
-              <v-icon
-                :color="actionNoted ? 'success' : 'medium-emphasis'"
-                class="mr-2"
-              >
-                {{
-                  actionNoted
-                    ? mdiCheckboxMarkedCircle
-                    : mdiCheckboxBlankCircleOutline
-                }}
-              </v-icon>
-              <span
-                >Dodaj znalezione informacje jako notatki w edytorze poniżej
-                (jeśli są tego warte).</span
-              >
-            </li>
-            <li
-              class="d-flex align-center mb-2"
-              :class="{
-                'text-medium-emphasis': actionVoted,
-              }"
-            >
-              <v-icon
-                :color="actionVoted ? 'success' : 'medium-emphasis'"
-                class="mr-2"
-              >
-                {{
-                  actionVoted
-                    ? mdiCheckboxMarkedCircle
-                    : mdiCheckboxBlankCircleOutline
-                }}
-              </v-icon>
-              <span
-                >Na koniec, oddaj swój głos w tabeli w zależności od tego, czy
-                ta osoba jest według Ciebie interesująca czy nie.</span
-              >
-            </li>
-            <li class="d-flex align-center">
-              <v-icon
-                color="medium-emphasis"
-                class="mr-2"
-                :icon="mdiCircleSmall"
-              ></v-icon>
-              <span
-                >Kiedy skończysz, kliknij przycisk "Następna osoba" aby przejść
-                dalej.</span
-              >
-            </li>
-          </ul>
-        </v-alert>
+          </ol>
 
-        <ExploreNewButtons
-          vertical
-          :pending="pending"
-          :all-actions-done="allActionsDone"
-          @next="page += Math.round(Math.random() * 5)"
-        />
-      </div>
+          <span
+            v-if="allActionsDone"
+            class="d-flex align-center ga-1 ml-2 text-body-2 text-success font-weight-medium"
+          >
+            <v-icon :icon="mdiCheckCircle" size="18" />
+            Gotowe
+          </span>
+
+          <v-spacer />
+
+          <v-btn
+            variant="text"
+            size="small"
+            class="text-none"
+            :prepend-icon="mdiHelpCircleOutline"
+            :append-icon="showInstructions ? mdiChevronUp : mdiChevronDown"
+            @click="showInstructions = !showInstructions"
+          >
+            Jak to działa?
+          </v-btn>
+
+          <!-- Filled, not outlined. `primary` is sage, which as ink on white
+               is 1.85:1 on this theme - the same reason `card/Employment.vue`
+               keeps it for surfaces and never for text. As a fill it carries
+               black type at 10:1, and this is the one button the page is
+               built around. -->
+          <v-btn
+            variant="flat"
+            class="text-none"
+            :color="allActionsDone ? 'success' : 'primary'"
+            :append-icon="mdiArrowRight"
+            :loading="pending"
+            data-testid="next-person"
+            @click="nextPerson"
+          >
+            Następna osoba
+          </v-btn>
+        </div>
+
+        <v-expand-transition>
+          <div v-if="showInstructions" class="px-3 pb-3">
+            <v-divider class="mb-3" />
+            <ol class="steps__detail">
+              <li
+                v-for="step in steps"
+                :key="step.key"
+                :class="{ 'text-medium-emphasis': step.done }"
+              >
+                <strong>{{ step.label }}.</strong> {{ step.hint }}
+              </li>
+            </ol>
+            <p class="text-caption text-medium-emphasis mb-0 mt-2">
+              Kiedy skończysz, kliknij „Następna osoba”. Żaden krok nie jest
+              obowiązkowy - jeśli o kimś nic nie ma, po prostu przejdź dalej.
+            </p>
+          </div>
+        </v-expand-transition>
+      </v-card>
 
       <v-card class="table-card mb-4">
         <ExploreTable
@@ -210,6 +207,32 @@
       </v-card>
 
       <template v-if="focusedPerson">
+        <!-- The record first. Where somebody has worked and what they ran for
+             is what the reader is being asked to judge; the searches next to
+             the note below are written against it, and reading them in the
+             other order meant scrolling past both to find out who this is. -->
+        <v-card class="mb-4 pa-2 pa-md-3" data-testid="explore-relations">
+          <CardEmploymentHistory
+            v-if="focusedEdges.length"
+            :key="focusedPerson.id"
+            :edges="focusedEdges"
+          />
+          <div v-else class="pa-2">
+            <div class="sec-head mb-1">
+              <v-icon
+                :icon="mdiTimelineTextOutline"
+                size="18"
+                class="sec-head__icon"
+              />
+              <h3 class="text-h6">Historia powiązań</h3>
+            </div>
+            <p class="k-lead mb-0">
+              Nie znamy jeszcze żadnych powiązań tej osoby - tym bardziej warto
+              poszukać.
+            </p>
+          </div>
+        </v-card>
+
         <v-row>
           <v-col cols="12" md="6">
             <v-card class="mb-4">
@@ -236,20 +259,21 @@
             </v-card>
           </v-col>
 
+          <!-- The notes carry their own heading and sit on the page background
+               everywhere else they appear. Here they are one of two columns,
+               so they get the same surface as the card beside them - a bare
+               section next to a raised card read as an unfinished half. -->
           <v-col cols="12" md="6">
-            <NoteEditor
-              :key="focusedPerson.id"
-              :node-id="focusedPerson.id"
-              single-column
-              @saved="actionNoted = true"
-            />
+            <v-card class="mb-4 pa-2 pa-md-3">
+              <NoteEditor
+                :key="focusedPerson.id"
+                :node-id="focusedPerson.id"
+                single-column
+                @saved="actionNoted = true"
+              />
+            </v-card>
           </v-col>
         </v-row>
-
-        <v-card class="mb-4 pa-4">
-          <h2 class="text-h6 mb-4">Historia Zatrudnienia</h2>
-          <CardEmploymentHistory :edges="focusedEdges" />
-        </v-card>
       </template>
     </div>
   </ClientOnly>
@@ -257,16 +281,23 @@
 
 <script setup lang="ts">
 import {
-  mdiCheckboxBlankCircleOutline,
-  mdiCheckboxMarkedCircle,
+  mdiArrowRight,
+  mdiChartLine,
+  mdiCheck,
+  mdiCheckCircle,
+  mdiChevronDown,
+  mdiChevronRight,
+  mdiChevronUp,
   mdiClockFast,
-  mdiInformation,
-  mdiCircleSmall,
+  mdiHelpCircleOutline,
   mdiStarOutline,
+  mdiTable,
+  mdiTimelineTextOutline,
 } from "@mdi/js";
 import { ref, computed, watch } from "vue";
 import { useListWithStats } from "~/composables/entity/listWithStats";
 import { useQueryFilters } from "~/composables/queryFilters";
+import { polishCounting } from "~/composables/polish";
 import { companyCategories } from "~~/shared/companyCategories";
 import type { PersonRich } from "~~/shared/model";
 import type { Query } from "~~/server/api/nodes/index.get";
@@ -328,6 +359,13 @@ const minVotes = computed<number, number | string | null>({
   },
 });
 
+/** Who the queue is showing, in one line under the controls that decide it. */
+const queueDescription = computed(() =>
+  orderRecent.value
+    ? `Osoby, które zaczęły pracę najpóźniej, z sumą ocen co najmniej ${minVotes.value} i bez głosu od żadnej osoby.`
+    : "Osoby z najwyższą sumą ocen, bez głosu od żadnej osoby.",
+);
+
 // The card stack is paged in memory rather than through the url.
 watch([filterCategory, filterOrder, minVotes], () => {
   page.value = 1;
@@ -337,15 +375,55 @@ const actionExplored = ref(false);
 const actionNoted = ref(false);
 const actionVoted = ref(false);
 
-const allActionsDone = computed(
-  () => actionExplored.value && actionNoted.value && actionVoted.value,
-);
+/** The three things a reader is here to do, in the order the page lays them
+ * out, each with the sentence that used to be a bullet in the instructions
+ * panel. `done` is what ticks the step off in the strip. */
+const steps = computed(() => [
+  {
+    key: "explore",
+    label: "Eksploruj",
+    done: actionExplored.value,
+    hint:
+      "Kliknij „Eksploruj” w wierszu tabeli - otworzą się wyszukiwarki z " +
+      "informacjami o tej osobie. Jeśli nic się nie otwiera, wyłącz " +
+      "blokowanie wyskakujących okien.",
+  },
+  {
+    key: "note",
+    label: "Notatka",
+    done: actionNoted.value,
+    hint:
+      "Zapisz w sekcji „Notatki” to, co warto zapamiętać, razem z linkiem do " +
+      "źródła.",
+  },
+  {
+    key: "vote",
+    label: "Głos",
+    done: actionVoted.value,
+    hint:
+      "Oceń w tabeli, czy ta osoba jest interesująca - to ustawia kolejność " +
+      "kolejki dla wszystkich.",
+  },
+]);
+
+const allActionsDone = computed(() => steps.value.every((step) => step.done));
 
 watch(allActionsDone, (done) => {
   if (done) {
     showInstructions.value = false;
   }
 });
+
+/** Move on, by a random handful of places rather than by one.
+ *
+ * Several people work through the same queue at once, and stepping by exactly
+ * one would put all of them on the same person. At least one, though: the
+ * random step used to round rather than floor, so a tenth of the clicks left
+ * the reader on the person they had just finished with.
+ */
+function nextPerson() {
+  page.value += 1 + Math.floor(Math.random() * 5);
+}
 
 watch(page, () => {
   actionExplored.value = false;
@@ -479,5 +557,118 @@ const { workLocations, mapLocations } = usePersonPlaces(
   .table-card :deep(.v-data-table__th) {
     top: var(--v-layout-top) !important;
   }
+}
+
+/* ---- the queue filters ---- */
+
+.label-short {
+  display: none;
+}
+
+@media (max-width: 599px) {
+  .label-long {
+    display: none;
+  }
+
+  .label-short {
+    display: inline;
+  }
+
+  /* Both labels shorten as far as they can and the pair still needs the room
+     the icons take. The clock and the star say the same thing as the words
+     next to them, so they are what goes. */
+  .order-toggle :deep(.v-btn__prepend) {
+    display: none;
+  }
+}
+
+/* ---- the three steps ---- */
+
+.steps--done {
+  border-color: rgba(var(--v-theme-success), 0.5);
+}
+
+.steps__list {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.step {
+  align-items: center;
+  color: rgba(var(--v-theme-on-surface), 0.87);
+  display: flex;
+  font-size: 0.875rem;
+  gap: 6px;
+  line-height: 1.4;
+}
+
+.step__sep {
+  color: rgba(var(--v-theme-on-surface), 0.3);
+  margin-right: 2px;
+}
+
+/* The number, and the tick that replaces it. Same box either way, so the row
+   does not shift as the reader works through it. */
+.step__badge {
+  align-items: center;
+  background: rgba(var(--v-theme-on-surface), 0.08);
+  border-radius: 50%;
+  color: rgba(var(--v-theme-on-surface), 0.6);
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  font-weight: 700;
+  height: 22px;
+  justify-content: center;
+  width: 22px;
+}
+
+.step--done .step__badge {
+  background: rgb(var(--v-theme-success));
+  color: rgb(var(--v-theme-on-success));
+}
+
+.step--done .step__label {
+  color: rgba(var(--v-theme-on-surface), 0.55);
+}
+
+.steps__detail {
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  margin: 0;
+  max-width: 78ch;
+  padding-left: 1.25rem;
+}
+
+.steps__detail li + li {
+  margin-top: 4px;
+}
+
+/* ---- the empty relations section ---- */
+
+/* The same two rules `note/Editor.vue` and `succession/PersonChanges.vue`
+   carry, so the placeholder heading matches the real one it stands in for. */
+.sec-head {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.sec-head__icon {
+  color: rgba(var(--v-theme-on-surface), 0.38);
+}
+
+.k-lead {
+  color: rgba(var(--v-theme-on-surface), 0.6);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  margin: 4px 0 12px;
+  max-width: 78ch;
 }
 </style>
