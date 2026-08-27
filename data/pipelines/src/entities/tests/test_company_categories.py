@@ -12,6 +12,7 @@ from entities.company_categories import (
     CATEGORY_VALUES,
     COMPANY_CATEGORIES,
     KOLEJE,
+    SPZOZ,
     categories_for,
     matches_pkd,
 )
@@ -43,7 +44,30 @@ class TestCategoriesFor(unittest.TestCase):
         self.assertEqual(categories_for("0000999999", ["36.00.Z"]), ["wodociagi"])
         self.assertEqual(categories_for("0000999999", ["37.00.Z"]), ["wodociagi"])
 
+    def test_a_sector_code_below_the_main_one_does_not_place_a_company(self):
+        # An imaging chain that lists 86.10 second among ten codes is not a
+        # hospital - it is an outpatient provider, which is what its main code
+        # says - and a fertiliser works that draws its own water is neither.
+        # Both were in `szpitale`/`wodociagi` before the main-code rule.
+        self.assertEqual(
+            categories_for("0000999999", ["86.22.Z", "86.10.Z"]), ["przychodnie"]
+        )
+        self.assertEqual(categories_for("0000999999", ["20.15.Z", "36.00.Z"]), [])
+
+    def test_water_needs_both_codes_when_neither_is_the_main_one(self):
+        # A gmina utility files water and sewage as a pair, whatever it calls its
+        # headline business; a plant with its own intake files one of them.
+        self.assertEqual(
+            categories_for("0000999999", ["38.11.Z", "36.00.Z", "37.00.Z"]),
+            ["wodociagi", "odpady"],
+        )
+        self.assertEqual(
+            categories_for("0000999999", ["38.11.Z", "36.00.Z"]), ["odpady"]
+        )
+
     def test_more_than_one_category(self):
+        # 36.00 as the main activity, 49.20 as a secondary: `wodociagi` reads the
+        # main code, `koleje` reads any of them.
         self.assertEqual(
             categories_for("0000999999", ["36.00.Z", "49.20.Z"]),
             ["wodociagi", "koleje"],
@@ -54,11 +78,18 @@ class TestCategoriesFor(unittest.TestCase):
         self.assertIn("koleje", categories_for("42646", ["62.01.Z"]))
 
     def test_order_is_stable(self):
-        # The value ends up in a Firestore document a diff is taken against
-        self.assertEqual(
-            categories_for("0000999999", ["49.20.Z", "86.10.Z", "36.00.Z"]),
-            list(CATEGORY_VALUES),
-        )
+        # The value ends up in a Firestore document a diff is taken against, so
+        # it has to come out in `COMPANY_CATEGORIES` order however the codes
+        # were given. Asserted as a subsequence rather than against the whole
+        # list: no company matches every category.
+        result = categories_for("0000999999", ["86.10.Z", "36.00.Z", "37.00.Z"])
+        self.assertEqual(result, ["szpitale", "wodociagi"])
+        # Reordered, the same three codes mean something else: 86.10 is no
+        # longer the main activity, so this is a water utility with a clinic.
+        reordered = categories_for("0000999999", ["36.00.Z", "37.00.Z", "86.10.Z"])
+        self.assertEqual(reordered, ["wodociagi"])
+        order = list(CATEGORY_VALUES)
+        self.assertEqual(result, sorted(result, key=order.index))
 
 
 class TestKolejeByPkd(unittest.TestCase):
@@ -309,3 +340,92 @@ class TestOverrideListsAreWellFormed(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestFormaPrawna(unittest.TestCase):
+    """The SPZOZ hospitals, which no PKD rule can reach.
+
+    243 of the site's companies are `samodzielny publiczny zaklad opieki
+    zdrowotnej`. They sit in the associations register, which has no
+    `przedmiotDzialalnosci` section at all, so their `activity` is empty and
+    stays empty however often the crawl runs.
+    """
+
+    def test_spzoz_is_a_hospital_with_no_pkd_at_all(self):
+        self.assertEqual(categories_for("0000059726", [], form=SPZOZ), ["szpitale"])
+
+    def test_form_is_compared_case_insensitively_and_whole(self):
+        self.assertEqual(
+            categories_for("0000059726", [], form=SPZOZ.lower()), ["szpitale"]
+        )
+        self.assertEqual(
+            categories_for("0000059726", [], form=SPZOZ + " W LIKWIDACJI"), []
+        )
+
+    def test_a_missing_form_never_removes_a_category(self):
+        # A payload assembled before formaPrawna was parsed carries None, and a
+        # company whose form is unknown must keep what its codes give it.
+        self.assertEqual(
+            categories_for("0000999999", ["86.10.Z"], form=None), ["szpitale"]
+        )
+
+    def test_other_legal_forms_are_not_hospitals(self):
+        self.assertEqual(
+            categories_for(
+                "0000999999", [], form="SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ"
+            ),
+            [],
+        )
+
+
+class TestMainCodeRules(unittest.TestCase):
+    """Real companies that moved when the module stopped matching any code."""
+
+    def test_interferie_is_a_spa_hotel_not_a_hospital(self):
+        # KRS 0000225570: 86.10 is the fifth of ten codes; the main one is 55.10
+        self.assertEqual(
+            categories_for(
+                "0000225570",
+                ["55.10.Z", "55.20.Z", "79.11.A", "79.12.Z", "86.10.Z", "93.13.Z"],
+            ),
+            [],
+        )
+
+    def test_mpec_ostroda_is_a_heat_plant_not_a_water_utility(self):
+        # KRS 0000129011: 36.00 is code seven of ten, there is no 37.00, and the
+        # main activity is 35.30
+        self.assertEqual(
+            categories_for(
+                "0000129011",
+                ["35.30.Z", "42.21.Z", "43.22.Z", "35.22.Z", "68.20.Z", "36.00.Z"],
+            ),
+            ["cieplownictwo"],
+        )
+
+    def test_a_gmina_multi_utility_is_both_heat_and_water(self):
+        # KRS 0000008578, ZUK Energokom: heat is its main business and it files
+        # the water pair, so it is genuinely both
+        self.assertEqual(
+            categories_for("0000008578", ["35.30.Z", "36.00.Z", "37.00.Z", "38.11.Z"]),
+            ["wodociagi", "cieplownictwo"],
+        )
+
+    def test_pkp_plk_still_needs_the_any_code_rule(self):
+        # 52.21 is its przewazajaca dzialalnosc and covers roads and bus
+        # terminals too, so 42.12 - its second code - is the only handle
+        self.assertIn("koleje", categories_for("0000037568", ["52.21.B", "42.12.Z"]))
+
+    def test_a_bus_company_with_a_dead_rail_code_is_not_a_railway(self):
+        # KRS 0000076836, PKM Tychy: buses and trolleybuses, and Tychy has no
+        # railway. Excluded by hand because 49.10 is matched anywhere.
+        result = categories_for("0000076836", ["49.31.Z", "49.39.Z", "49.10.Z"])
+        self.assertNotIn("koleje", result)
+        self.assertEqual(result, ["komunikacja-miejska"])
+
+    def test_a_tram_operator_is_rail_by_override(self):
+        # KRS 0000027173, MPK Wroclaw: runs the tram network and declares only
+        # 49.31/49.39, which in the 2007 vintage bundles trams with buses
+        self.assertEqual(
+            categories_for("0000027173", ["49.31.Z", "49.39.Z"]),
+            ["koleje", "komunikacja-miejska"],
+        )

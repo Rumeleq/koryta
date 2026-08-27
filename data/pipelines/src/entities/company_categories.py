@@ -54,17 +54,50 @@ class Override:
 
 @dataclass(frozen=True)
 class Category:
-    """A sector, and the three ways a company lands in it.
+    """A sector, and the ways a company lands in it.
 
-    `pkd_prefixes` matches against *any* of a company's PKD codes, not just the
-    main one. KRS lets an entity declare ten, and the one that names the sector
-    is regularly not the first: PKP Cargo Connect's main activity is road
-    freight and it hauls by rail as a secondary.
+    There are two PKD axes, because the register offers two different claims and
+    they fail in opposite directions.
+
+    `pkd_prefixes` matches against *any* of a company's ten declared codes. It
+    reaches a company whose sector is not its headline business: PKP PLK calls
+    52.21 (uslugi wspomagajace transport ladowy) its przewazajaca dzialalnosc
+    and is reachable only through its second code, 42.12. Broad - and the reason
+    `exclude` exists at all, because a quarry that owns a siding declares a rail
+    code too.
+
+    `pkd_main_prefixes` matches only the przewazajaca dzialalnosc, the one
+    activity the company itself calls its main one. Measured over the 4,024
+    companies on the site, the difference between the two is most of the error
+    in this module: 35.30 matched anywhere yields 326 companies of which 77% are
+    heat suppliers, matched as the main code it yields 176 and every one of them
+    is. Division 93 (sport) goes 51% -> 100% the same way, division 35
+    (energetyka) 47% -> 99%.
+
+    The main code is `activity[0]`: `parse_activity_from_api_krs` builds the list
+    przewazajaca-first by construction, and that holds for 2,580 of the 2,606
+    stored nodes carrying both (the 26 that disagree have an `activity` predating
+    the 2025 re-filing).
+
+    `pkd_all_of` requires a match in *every* group, each group being a set of
+    alternatives. It exists for one shape: a company genuinely in the sector
+    without declaring it as its main business, but declaring the sector's whole
+    code set. `wodociagi` uses it - a real gmina utility files both 36.00 (water)
+    and 37.00 (sewage), where a chemical works with its own intake files one.
+
+    `forms` matches the register's `formaPrawna` and needs no PKD at all. It is
+    the only way to reach the 243 SPZOZ hospitals, which sit in the associations
+    register and carry no `przedmiotDzialalnosci` for any rule to read.
+
+    A company satisfying any of the four is in the category.
     """
 
     value: str
     title: str
     pkd_prefixes: tuple[str, ...] = ()
+    pkd_main_prefixes: tuple[str, ...] = ()
+    pkd_all_of: tuple[tuple[str, ...], ...] = ()
+    forms: tuple[str, ...] = ()
     include: tuple[Override, ...] = ()
     exclude: tuple[Override, ...] = ()
 
@@ -77,11 +110,47 @@ class Category:
         return frozenset(o.krs for o in self.exclude)
 
 
+#: The register's own spelling, diacritics and all - it is compared against
+#: `formaPrawna` verbatim, so it cannot be transliterated the way the comments
+#: in this file are.
+SPZOZ = "SAMODZIELNY PUBLICZNY ZAKŁAD OPIEKI ZDROWOTNEJ"
+
 SZPITALE = Category(
     value="szpitale",
     title="Szpitale",
-    # 86.10 Dzialalnosc szpitali
-    pkd_prefixes=("86.10",),
+    # 86.10 Dzialalnosc szpitali, as the *main* activity. Matched anywhere it
+    # collects 30 more companies that merely list it among ten codes, and they
+    # are not hospitals: Interferie (0000225570) and Verano (0000072201) are spa
+    # hotels whose main code is 55.10, Tomma (0000631790) is an imaging chain on
+    # 86.22, PZU Zdrowie (0000395215) an outpatient network on 86.21.
+    pkd_main_prefixes=("86.10",),
+    # 243 hospitals on the site are `samodzielny publiczny zaklad opieki
+    # zdrowotnej`, which is not a company at all but an entity in the
+    # associations register. KRS holds no `przedmiotDzialalnosci` for those - it
+    # is not a crawl gap, the section does not exist for RejS - so no PKD rule
+    # can ever see them, and before this every one of them sat in no category
+    # while carrying `isPublic` and a founding powiat or wojewodztwo.
+    forms=(SPZOZ,),
+    include=(
+        Override(
+            "0000066382",
+            "Narodowy Instytut Geriatrii, Reumatologii i Rehabilitacji",
+            "an instytut badawczy that runs a clinical hospital; its main PKD "
+            "is 72.19, research",
+        ),
+        Override(
+            "0000385647",
+            "Szpitale Wielkopolski",
+            "wholly owned by Wojewodztwo Wielkopolskie; PKD 41.10 because it "
+            "builds the hospitals it then holds",
+        ),
+        Override(
+            "0000451215",
+            "Moscickie Centrum Medyczne",
+            "wholly owned by Gmina Miasta Tarnowa; files 86.21 but runs the "
+            "Moscice hospital",
+        ),
+    ),
 )
 
 WODOCIAGI = Category(
@@ -89,7 +158,109 @@ WODOCIAGI = Category(
     title="Wodociagi i kanalizacja",
     # 36.00 Pobor, uzdatnianie i dostarczanie wody
     # 37.00 Odprowadzanie i oczyszczanie sciekow
-    pkd_prefixes=("36.00", "37.00"),
+    #
+    # Matched anywhere, these two codes made this the biggest category on the
+    # site by a factor of four - 674 companies, of which 176 had a main activity
+    # somewhere else entirely: 57 heat plants, 49 waste companies, 22 chemical
+    # works, both seaport authorities, an airport and a coal mine. They are the
+    # two codes every municipal utility and every large industrial plant tacks
+    # onto its ten-code list, because everyone draws water and discharges
+    # effluent.
+    #
+    # Main-code-only is too blunt the other way: it drops 47 companies that
+    # really are water utilities and merely file something else first, usually a
+    # multi-utility gmina company whose headline business is waste or heat.
+    #
+    # So: the main code, or both codes together. A gmina utility files 36.00 and
+    # 37.00 as a pair because supplying water and taking sewage away is one
+    # licence; a chemical works with its own intake files one of them.
+    pkd_main_prefixes=("36.00", "37.00"),
+    pkd_all_of=(("36.00",), ("37.00",)),
+    exclude=(
+        # Industrial plants big enough to run their own intake and their own
+        # effluent works, which is why they file the pair. The multi-utility
+        # gmina companies that file it for the same reason are not excluded -
+        # a ZGK really is the town's water utility as well as its heat plant.
+        Override(
+            "0000011737",
+            "Grupa Azoty Zaklady Azotowe Pulawy",
+            "a nitrogen-fertiliser works, PKD 20.15; the water pair is its own "
+            "intake and effluent plant",
+        ),
+        Override("0000105885", "PCC Rokita", "a chemical works, PKD 20.16"),
+        Override(
+            "0000119127", "Kemipol", "produces water-treatment chemicals, PKD 20.13"
+        ),
+        Override("0000146925", "Chemar", "a steel foundry, PKD 24.52"),
+        Override(
+            "0000041661",
+            "Tauron Ekoserwis",
+            "services power-station equipment, PKD 33.14",
+        ),
+        # Generators and traders. Cooling water is not a water utility.
+        Override("0000517891", "Tameh Polska", "an industrial power plant, PKD 35.11"),
+        Override("0000881158", "CCGT Ostroleka", "a gas power plant, PKD 35.11"),
+        Override("0000719342", "Energa Storage", "grid storage, PKD 35.11"),
+        Override("0000109223", "Ekomedia", "distributes electricity, PKD 35.13"),
+        Override("0000528715", "PGE Baltica 5", "an offshore wind SPV, PKD 35.14"),
+        Override("0000087694", "Zaklad Energoelektryczny Energo-Stil", "PKD 35.14"),
+        Override(
+            "0000408185",
+            "Ekoenergia Silesia",
+            "an industrial estate landlord, PKD 68.20",
+        ),
+        # Estates whose water codes cover the mains inside the fence.
+        Override(
+            "0000040398",
+            "Zarzad Morskiego Portu Gdansk",
+            "a port authority, PKD 68.20; the water pair is the port estate's",
+        ),
+        Override(
+            "0000082699", "Zarzad Morskiego Portu Gdynia", "a port authority, PKD 68.20"
+        ),
+        Override(
+            "0000033018",
+            "Legnicka Specjalna Strefa Ekonomiczna",
+            "an economic-zone operator, PKD 68.10; the water pair is the zone's mains",
+        ),
+        # Neither code is in the register any more; the node's stored activity
+        # is stale. Remove this once the ingest refreshes `activity`.
+        Override(
+            "0000218420",
+            "Zespol Zarzadcow Nieruchomosci",
+            "PKD 70.20; the register lists neither 36.00 nor 37.00 today",
+        ),
+        Override("0000128488", "Elewator Sieradz", "a grain elevator, PKD 52.10.B"),
+        Override(
+            "0000119699",
+            "Wielkopolskie Centrum Hodowli i Rozrodu Zwierzat",
+            "animal breeding services, PKD 01.62",
+        ),
+    ),
+    include=(
+        # The register places these two on 36.00/37.00; the *node* does not,
+        # because its stored `activity` is empty. 1,295 nodes are in that state.
+        # Both are load-bearing - 0000247533 supplies 3.3 million people - so
+        # they are named here rather than left to wait for an ingest refresh.
+        Override(
+            "0000247533",
+            "Gornoslaskie Przedsiebiorstwo Wodociagow",
+            "register przewazajaca is 36.00; the node's stored activity is empty",
+        ),
+        Override(
+            "0000082499",
+            "Przedsiebiorstwo Gospodarki Wodnej i Rekultywacji",
+            "register przewazajaca is 37.00; the node's stored activity is empty",
+        ),
+        # A network owner rather than an operator: it holds Gdansk's water and
+        # sewer mains and leases them, so it files property and pipeline codes
+        # and never 36.00 or 37.00.
+        Override(
+            "0000216612",
+            "Gdanska Infrastruktura Wodociagowo-Kanalizacyjna",
+            "owns Gdansk's water and sewer network; PKD 68.20 plus 42.21 pipelines",
+        ),
+    ),
 )
 
 KOLEJE = Category(
@@ -207,6 +378,45 @@ KOLEJE = Category(
             "Zwiazek Samorzadowych Przewoznikow Kolejowych",
             "no PKD stored; the regional operators' association",
         ),
+        Override(
+            "0000206663",
+            "Grupa Azoty Koltar",
+            "the Grupa Azoty group's licensed rail carrier and wagon works at "
+            "Tarnow; the node has no stored PKD",
+        ),
+        # Tram operators. 49.31 in the 2007 vintage bundles trams, metro and
+        # buses, so the code cannot tell a tram network from a bus company and
+        # the module deliberately leaves it out - which left the categorisation
+        # arbitrary: nine tram operators were in `koleje` anyway because they
+        # also build track (42.12) or maintain rolling stock (30.20), while
+        # these five, which run trams and nothing else rail-coded, were out.
+        # Tramwaje Warszawskie and Tramwaje Slaskie need no override: both file
+        # 49.12 (pozostaly szynowy transport pasazerski) as their main activity.
+        Override(
+            "0000027173",
+            "MPK Wroclaw",
+            "operates the Wroclaw tram network; declares only 49.31 and 49.39",
+        ),
+        Override(
+            "0000025692",
+            "MPK Krakow",
+            "operates the Krakow tram network; declares only 49.31 and 49.39",
+        ),
+        Override(
+            "0000132903",
+            "MZK Grudziadz",
+            "operates the Grudziadz tram network",
+        ),
+        Override(
+            "0000125412",
+            "MPK Czestochowa",
+            "operates the Czestochowa tram line; its register crawl is empty",
+        ),
+        Override(
+            "0000332741",
+            "Tramwaj Fordon",
+            "the municipal vehicle behind the Fordon tram extension in Bydgoszcz",
+        ),
     ),
     exclude=(
         # "Kolejowy" in the name, and nothing to do with running a railway.
@@ -261,7 +471,9 @@ KOLEJE = Category(
         Override(
             "0000209019",
             "Wikom - Wodociagi i Oczyszczanie Miasta",
-            "a water utility, PKD 36.00 - it belongs in wodociagi",
+            "a water utility, PKD 36.00; its 42.12 entry carries 42.21's text "
+            "(roboty zwiazane z budowa rurociagow), so it is a misfiled pipeline "
+            "code rather than a siding",
         ),
         Override(
             "0000128844",
@@ -320,10 +532,145 @@ KOLEJE = Category(
         Override(
             "0000059625", "Centrala Zbytu Wegla Weglozbyt", "coal trading, PKD 46.81"
         ),
+        Override(
+            "0000073870",
+            "Przedsiebiorstwo Przeladunkowo-Skladowe Port Polnocny",
+            "a Gdansk bulk terminal, PKD 52.24.A; the 49.20 is the terminal siding",
+        ),
+        Override(
+            "0000076836",
+            "Przedsiebiorstwo Komunikacji Miejskiej w Tychach",
+            "buses and trolleybuses, PKD 49.31; Tychy has no railway and the "
+            "49.10 is dead boilerplate",
+        ),
+        Override(
+            "0000047612",
+            "Slaskie Centrum Logistyki",
+            "the Gliwice inland port, PKD 49.41; 49.20 is one of ten codes",
+        ),
+        Override(
+            "0000134150",
+            "Betrans",
+            "PGE GiEK's road haulier, PKD 49.41; the rail code serves a mine siding",
+        ),
     ),
 )
 
-COMPANY_CATEGORIES: tuple[Category, ...] = (SZPITALE, WODOCIAGI, KOLEJE)
+CIEPLOWNICTWO = Category(
+    value="cieplownictwo",
+    title="Cieplownictwo",
+    # 35.30 Wytwarzanie i zaopatrywanie w pare wodna, goraca wode i powietrze
+    # do ukladow klimatyzacyjnych. The MPEC / PEC / Cieplownia municipal heat
+    # plants, one per town.
+    #
+    # Main-code only. Matched anywhere, 35.30 collects 326 companies and a
+    # quarter of them are water utilities and waste companies that also happen
+    # to run a boiler house. Unlike division 35's electricity codes, 35.30 means
+    # the same thing in both PKD vintages, so there is nothing to disambiguate.
+    #
+    # 57 of these are also in `wodociagi`, and that is right rather than a
+    # collision: a gmina multi-utility supplies heat and water on one licence.
+    pkd_main_prefixes=("35.30",),
+)
+
+ENERGETYKA = Category(
+    value="energetyka",
+    title="Energetyka",
+    # Electricity: generation, grid, distribution and trade.
+    #
+    # The 2025 PKD revision renumbered this group by one and the register holds
+    # both vintages at once, so the *number* does not say what a company does:
+    # 35.12 reads "przesylanie energii elektrycznej" for 134 filers and
+    # "energetyka sloneczna" for 48. Listing 35.11 through 35.16 together sides
+    # with the group rather than trying to tell wytwarzanie from przesyl - a
+    # split this data cannot support.
+    #
+    # 35.30 is deliberately absent: heat is `cieplownictwo` above. 35.2x is
+    # gas, which is 14 companies and too few to be a filter of its own.
+    pkd_main_prefixes=("35.11", "35.12", "35.13", "35.14", "35.15", "35.16"),
+    exclude=(
+        Override(
+            "0000541901",
+            "PGE Energetyka Kolejowa Holding",
+            "PKD 64.21; traction power, and already in `koleje`",
+        ),
+    ),
+)
+
+ODPADY = Category(
+    value="odpady",
+    title="Odpady i recykling",
+    # 38.1x zbieranie, 38.2x obrobka i usuwanie, 38.3x odzysk
+    # 39.00 rekultywacja
+    #
+    # Main-code only, for the usual reason: 38.11 matched anywhere reaches 490
+    # companies because every gmina utility collects bins as a sideline. 49 of
+    # the members are also in `wodociagi` - the PGKiM/ZGK companies that really
+    # do both.
+    #
+    # The opis strings under these codes are not stable either: 38.21 reads
+    # "obrobka i usuwanie odpadow" for 253 filers and "odzysk surowcow" for 35,
+    # and 38.32 splits between "odzysk surowcow" and "skladowanie odpadow". They
+    # are all waste, so the group is matched whole.
+    pkd_main_prefixes=("38.", "39.0"),
+)
+
+KOMUNIKACJA_MIEJSKA = Category(
+    value="komunikacja-miejska",
+    title="Komunikacja miejska i autobusowa",
+    # 49.31 Transport ladowy pasazerski, miejski i podmiejski (PKD 2007) /
+    #       Transport drogowy pasazerski rozkladowy (PKD 2025)
+    # 49.39 Pozostaly transport ladowy pasazerski
+    #
+    # The MPK / MZK / PKS companies. Main-code only is not optional here: 49.39
+    # matched anywhere adds 47 companies of which 41 are hospitals, sports
+    # centres and water utilities that run a staff bus or a patient transport.
+    #
+    # The tram operators are in `koleje` as well, by override. A company that
+    # runs both a tram network and a bus fleet is in both categories, which is
+    # what it is.
+    pkd_main_prefixes=("49.31", "49.39"),
+)
+
+SPORT = Category(
+    value="sport",
+    title="Sport i rekreacja",
+    # Division 93: obiekty sportowe (93.11), kluby (93.12), obiekty rekreacyjne.
+    # The OSiR / MOSiR municipal sports centres and the gmina-owned football
+    # clubs and stadium operators.
+    #
+    # The clearest case in the module for main-code matching: division 93
+    # matched anywhere yields 169 companies of which about half are real, and
+    # the other half are water utilities, property managers and hospitals
+    # listing "93.13 pozostala dzialalnosc sportowa" as filler. Matched on the
+    # main code it yields 96 and every one is a sports or recreation operator.
+    pkd_main_prefixes=("93.",),
+)
+
+PRZYCHODNIE = Category(
+    value="przychodnie",
+    title="Przychodnie i opieka ambulatoryjna",
+    # Outpatient care, and the reason `szpitale` can stay narrow: a przychodnia,
+    # a pogotowie and a dom opieki are not hospitals, and filing them under
+    # „Szpitale" is worse than the miss it would fix.
+    #
+    # 86.10 is absent on purpose - that is `szpitale`. 86.90 covers
+    # fizjoterapia, praktyka pielegniarek and pogotowie ratunkowe; 87 and 88 are
+    # residential and non-residential social care.
+    pkd_main_prefixes=("86.21", "86.22", "86.23", "86.90", "86.92", "87.", "88."),
+)
+
+COMPANY_CATEGORIES: tuple[Category, ...] = (
+    SZPITALE,
+    PRZYCHODNIE,
+    WODOCIAGI,
+    CIEPLOWNICTWO,
+    ENERGETYKA,
+    ODPADY,
+    KOLEJE,
+    KOMUNIKACJA_MIEJSKA,
+    SPORT,
+)
 
 CATEGORY_VALUES: tuple[str, ...] = tuple(c.value for c in COMPANY_CATEGORIES)
 
@@ -343,12 +690,65 @@ def matches_pkd(activity: list[str] | None, prefixes: tuple[str, ...]) -> bool:
     return any(code.startswith(prefix) for code in activity for prefix in prefixes)
 
 
-def categories_for(krs: str | None, activity: list[str] | None) -> list[str]:
+def matches_main_pkd(activity: list[str] | None, prefixes: tuple[str, ...]) -> bool:
+    """Whether the *przewazajaca dzialalnosc* starts with any of `prefixes`.
+
+    `activity[0]` is that code. The register returns it in its own field
+    (`przedmiotPrzewazajacejDzialalnosci`) and `parse_activity_from_api_krs`
+    puts it first, so position carries the meaning rather than a separate field
+    the stored nodes would not have.
+
+    A company whose `activity` is empty has no main code and matches nothing -
+    which is 1,295 of the 4,024 nodes on the site, and the reason `forms` and
+    the override lists exist.
+    """
+    if not activity:
+        return False
+    return any(activity[0].startswith(prefix) for prefix in prefixes)
+
+
+def matches_all_of(
+    activity: list[str] | None, groups: tuple[tuple[str, ...], ...]
+) -> bool:
+    """Whether every group has at least one match among the declared codes.
+
+    Empty `groups` is False rather than vacuously True: a category that declares
+    no such requirement must not collect every company through it.
+    """
+    if not groups or not activity:
+        return False
+    return all(matches_pkd(activity, group) for group in groups)
+
+
+def matches_form(form: str | None, forms: tuple[str, ...]) -> bool:
+    """Whether the register's `formaPrawna` is one of `forms`.
+
+    Compared case-insensitively on the whole string, not by prefix: the register
+    writes the legal form from a fixed vocabulary, so there is nothing to be
+    tolerant about, and a prefix match would put "SPOLKA AKCYJNA" and "SPOLKA
+    AKCYJNA W ORGANIZACJI" in one bucket.
+    """
+    if not form or not forms:
+        return False
+    normalized = form.strip().upper()
+    return any(normalized == f.strip().upper() for f in forms)
+
+
+def categories_for(
+    krs: str | None,
+    activity: list[str] | None,
+    form: str | None = None,
+) -> list[str]:
     """Every category a company belongs to, in `COMPANY_CATEGORIES` order.
 
     An exclusion beats everything, including an inclusion: the two lists are
     written by hand and an entry appearing on both is a mistake, so the safer
     of the two answers wins rather than the order of the checks deciding it.
+
+    `form` is the register's `formaPrawna`. It is optional because a payload
+    assembled before the field was parsed does not carry it, and a company whose
+    form is unknown should keep the categories its PKD codes give it rather than
+    losing them - so a missing `form` narrows the answer, never widens it.
 
     Returns a list rather than a set so the value is stable from one run to the
     next - it ends up in a Firestore document that a diff is taken against.
@@ -361,6 +761,11 @@ def categories_for(krs: str | None, activity: list[str] | None) -> list[str]:
         if normalized is not None and normalized in category.included_krs:
             result.append(category.value)
             continue
-        if matches_pkd(activity, category.pkd_prefixes):
+        if (
+            matches_main_pkd(activity, category.pkd_main_prefixes)
+            or matches_pkd(activity, category.pkd_prefixes)
+            or matches_all_of(activity, category.pkd_all_of)
+            or matches_form(form, category.forms)
+        ):
             result.append(category.value)
     return result

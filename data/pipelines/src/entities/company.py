@@ -60,6 +60,13 @@ class Company:
     nip: str | None = None
     regon: str | None = None
     activity: list[str] = field(default_factory=list)
+    #: The register's `formaPrawna`, verbatim. Carried because it is the only
+    #: thing that identifies the 243 `samodzielny publiczny zaklad opieki
+    #: zdrowotnej` hospitals: they sit in the associations register, which has
+    #: no `przedmiotDzialalnosci`, so they reach the site with an empty
+    #: `activity` and no PKD rule can ever place them. See
+    #: `entities.company_categories`.
+    form: str | None = None
     sources: list[Source] = field(default_factory=list)
     children: list[str] = field(default_factory=list)
     parents: list[Owner] = field(default_factory=list)

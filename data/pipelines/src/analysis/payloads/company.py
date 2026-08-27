@@ -87,11 +87,14 @@ class CompaniesPayloads(Pipeline):
                 bool(is_public) if isinstance(is_public, (bool, np.bool_)) else False
             )
 
+            form = row.get("form")
+            form = form if isinstance(form, str) and form.strip() else None
+
             payload = {
                 "krs": krs,
                 "name": name,
                 "activity": list(activity),
-                "categories": categories_for(krs, list(activity)),
+                "categories": categories_for(krs, list(activity), form),
                 "is_public": is_public,
             }
 
