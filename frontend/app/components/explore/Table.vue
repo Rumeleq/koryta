@@ -182,11 +182,7 @@
 
     <template #[`item.explore`]="{ item }">
       <div class="d-flex flex-nowrap">
-        <v-tooltip
-          text="Otwiera wiele kart wyszukiwania jednocześnie. Upewnij się, że blokowanie okienek (pop-up) jest wyłączone."
-          open-delay="2000"
-          location="top"
-        >
+        <v-tooltip :text="SEARCH_ALL_TOOLTIP" open-delay="2000" location="top">
           <template #activator="{ props }">
             <v-btn
               v-bind="props"
@@ -215,7 +211,10 @@
 
 <script setup lang="ts">
 import { mdiMagnify, mdiOpenInNew } from "@mdi/js";
-import { executeSearchAll } from "~/composables/usePersonSearch";
+import {
+  SEARCH_ALL_TOOLTIP,
+  executeSearchAll,
+} from "~/composables/usePersonSearch";
 import { voteScaleSummary } from "~/composables/votes";
 import type { PersonRich } from "~~/shared/model";
 

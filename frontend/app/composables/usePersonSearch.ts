@@ -6,6 +6,13 @@ import type { PersonRich } from "~~/shared/model";
  * `uniqueLocations`. */
 const MAX_LOCATION_QUERIES = 6;
 
+/** What every "eksploruj wszystko" button says on hover. One string, because
+ * the warning about pop-up blocking is the whole reason the tooltip is there
+ * and a reader who met it in the table should meet the same words again on the
+ * person's own page. */
+export const SEARCH_ALL_TOOLTIP =
+  "Otwiera wiele kart wyszukiwania jednocześnie. Upewnij się, że blokowanie okienek (pop-up) jest wyłączone.";
+
 export const usePersonSearch = (
   person: Ref<PersonRich | undefined> | PersonRich | undefined,
   region?: Ref<[string, string] | undefined> | [string, string] | undefined,

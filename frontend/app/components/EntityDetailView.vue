@@ -115,6 +115,7 @@
           :key="sourcePath"
           :entity="entity"
           :type="type"
+          :extra-locations="electionLocations"
         />
 
         <div class="mt-4">
@@ -477,6 +478,22 @@ const successions = type === "person" ? usePersonSuccessions(node) : undefined;
 const predecessors = computed(() =>
   predecessorsByEdge(successions?.data.value?.posts ?? [], edges.value),
 );
+/** The towns this person stood for election in, off the edges the page already
+ * holds.
+ *
+ * The node itself carries no `elections`: those are reconstructed from a
+ * subgraph, which only the table fetches. Without them the explore button in
+ * the header would search the bare name and nothing else - and the town
+ * somebody asked to represent is what separates a councillor from every
+ * namesake in the country. Empty for anything that is not a person, which has
+ * no election edges.
+ */
+const electionLocations = computed(() =>
+  edges.value
+    .filter((edge) => edge.type === "election" && edge.richNode?.name)
+    .map((edge) => edge.richNode.name),
+);
+
 const owners = computed(() => {
   return sources.value.filter((e) => e.type === "owns");
 });
