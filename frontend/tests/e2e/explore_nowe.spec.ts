@@ -40,5 +40,19 @@ test.describe("Eksploruj Nowe", () => {
     // Assert that it actually contains text
     const nameText = await firstRowName.innerText();
     expect(nameText.length).toBeGreaterThan(0);
+
+    // The queue opens on the most recent hires above the default threshold,
+    // which is the state nothing writes into the url.
+    await expect(page.getByLabel("Min. suma głosów")).toHaveValue("3");
+    expect(new URL(page.url()).search).toBe("");
+
+    // The other order is still reachable, and says so in the url so the choice
+    // survives a reload.
+    await page
+      .getByRole("button", { name: "Najwyżej oceniane" })
+      .click({ force: true });
+    await page.waitForURL(/order=votes/);
+    await expect(page.getByLabel("Min. suma głosów")).toHaveCount(0);
+    await expect(firstRowName).toBeVisible({ timeout: 15000 });
   });
 });
