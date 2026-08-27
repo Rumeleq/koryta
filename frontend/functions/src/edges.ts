@@ -69,7 +69,10 @@ export const onEdgeWritten = onDocumentWritten(
           const ownsEdgesSnapshot = await db
             .collection("edges")
             .where("target", "in", chunk)
-            .where("type", "==", "owns")
+            // Both types: a seat carries the region up into a person's
+            // targetNodeIds exactly as ownership does. `in` rather than two
+            // queries, so the read count does not double.
+            .where("type", "in", ["owns", "seat"])
             .get();
 
           for (const doc of ownsEdgesSnapshot.docs) {

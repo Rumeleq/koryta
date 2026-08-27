@@ -33,8 +33,16 @@ type EdgeSemantics = {
 };
 
 export const EDGE_SEMANTICS: Record<string, EdgeSemantics> = {
-  // A company's seat, its owner, the region above it: all one per pair.
+  // An owner, and the region above a region: one per pair.
   owns: {
+    kind: "state",
+    discriminators: [],
+    identicalMeansSame: true,
+    enrichable: false,
+  },
+  // Where a company is registered. One per pair, and in fact one per company -
+  // a company has a single registered seat.
+  seat: {
     kind: "state",
     discriminators: [],
     identicalMeansSame: true,

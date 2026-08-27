@@ -226,11 +226,26 @@ export function computeEdgeStats(
     ),
   ].filter(Boolean);
 
+  // Which companies this node is the registered seat of, kept apart from
+  // `targetNodeIds` because that list is type-blind and now mixes two claims: a
+  // region's targets are the companies seated in it *and* the companies it
+  // holds shares in. `regionsByPlaceId` reads this one, so a gmina that owns a
+  // company in the next town cannot move it there.
+  //
+  // No transitive fold: a seat is asserted about one region, and rolling the
+  // wojewodztwo in would put every company in Poland's largest region into a
+  // tie with its own powiat.
+  const seatTargets = (edges: Edge[]) =>
+    [
+      ...new Set(edges.filter((e) => e.type === "seat").map((e) => e.target)),
+    ].filter(Boolean);
+
   return {
     all: {
       experienceMonths: calculateExperience(publicEdges),
       latestEmploymentStart: calculateLatestEmploymentStart(publicEdges),
       targetNodeIds: allTargetNodeIds,
+      seatNodeIds: seatTargets(nodeEdges),
       currentlyEmployed: calculateCurrentlyEmployed(publicEdges),
       currentlyEmployedTargetNodeIds: [
         ...new Set(
@@ -245,6 +260,7 @@ export function computeEdgeStats(
       latestEmploymentStart:
         calculateLatestEmploymentStart(publicApprovedEdges),
       targetNodeIds: approvedTargetNodeIds,
+      seatNodeIds: seatTargets(approvedEdges),
       currentlyEmployed: calculateCurrentlyEmployed(publicApprovedEdges),
       currentlyEmployedTargetNodeIds: [
         ...new Set(

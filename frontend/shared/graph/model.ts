@@ -65,6 +65,7 @@ export interface Edge {
     | "connection"
     | "mentions"
     | "owns"
+    | "seat"
     | "comment"
     | "election"
     | "tagged";

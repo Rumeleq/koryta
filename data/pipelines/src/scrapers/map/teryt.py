@@ -7,6 +7,7 @@ division codes (województwo, powiat, gmina) from the official TERYT database.
 
 import pandas as pd
 
+from scrapers.map.jst import JstIndex
 from scrapers.stores import Context, Pipeline
 from scrapers.stores.file import DownloadableFile
 
@@ -96,6 +97,28 @@ class Teryt(Pipeline):
         """
         voj = voj.lower()
         return self.voj_lower_to_teryt[voj]
+
+
+class Jst(Pipeline):
+    """The name-to-TERYT index, for resolving who owns a company.
+
+    Separate from `Teryt` because it needs the gmina rows, which `Teryt` throws
+    away: `cities_to_teryt` is built from wojewodztwa and powiaty only and is
+    keyed the wrong way round for this. Same source file, read again rather than
+    threaded through - the CSV is 4,348 rows.
+    """
+
+    filename = None
+    volatile = True
+
+    def process(self, ctx: Context):
+        teryt_file = ctx.io.read_data(teryt_data)
+        data = teryt_file.read_zip("TERC_Urzedowy_2025-11-15.csv").read_dataframe(
+            "csv", csv_sep=";", dtype={"WOJ": str, "POW": str, "GMI": str, "RODZ": str}
+        )
+        self.index = JstIndex.from_terc(data)
+        print(f"Built a JST index over {len(self.index.units)} units")
+        return pd.DataFrame([{"col": "empty"}])
 
 
 class Regions(Pipeline):

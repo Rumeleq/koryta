@@ -144,6 +144,7 @@ const typeOptions = [
   { title: "Kandydatura", value: "election" },
   { title: "Zatrudnienie", value: "employed" },
   { title: "Własność", value: "owns" },
+  { title: "Siedziba", value: "seat" },
   { title: "Powiązanie", value: "connection" },
 ];
 

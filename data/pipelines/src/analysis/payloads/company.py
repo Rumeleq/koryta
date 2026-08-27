@@ -28,8 +28,10 @@ class CompaniesPayloads(Pipeline):
     the ingest endpoint skips any node carrying `categoriesSource: "manual"`.
 
     The payloads carry `teryt_code`, which the uploader maps to the `teryt`
-    field the ingest endpoint links a company to its region with. They still
-    carry no owners, so no ownership edges are touched. Location edges used to
+    field the ingest endpoint links a company to its region with. They also
+    carry `owners` and `owner_teryts`, so the ownership the register records is
+    finally drawn: 964 shareholder entries name a company by KRS and 1,675 name
+    a gmina, powiat, wojewodztwo or the Skarb Panstwa. Location edges used to
     be left out too, because the endpoint allocated a random id per edge and
     re-running duplicated them; it now derives the id from the link itself and
     skips edges that already exist, so this is safe to re-run.
@@ -90,12 +92,29 @@ class CompaniesPayloads(Pipeline):
             form = row.get("form")
             form = form if isinstance(form, str) and form.strip() else None
 
+            # Who owns it, split the way the ingest takes them: a company owner
+            # by KRS, a gmina/powiat/wojewodztwo by the TERYT code its register
+            # name resolved to. This pipeline used to emit neither, so no
+            # ownership edge was ever written for a company already on the site
+            # - which is why 3,927 of 4,024 of them had exactly one `owns` edge
+            # and it was the seat.
+            owners, owner_teryts = [], []
+            for parent in row.get("parents") or []:
+                if not isinstance(parent, dict):
+                    continue
+                if parent.get("krs"):
+                    owners.append(str(parent["krs"]).zfill(10))
+                elif parent.get("teryt"):
+                    owner_teryts.append(str(parent["teryt"]))
+
             payload = {
                 "krs": krs,
                 "name": name,
                 "activity": list(activity),
                 "categories": categories_for(krs, list(activity), form),
                 "is_public": is_public,
+                "owners": owners,
+                "owner_teryts": owner_teryts,
             }
 
             teryt_code = row.get("teryt_code")
@@ -117,6 +136,8 @@ class CompaniesPayloads(Pipeline):
                     "activity",
                     "categories",
                     "is_public",
+                    "owners",
+                    "owner_teryts",
                     "teryt_code",
                 ]
             )

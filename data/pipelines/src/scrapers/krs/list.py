@@ -12,7 +12,9 @@ from entities.company import Company as KrsCompany
 from entities.person import KRS as KrsPerson
 from scrapers.krs.data import CompaniesHardcoded
 from scrapers.krs.graph import QueryRelation
+from scrapers.map.jst import AMBIGUOUS, SKARB_PANSTWA, JstIndex
 from scrapers.map.postal_codes import PostalCodes
+from scrapers.map.teryt import Jst
 from scrapers.stores import CloudStorage, Context, Pipeline
 from scrapers.stores.file import DownloadableFile, latest_crawls, split_crawl_date
 
@@ -245,6 +247,7 @@ class CompaniesKRS(Pipeline[KrsCompany]):
     # every identifier downstream of here.
     dtype = {"krs": str, "nip": str, "regon": str, "teryt_code": str}
     postal_codes: PostalCodes
+    jst: Jst
     hardcoded_companies: CompaniesHardcoded
 
     def __init__(self) -> None:
@@ -366,7 +369,7 @@ class CompaniesKRS(Pipeline[KrsCompany]):
     ) -> None:
         if "Biuletyn" in blob_name:
             return
-        c = company_from_api_krs(postal_codes, data)
+        c = company_from_api_krs(postal_codes, data, self.jst_index)
         if c is None:
             return
         self.add_company(c)
@@ -435,6 +438,8 @@ class CompaniesKRS(Pipeline[KrsCompany]):
         and extracts information about companies.
         """
         postal_codes = self.postal_codes.read_or_process(ctx)
+        self.jst.read_or_process(ctx)
+        self.jst_index = getattr(self.jst, "index", None)
         self.hardcoded_companies.process(ctx)
         hardcoded = self.hardcoded_companies.all_companies_krs
 
@@ -506,17 +511,18 @@ def get_teryt(pcs: DataFrame, city: str, code: str | None):
     return ""
 
 
-KNOWN_OWNER_PREFIXES = {
-    "GMINA": 7,
-    "MIASTO": 4,
-    "POWIAT": 4,
-    "WOJEWODZTWO": 2,
-    "WOJEWÓDZTWO": 2,
-    "SKARB PAŃSTWA": None,  # TODO support it
-}
+#: The KRS number the Skarb Panstwa is recorded under on koryta.pl. It is not a
+#: company and has no entry in the register, so the id is the site's own: the
+#: place node already exists and already carries `owns` edges. A government
+#: shareholder that is the Treasury is linked there rather than to a region -
+#: it is not a territory, and a TERYT code would enter it into the contest for
+#: a company's seat.
+SKARB_PANSTWA_NODE = "SKARB_PANSTWA"
 
 
-def company_from_api_krs(pcs: DataFrame, data: dict) -> KrsCompany | None:
+def company_from_api_krs(
+    pcs: DataFrame, data: dict, jst: "JstIndex | None" = None
+) -> KrsCompany | None:
     try:
         if data.get("title") == "Not Found":
             return None
@@ -540,25 +546,47 @@ def company_from_api_krs(pcs: DataFrame, data: dict) -> KrsCompany | None:
         teryt_code = get_teryt(pcs, miejscowosc, postal_code)
         owners: list[Owner] = []
 
-        # Check who's listed as wspolnicy or jedyny akcjonariusz
+        # Which wojewodztwo the company itself sits in, used only to break a tie
+        # between two units of the same name. Read off the register's own
+        # `siedziba` rather than the postal-code lookup: those names are clean
+        # uppercase nominatives and only 6 of 7,835 crawls have a malformed one.
+        seat_wojewodztwo = None
+        if jst is not None:
+            siedziba = (dzial1.get("siedzibaIAdres") or {}).get("siedziba") or {}
+            seat_wojewodztwo = jst.wojewodztwo_code(siedziba.get("wojewodztwo"))
+
+        # Who is listed as wspolnik or jedyny akcjonariusz. A government owner
+        # is named and nothing more - the register carries no TERYT code - so
+        # the name has to be resolved. This used to take the *company's own*
+        # seat and truncate it to the length the prefix implied, which is right
+        # only when the owner happens to be the local government where the
+        # company sits: Gmina Miasta Gdansk, holding 10.7% of a Gdynia-seated
+        # PKP SKM, came out as Gdynia. It also collapsed every co-owner onto one
+        # value, so the sixteen gminy that own KRS 0000094136 were one.
         wspolnicy = dzial1.get("wspolnicySpzoo", []) + dzial1.get(
             "jedynyAkcjonariusz", []
         )
         for w in wspolnicy:
             if "nazwa" not in w:
                 continue
-            w_nazwa = w["nazwa"].upper()
 
-            matched_prefix = False
-            for prefix, teryt_length in KNOWN_OWNER_PREFIXES.items():
-                if w_nazwa.startswith(prefix):
-                    if teryt_length is not None:
-                        owners.append(Owner(krs=None, teryt=teryt_code[:teryt_length]))
-                    is_public = True
-                    matched_prefix = True
-                    break
+            resolved = jst.resolve(w["nazwa"], seat_wojewodztwo) if jst else None
+            if resolved == SKARB_PANSTWA:
+                owners.append(Owner(krs=SKARB_PANSTWA_NODE, teryt=None))
+                is_public = True
+                continue
+            if resolved == AMBIGUOUS:
+                # Two units of the same name in different powiaty and nothing to
+                # choose between them. The company is still public - the owner is
+                # certainly *a* gmina - but no edge can be drawn to one.
+                is_public = True
+                continue
+            if resolved:
+                owners.append(Owner(krs=None, teryt=resolved))
+                is_public = True
+                continue
 
-            if not matched_prefix and "krs" in w and "krs" in w["krs"]:
+            if "krs" in w and "krs" in w["krs"]:
                 parent_krs = w["krs"]["krs"]
                 if parent_krs and parent_krs != "0000000000":
                     owners.append(Owner(krs=parent_krs, teryt=None))

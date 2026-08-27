@@ -14,7 +14,14 @@ SCHEMAS = {
     },
     "edges": {
         type_name: ["name", "content", "source", "target", "start_date", "end_date"]
-        for type_name in ["employed", "connection", "mentions", "owns", "comment"]
+        for type_name in [
+            "employed",
+            "connection",
+            "mentions",
+            "owns",
+            "seat",
+            "comment",
+        ]
     },
 }
 
@@ -87,8 +94,7 @@ class KorytaDiffer(Pipeline):
             df_valid = df_sorted[df_sorted["name"].notna()]
             # Update map
             latest_names = {
-                str(row["id"]): str(row["name"])
-                for _, row in df_valid.iterrows()
+                str(row["id"]): str(row["name"]) for _, row in df_valid.iterrows()
             }
             self.id_map.update(latest_names)
 

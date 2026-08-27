@@ -24,6 +24,7 @@ const NEIGHBOUR_EDGE_TYPES: ReadonlySet<EdgeType> = new Set<EdgeType>([
   "employed",
   "connection",
   "owns",
+  "seat",
   "election",
 ]);
 

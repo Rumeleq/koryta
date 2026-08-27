@@ -550,7 +550,8 @@ const subregions = computed(() => {
 });
 const subsidiaries = computed(() => {
   return targets.value.filter(
-    (e) => e.type === "owns" && e.richNode.type == "place",
+    (e) =>
+      (e.type === "owns" || e.type === "seat") && e.richNode.type == "place",
   );
 });
 

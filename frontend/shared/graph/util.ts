@@ -133,6 +133,7 @@ const edgeLabel: Record<EdgeType, string> = {
   connection: "zna",
   mentions: "wspomina",
   owns: "właściciel",
+  seat: "siedziba",
   comment: "komentarz",
   election: "kandydował",
   tagged: "temat",
@@ -153,6 +154,17 @@ const edgeTraverse: Record<EdgeType, TraversePolicy> = {
   },
   owns: {
     forward: "active",
+    backward: "dead_end",
+  },
+  // Dead in both directions, for the reason `tagged` is. `owns.forward` being
+  // active is what makes a region a hub: from a powiat you reach every company
+  // in it, and from each of those every employee, so its `nodeGroupSize` is
+  // "everyone employed anywhere in the powiat". That reading is arguable for
+  // ownership - a subsidiary's staff are arguably the parent's reach - and
+  // indefensible for a seat, because sitting in the same town is not a
+  // relationship between two people.
+  seat: {
+    forward: "dead_end",
     backward: "dead_end",
   },
   comment: {

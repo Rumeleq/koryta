@@ -7,8 +7,8 @@ type RegionWithTargets = {
   teryt?: string;
   stats?: {
     edges?: {
-      all?: { targetNodeIds?: string[] };
-      approved?: { targetNodeIds?: string[] };
+      all?: { targetNodeIds?: string[]; seatNodeIds?: string[] };
+      approved?: { targetNodeIds?: string[]; seatNodeIds?: string[] };
     };
   };
 };
@@ -19,16 +19,23 @@ export type PlaceRegion = { name: string; teryt?: string };
 
 /** The region every company the loaded regions claim sits in, keyed by place id.
  *
- * A company's seat is an `owns` edge from the region to the company, which the
- * stats job folds into the *region's* target node ids. The lookup runs in that
+ * A company's seat is a `seat` edge from the region to the company, which the
+ * stats job folds into the *region's* `seatNodeIds`. The lookup runs in that
  * direction because company nodes almost never carry stats of their own - 66 of
  * 3706 in production - so reading `place.stats` left the location blank for all
  * but a handful of them.
  *
- * The region hierarchy uses the same edge type, so a region's targets also list
- * its child regions; those keys are simply never looked up. Should two regions
- * ever claim one company, the more specific one wins - a powiat over the
- * województwo around it.
+ * It reads `seatNodeIds` rather than `targetNodeIds` because the latter is
+ * type-blind, and since the register's shareholder lists arrived a region points
+ * at two different kinds of thing: the companies seated in it and the 1,675 it
+ * holds shares in. Gmina Miasta Gdańsk owns 10.7% of PKP SKM, which sits in
+ * Gdynia; on `targetNodeIds` the two would tie on TERYT length and the answer
+ * would depend on which region the loop reached first.
+ *
+ * Falls back to `targetNodeIds` while the migration runs, so a region whose
+ * stats have not been recomputed yet still answers. Should two regions still
+ * claim one company, the more specific one wins - a powiat over the województwo
+ * around it.
  */
 export function regionsByPlaceId(
   regions: Record<string, RegionWithTargets>,
@@ -38,7 +45,10 @@ export function regionsByPlaceId(
   const specificities: Record<string, number> = {};
 
   for (const region of Object.values(regions)) {
-    const targets = region.stats?.edges?.[edgeScope]?.targetNodeIds;
+    const scoped = region.stats?.edges?.[edgeScope];
+    const targets = Array.isArray(scoped?.seatNodeIds)
+      ? scoped.seatNodeIds
+      : scoped?.targetNodeIds;
     if (!Array.isArray(targets)) continue;
 
     const specificity = region.teryt?.length ?? 0;
