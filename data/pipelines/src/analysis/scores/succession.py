@@ -38,7 +38,12 @@ share a company with somebody party-affiliated but did not take over from them:
 import collections
 import datetime
 
-from analysis.scores.base import Employment, PeopleScoreModel, Population
+from analysis.scores.base import (
+    FULL_RANGE,
+    Employment,
+    PeopleScoreModel,
+    Population,
+)
 from scrapers.stores import Context
 
 #: How long a seat may stand empty and the next holder still count as having
@@ -184,6 +189,14 @@ def successions(
 class PeopleScoresSuccession(PeopleScoreModel):
     filename = "people_scores_succession"
     model_tag = "pipeline-succession"
+
+    #: The whole axis, because nothing else can be said yet: this model has
+    #: never had a run uploaded, so no reader has judged anybody it named and
+    #: there is nothing to narrow its range on. Narrowing it on the strength of
+    #: how the sibling models did would be guessing. Re-run
+    #: `scripts/score_model_accuracy.py` once its votes have been on the site
+    #: long enough for a few dozen people to have been looked at.
+    score_range = FULL_RANGE
 
     @staticmethod
     def predecessor_weight(

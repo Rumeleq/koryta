@@ -16,7 +16,7 @@ they travel with rather than the number of doors they have been through.
 
 import collections
 
-from analysis.scores.base import PeopleScoreModel, Population
+from analysis.scores.base import PeopleScoreModel, Population, ScoreRange
 from scrapers.stores import Context
 
 #: How many separate companies two people have to have shared before the
@@ -44,6 +44,21 @@ def shared_company_counts(
 class PeopleScoresCoappointment(PeopleScoreModel):
     filename = "people_scores_coappointment"
     model_tag = "pipeline-together"
+
+    #: Capped below the queue threshold, so this model can no longer put
+    #: anybody in front of a reader by itself. It is the only one measured
+    #: whose people did *worse* than the pool they were drawn from: of 51 it
+    #: had named, 51 % were called interesting against a base rate of 65 %
+    #: (p = 0.009), and 49 % were a wasted click against 35 %. Its bands run
+    #: the wrong way too - saying 3-5 scored 41 %, saying 1-2 scored 56 %.
+    #:
+    #: The likely cause is the one `CompanyScores` already carries a TODO
+    #: about: the population is keyed by name, so two people who share one
+    #: merge into a person holding both their posts, and "shares two employers
+    #: with somebody confirmed" is exactly the claim a merge like that
+    #: manufactures. Worth re-measuring against ids, not deleting - the
+    #: reasoning is sound and the input may not be.
+    score_range = ScoreRange(ceiling=2)
 
     def raw_scores(self, ctx: Context, population: Population) -> dict[str, float]:
         rosters = {

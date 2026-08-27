@@ -18,7 +18,12 @@ so it adds a point rather than deciding the question. An appointment that
 clears all three is worth four times one that only happened to be well timed.
 """
 
-from analysis.scores.base import PeopleScoreModel, Population
+from analysis.scores.base import (
+    QUEUE_THRESHOLD,
+    PeopleScoreModel,
+    Population,
+    ScoreRange,
+)
 from scrapers.stores import Context
 
 #: How many years after an election an appointment still counts as following
@@ -62,6 +67,19 @@ def same_region(candidacy_teryt: str | None, company_teryt: str | None) -> bool:
 class PeopleScoresTurnover(PeopleScoreModel):
     filename = "people_scores_turnover"
     model_tag = "pipeline-turnover"
+
+    #: Floored at the queue threshold, because the finding this model has to
+    #: report is *that* the pattern is there rather than how strongly. Of the
+    #: 43 people it had named whom a reader then judged, 88 % were called
+    #: interesting against a base rate of 65 % (p = 0.0001), and 12 % were a
+    #: wasted click against 35 % - the best of any model measured. Its own
+    #: ordering carries none of that: saying 1-2 scored 87 % and saying 3-5
+    #: scored 90 %, and three quarters of the people it names sit in one tie at
+    #: the bottom anyway, because most appointments clear `TIMING_POINTS` and
+    #: nothing else. So the floor is the finding and the ceiling is a courtesy.
+    #: This is also the widest bet here: it moves ~930 people into the queue on
+    #: a bottom band measured over 20 of them.
+    score_range = ScoreRange(floor=QUEUE_THRESHOLD, ceiling=5)
 
     def raw_scores(self, ctx: Context, population: Population) -> dict[str, float]:
         scores: dict[str, float] = {}

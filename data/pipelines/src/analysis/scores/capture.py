@@ -19,7 +19,7 @@ Small boards need a brake, because two people of whom one is a candidate is
 the company scores have used all along.
 """
 
-from analysis.scores.base import PeopleScoreModel, Population
+from analysis.scores.base import FULL_RANGE, PeopleScoreModel, Population
 from scrapers.stores import Context
 
 #: Added to the denominator so a tiny board cannot reach a high share. With a
@@ -46,6 +46,12 @@ def political_weight(population: Population, name: str) -> float:
 class PeopleScoresCapture(PeopleScoreModel):
     filename = "people_scores_capture"
     model_tag = "pipeline-capture"
+
+    #: The whole axis, on the same evidence as `PeopleScores`: of 130 people it
+    #: had named 65 % were called interesting, which is the base rate, but its
+    #: bands separate - 1-2 scored 56 % and 3-5 scored 80 % (p = 0.008). It
+    #: casts the widest net here, 550 people at 3 or above, and it orders them.
+    score_range = FULL_RANGE
 
     def raw_scores(self, ctx: Context, population: Population) -> dict[str, float]:
         rosters = {
