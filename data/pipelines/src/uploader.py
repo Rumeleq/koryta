@@ -168,7 +168,19 @@ class Uploader:
                 )
                 continue
 
-            self.check_success(self.submit_entity(payload))
+            try:
+                self.check_success(self.submit_entity(payload))
+            except Exception as error:
+                # One bad row must not take the other 3,927 with it. The
+                # `Failed:` counter below says this was always the intent, but
+                # `submit_payload` raises by default, so a single 404 - a
+                # payload naming an owner the site does not have, say - ended
+                # the run a few dozen companies in.
+                self.total += 1
+                print(
+                    f"[{idx + 1}] {payload.get('krs')} {name}: {error}",
+                    file=sys.stderr,
+                )
 
         failures = self.total - self.success_count
         print(
@@ -227,16 +239,26 @@ class CompanyUploader(Uploader):
         # `entities.company_categories`' sibling `scrapers.map.jst` resolved its
         # name to. Only the first used to be kept - `if parent.get("krs")` - so
         # all 1,675 government owners in the register died here.
-        owners, owner_teryts = [], []
-        for parent in payload.get("parents", []):
-            if not isinstance(parent, dict):
-                continue
-            if parent.get("krs"):
-                owners.append(parent["krs"])
-            elif parent.get("teryt"):
-                owner_teryts.append(parent["teryt"])
-        payload["owners"] = owners
-        payload["owner_teryts"] = owner_teryts
+        # Derived here only when the payload has not worked them out already.
+        # `CompaniesPayloads` has, and it carries no `parents` at all - so
+        # deriving unconditionally overwrote 946 company owners and 1,390 JST
+        # owners with two empty lists, and the ingest reported every one of the
+        # 3,928 uploads as OK while writing no ownership edge whatsoever. Same
+        # guard `categories` has above, and for the same reason: a company that
+        # arrives straight from the `Companies` pipeline because somebody works
+        # there has `parents` and nothing else, and one that comes through
+        # `CompaniesPayloads` is the other way round.
+        if "owners" not in payload and "owner_teryts" not in payload:
+            owners, owner_teryts = [], []
+            for parent in payload.get("parents", []):
+                if not isinstance(parent, dict):
+                    continue
+                if parent.get("krs"):
+                    owners.append(parent["krs"])
+                elif parent.get("teryt"):
+                    owner_teryts.append(parent["teryt"])
+            payload["owners"] = owners
+            payload["owner_teryts"] = owner_teryts
         if "teryt_code" in payload and payload["teryt_code"]:
             payload["teryt"] = payload["teryt_code"]
         # `CompaniesPayloads` already worked these out, but a company created
