@@ -17,11 +17,20 @@ import { companyEditSchema } from "../../shared/api";
  * moved with the logic.
  */
 describe("companyCategories", () => {
-  it("offers the three sectors the filter knows about", () => {
+  it("offers the sectors the filter knows about, in the pipelines' order", () => {
+    // The order matches `COMPANY_CATEGORIES` in
+    // data/pipelines/src/entities/company_categories.py, which is the order a
+    // company's categories are stored in.
     expect(companyCategories.map((c) => c.value)).toEqual([
       "szpitale",
+      "przychodnie",
       "wodociagi",
+      "cieplownictwo",
+      "energetyka",
+      "odpady",
       "koleje",
+      "komunikacja-miejska",
+      "sport",
     ]);
   });
 

@@ -537,7 +537,7 @@ describe("api/ingest/company", () => {
       {
         source: "teryt1061",
         target: "company-id",
-        type: "owns",
+        type: "seat",
       },
       { automatic: true, approve: true, published: true },
     );
@@ -563,7 +563,10 @@ describe("api/ingest/company", () => {
     });
   });
 
-  it("should truncate teryt if length > 4", async () => {
+  it("falls back to the powiat when the exact teryt has no node", async () => {
+    // A seat TERYT comes from geonames and is six digits, WOJ+POW+GMI with no
+    // RODZ, so it matches no node - `Regions` mints gminy with the RODZ on the
+    // end. The powiat above it is where the site records a seat anyway.
     mockReadBody.mockResolvedValue({
       krs: "123456",
       name: "Regional Company",
@@ -574,7 +577,14 @@ describe("api/ingest/company", () => {
     const companyRef = { id: "company-id" };
     mockDoc.mockReturnValueOnce(companyRef);
 
-    // Mock region existence true for 'teryt1061'
+    // The exact code first, and nothing has it.
+    mockDoc.mockReturnValueOnce({
+      id: "teryt1061999",
+      get: vi.fn().mockResolvedValue({ exists: false }),
+    });
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
+
+    // Then the powiat, which does.
     const regionSnapshot = { exists: true, ref: { id: "teryt1061" } };
     const regionRefMock = {
       id: "teryt1061",
@@ -582,6 +592,7 @@ describe("api/ingest/company", () => {
     };
     mockDoc.mockReturnValueOnce(regionRefMock);
 
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
     mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
     const edgeRef = { id: "edge-region-id" };
     mockDoc.mockReturnValueOnce(edgeRef);
@@ -597,7 +608,7 @@ describe("api/ingest/company", () => {
       {
         source: "teryt1061", // Must have correctly sliced
         target: "company-id",
-        type: "owns",
+        type: "seat",
       },
       { automatic: true, approve: true, published: true },
     );
@@ -643,15 +654,88 @@ describe("api/ingest/company", () => {
       id: "teryt1061",
       get: vi.fn().mockResolvedValue({ exists: true }),
     });
+    // Two lookups: no `seat` edge, and no pre-split `owns` one either.
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
     mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
     mockDoc.mockReturnValueOnce({ id: "edge-region-id" });
 
     await handler({} as any);
 
-    expect(mockDoc).toHaveBeenCalledWith("edge_teryt1061_company-id_owns");
+    expect(mockDoc).toHaveBeenCalledWith("edge_teryt1061_company-id_seat");
   });
 
-  it("skips an owns edge that is already stored", async () => {
+  it("links a government shareholder by its own TERYT, not the company's", async () => {
+    // The register names the owner and gives no code, so the pipelines resolve
+    // the name. Gmina Miasta Gdansk holds 10.7% of PKP SKM, which is seated in
+    // Gdynia: the owner edge and the seat edge run from different regions, and
+    // before the split there was one type for both.
+    mockReadBody.mockResolvedValue({
+      krs: "0000076705",
+      name: "PKP SKM w Trojmiescie",
+      owner_teryts: ["2261011"],
+      teryt: "2262",
+    });
+
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
+    mockDoc.mockReturnValueOnce({ id: "company-id" });
+    // the owner region
+    mockDoc.mockReturnValueOnce({
+      id: "teryt2261011",
+      get: vi.fn().mockResolvedValue({ exists: true }),
+    });
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
+    mockDoc.mockReturnValueOnce({ id: "edge-owner-id" });
+    // the seat region
+    mockDoc.mockReturnValueOnce({
+      id: "teryt2262",
+      get: vi.fn().mockResolvedValue({ exists: true }),
+    });
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
+    mockDoc.mockReturnValueOnce({ id: "edge-seat-id" });
+
+    await handler({} as any);
+
+    expect(createRevisionTransaction).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      { uid: "test-user-id" },
+      { id: "edge-owner-id" },
+      { source: "teryt2261011", target: "company-id", type: "owns" },
+      { automatic: true, approve: true, published: true },
+    );
+    expect(createRevisionTransaction).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      { uid: "test-user-id" },
+      { id: "edge-seat-id" },
+      { source: "teryt2262", target: "company-id", type: "seat" },
+      { automatic: true, approve: true, published: true },
+    );
+  });
+
+  it("reports an owner TERYT with no region node instead of failing", async () => {
+    mockReadBody.mockResolvedValue({
+      krs: "123456",
+      name: "Gmina-owned Company",
+      owner_teryts: ["9999999"],
+    });
+
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
+    mockDoc.mockReturnValueOnce({ id: "company-id" });
+    mockDoc.mockReturnValueOnce({
+      id: "teryt9999999",
+      get: vi.fn().mockResolvedValue({ exists: false }),
+    });
+
+    const result = await handler({} as any);
+
+    expect(result).toMatchObject({ code: 200 });
+    // Node revision only; no edge to a region that does not exist.
+    expect(createRevisionTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips a seat already stored as a pre-split owns edge", async () => {
     mockReadBody.mockResolvedValue({
       krs: "123456",
       name: "Regional Company",
@@ -664,8 +748,12 @@ describe("api/ingest/company", () => {
       id: "teryt1061",
       get: vi.fn().mockResolvedValue({ exists: true }),
     });
-    // The link is already there - e.g. an earlier run, or an edge written with
-    // the old random id.
+    // No `seat` edge yet, but the pair already carries a pre-split `owns` one -
+    // which is how all 3,939 seats are stored until
+    // `scripts/migrate/split-seat-edges.ts` has run. Writing a `seat` edge
+    // beside it would give the company two seats, and the ingest runs nightly,
+    // so it would win the race against the migration.
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
     mockGet.mockResolvedValueOnce({
       empty: false,
       docs: [
@@ -700,8 +788,9 @@ describe("api/ingest/company", () => {
       id: "teryt1061",
       get: vi.fn().mockResolvedValue({ exists: true }),
     });
-    // `owns` is a state edge: the region either seats the company or it does
+    // A seat is a state edge: the region either seats the company or it does
     // not, so a date somebody once put on the link does not make a second one.
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
     mockGet.mockResolvedValueOnce({
       empty: false,
       docs: [

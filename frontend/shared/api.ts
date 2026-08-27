@@ -18,6 +18,13 @@ export const companyRequestSchema = z.object({
   krs: z.string(),
   name: z.string(),
   owners: z.array(z.string()).optional(),
+  /** TERYT codes of the gminy, powiaty and województwa that hold shares in the
+   * company, as `scrapers.map.jst` resolved them from the register's own
+   * wording. Separate from `owners` because a JST has no KRS number to look it
+   * up by, and separate from `teryt` because owning a company and being the
+   * town it is registered in are different claims - 252 companies are owned by
+   * a local government that is not their own. */
+  owner_teryts: z.array(z.string()).optional(),
   teryt: z.string().optional(),
   /** PKD codes from KRS, e.g. "86.10.Z" */
   activity: z.array(z.string()).optional(),
@@ -42,6 +49,7 @@ export type CompanyRequest = {
   krs: string;
   name: string;
   owners?: string[];
+  owner_teryts?: string[];
   teryt?: string;
   activity?: string[];
   categories?: string[];

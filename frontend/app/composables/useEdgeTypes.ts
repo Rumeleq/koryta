@@ -20,6 +20,7 @@ export type edgeTypeExt =
   | "mentioned_person"
   | "mentioned_company"
   | "owns_region"
+  | "seat_region"
   | "election"
   | "tagged";
 
@@ -80,18 +81,41 @@ export const edgeTypeOptions: Record<edgeTypeExt, edgeTypeOption> = {
       },
     },
   },
-  owns_region: {
-    value: "owns_region",
-    verbs: { outgoing: "zarządza", incoming: "podlega pod" },
-    label: "Region właściciel",
+  // Where a company is registered. This used to write `owns`, because the seat
+  // and ownership were one type; it now writes `seat`, so correcting a
+  // company's town cannot be mistaken for a claim about who holds its shares.
+  seat_region: {
+    value: "seat_region",
+    verbs: { outgoing: "jest siedzibą dla", incoming: "ma siedzibę w" },
+    label: "Siedziba",
     sourceType: "region",
     targetType: "place",
     sourceLabel: "Region",
-    targetLabel: "Jednostka podległa",
+    targetLabel: "Spółka",
+    realType: "seat",
+    buttons: {
+      incoming: {
+        label: (_name) => "Popraw siedzibę firmy",
+        icon: mdiMapMarkerRadiusOutline,
+      },
+    },
+  },
+  // A gmina, powiat or województwo that holds shares. The register names one
+  // for 1,675 companies, and for 252 of them it is not the local government
+  // where the company sits - which is the whole reason the seat moved out of
+  // `owns`.
+  owns_region: {
+    value: "owns_region",
+    verbs: { outgoing: "jest właścicielem", incoming: "należy do" },
+    label: "Właściciel publiczny",
+    sourceType: "region",
+    targetType: "place",
+    sourceLabel: "Gmina, powiat lub województwo",
+    targetLabel: "Spółka",
     realType: "owns",
     buttons: {
       incoming: {
-        label: (_name) => "Dodaj region zarządzający firmą",
+        label: (_name) => "Dodaj samorząd jako właściciela",
         icon: mdiMapMarkerRadiusOutline,
       },
     },

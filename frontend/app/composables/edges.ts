@@ -41,6 +41,7 @@ export function relationsPlural(count: number): string {
 export const edgeTypeLabels: Record<string, string> = {
   employed: "Zatrudniony/a w",
   owns: "Właściciel",
+  seat: "Siedziba",
   connection: "Powiązanie z",
   mentions: "Wspomina o",
   comment: "Komentarz",

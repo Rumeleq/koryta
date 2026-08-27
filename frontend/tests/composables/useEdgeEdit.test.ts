@@ -165,6 +165,29 @@ describe("useEdgeEdit", () => {
     });
   });
 
+  it("stores a company's seat under its own type, not as ownership", async () => {
+    // The two look identical on screen - a region on one end, a company on the
+    // other - and were one type until the register's shareholder lists arrived.
+    const { layout, processEdge } = useEdgeEdit({
+      fixedNode: on("place", "spolka"),
+      edgeType: "seat_region",
+      initialDirection: "incoming",
+    });
+
+    layout.source.ref.value = {
+      type: "region",
+      id: "teryt2262",
+      name: "Gdynia",
+    };
+    await processEdge();
+
+    expect(sentBody()).toMatchObject({
+      source: "teryt2262",
+      target: "spolka",
+      type: "seat",
+    });
+  });
+
   it("says what went wrong instead of reporting a write that did not happen", async () => {
     const onUpdate = vi.fn();
     authRequest.mockRejectedValueOnce({ data: { message: "Brak tokenu" } });
@@ -208,6 +231,7 @@ describe("useEdgeEdit", () => {
           "employed",
           "mentioned_company",
           "owns_parent",
+          "seat_region",
           "owns_region",
         ],
       },

@@ -73,7 +73,9 @@ export default defineEventHandler(async (event) => {
 
   const dbb = { db, batch, user, added: new Set<string>() };
 
-  // Process 'owns' relationships
+  // Who holds shares, per dział 1 of the register. A company owner is looked up
+  // by KRS; a gmina, powiat or województwo has no KRS and arrives as the TERYT
+  // code its register name was resolved to.
   if (body.owners && Array.isArray(body.owners)) {
     for (const parent of body.owners) {
       if (!parent) continue;
@@ -81,8 +83,28 @@ export default defineEventHandler(async (event) => {
       await createEdge(dbb, parentRef.id, nodeRef.id, "owns", publish);
     }
   }
+  if (body.owner_teryts && Array.isArray(body.owner_teryts)) {
+    for (const owner of body.owner_teryts) {
+      if (!owner) continue;
+      const regionNodeId = await findRegionByTeryt(db, owner);
+      if (!regionNodeId) {
+        // 706 gminy have a region node because they own something; a code that
+        // resolves to no node is one the region ingest has not reached yet.
+        // Reported rather than fatal, the same way an unknown seat is.
+        console.warn(
+          `No region node for owner TERYT ${owner} (krs=${body.krs})`,
+        );
+        continue;
+      }
+      await createEdge(dbb, regionNodeId, nodeRef.id, "owns", publish);
+    }
+  }
 
-  // Process 'teryt' to link the company to a region
+  // Where the company is registered. A `seat` edge, not an `owns` one: until
+  // the register's shareholder lists were ingested the two were the same type
+  // and it did not matter, but a region now points at both the companies seated
+  // in it and the ones it holds shares in, and only one of those says where a
+  // company is.
   let region: "added" | "existing" | "unknown" | undefined;
   if (body.teryt) {
     const regionNodeId = await findRegionByTeryt(db, body.teryt);
@@ -91,7 +113,7 @@ export default defineEventHandler(async (event) => {
         dbb,
         regionNodeId,
         nodeRef.id,
-        "owns",
+        "seat",
         publish,
       );
       region = added ? "added" : "existing";
@@ -146,6 +168,18 @@ async function createEdge(
     return false;
   }
   if (await findEdge(db, edgeData)) {
+    return false;
+  }
+  // A seat that predates the `owns`/`seat` split is stored as `owns`, and
+  // `scripts/migrate/split-seat-edges.ts` will retype it. Until that has run
+  // the pair already carries the fact, so writing a `seat` edge beside it would
+  // give 3,939 companies two seats - and the ingest runs nightly, so it would
+  // win the race against the migration. Left alone rather than retyped here:
+  // retyping is the migration's job, and it has the revisions to move too.
+  if (
+    type === "seat" &&
+    (await findEdge(db, { source, target, type: "owns" }))
+  ) {
     return false;
   }
   added.add(edgeId);
@@ -215,20 +249,34 @@ async function findRegionByTeryt(
   db: FirebaseFirestore.Firestore,
   terytArg: string,
 ): Promise<string | null> {
-  const teryt = terytArg.length > 4 ? terytArg.slice(0, 4) : terytArg;
-  const regionNodeId = `teryt${teryt}`;
-  const nodeWithTerytID = db.collection("nodes").doc(regionNodeId);
-  if ((await nodeWithTerytID.get()).exists) {
-    return regionNodeId;
-  }
-
-  const nodeWithTerytField = db
-    .collection("nodes")
-    .where("teryt", "==", teryt)
-    .limit(1);
-  const snapshot = await nodeWithTerytField.get();
-  if (!snapshot.empty && snapshot.docs[0]) {
-    return snapshot.docs[0].id;
+  // The exact code first, then the powiat above it. Which one answers depends
+  // on where the code came from, and both callers are real:
+  //
+  //   an owner TERYT is resolved from the register by `scrapers.map.jst` and is
+  //     exact - 7 characters for a gmina, and 706 gminy have a node precisely
+  //     because they own something. Truncating it to 4 would file every gmina
+  //     shareholder under its powiat and collapse the co-owners of a company
+  //     back into one, which is the bug the resolver exists to fix.
+  //
+  //   a seat TERYT comes from `get_teryt`, which reads geonames, and that
+  //     column is six digits: WOJ+POW+GMI with no RODZ. It therefore matches no
+  //     node at all - `Regions` mints gminy as WOJ+POW+GMI+RODZ - and falls
+  //     through to the powiat, which is where the site records a seat anyway.
+  const candidates =
+    terytArg.length > 4 ? [terytArg, terytArg.slice(0, 4)] : [terytArg];
+  for (const teryt of candidates) {
+    const regionNodeId = `teryt${teryt}`;
+    if ((await db.collection("nodes").doc(regionNodeId).get()).exists) {
+      return regionNodeId;
+    }
+    const snapshot = await db
+      .collection("nodes")
+      .where("teryt", "==", teryt)
+      .limit(1)
+      .get();
+    if (!snapshot.empty && snapshot.docs[0]) {
+      return snapshot.docs[0].id;
+    }
   }
 
   return null;

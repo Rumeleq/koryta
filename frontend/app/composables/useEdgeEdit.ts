@@ -188,7 +188,8 @@ export function useEdgeEdit({
     }
 
     // `owns` is stored once but offered as three separate options, told apart
-    // by who is at the other end.
+    // by who is at the other end. A region at the other end is now a
+    // shareholder rather than the seat - the seat has its own type.
     if (edge.type === "owns") {
       if (internalEdge.richNode?.type === "region") {
         internalEdgeType.value = "owns_region";
@@ -197,6 +198,8 @@ export function useEdgeEdit({
       } else {
         internalEdgeType.value = "owns_parent";
       }
+    } else if (edge.type === "seat") {
+      internalEdgeType.value = "seat_region";
     } else {
       internalEdgeType.value = edge.type as edgeTypeExt;
     }

@@ -220,11 +220,23 @@ class CompanyUploader(Uploader):
         assert payload is not None
 
         # TODO move it somewhere else - Companies pipeline?
-        owners = []
+        #
+        # Two kinds of owner, because the register names two. A company owner
+        # has a KRS number and becomes a place-to-place edge; a gmina, powiat or
+        # wojewodztwo has none and is carried as the TERYT code
+        # `entities.company_categories`' sibling `scrapers.map.jst` resolved its
+        # name to. Only the first used to be kept - `if parent.get("krs")` - so
+        # all 1,675 government owners in the register died here.
+        owners, owner_teryts = [], []
         for parent in payload.get("parents", []):
-            if isinstance(parent, dict) and parent.get("krs"):
+            if not isinstance(parent, dict):
+                continue
+            if parent.get("krs"):
                 owners.append(parent["krs"])
+            elif parent.get("teryt"):
+                owner_teryts.append(parent["teryt"])
         payload["owners"] = owners
+        payload["owner_teryts"] = owner_teryts
         if "teryt_code" in payload and payload["teryt_code"]:
             payload["teryt"] = payload["teryt_code"]
         # `CompaniesPayloads` already worked these out, but a company created

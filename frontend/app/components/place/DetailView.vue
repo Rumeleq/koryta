@@ -257,7 +257,11 @@ const company = computed<Company | undefined>(() => {
 
 const { sources, targets, refresh: refreshEdges } = await useEdges(nodeId);
 const edges = computed(() => [...sources.value, ...targets.value]);
-const owners = computed(() => sources.value.filter((e) => e.type === "owns"));
+// Shareholders, and the seat while the migration is still running - once no
+// region->place `owns` edge is left, `seat` here can become its own row.
+const owners = computed(() =>
+  sources.value.filter((e) => e.type === "owns" || e.type === "seat"),
+);
 const subsidiaries = computed(() =>
   targets.value.filter((e) => e.type === "owns" && e.richNode.type === "place"),
 );

@@ -296,6 +296,21 @@ class JstIndex:
                 )
         return cls(units)
 
+    def wojewodztwo_code(self, name: str | None) -> str | None:
+        """The two-digit code for a wojewodztwo named in the register.
+
+        The register writes its `siedziba.wojewodztwo` as a clean uppercase
+        nominative ("POMORSKIE"), which is exactly TERYT's own spelling, so this
+        is a lookup rather than a resolution.
+        """
+        if not name:
+            return None
+        key = normalise(name)
+        for unit in self.units:
+            if unit.level == "wojewodztwo" and normalise(unit.name) == key:
+                return unit.teryt
+        return None
+
     def resolve(self, name: str, within_wojewodztwo: str | None = None) -> str | None:
         """The TERYT code the shareholder name names.
 

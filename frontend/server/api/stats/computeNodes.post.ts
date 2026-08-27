@@ -202,7 +202,15 @@ export default defineEventHandler(async (event) => {
   const placeToParentCompanies: Record<string, string[]> = {};
 
   for (const edge of edges) {
-    if (edge.type === "owns" && edge.source && edge.target) {
+    // `seat` as well as `owns`: a person's `targetNodeIds` carries the region
+    // of their employer through this fold, and 6,632 of the 7,289 people on the
+    // site reach their region only that way. Reading `owns` alone here after
+    // the seat edges were retyped would empty /eksploruj?teryt= for all of them.
+    if (
+      (edge.type === "owns" || edge.type === "seat") &&
+      edge.source &&
+      edge.target
+    ) {
       const sourceType = nodesRecord[edge.source]?.type;
       if (sourceType === "region") {
         if (!placeToRegions[edge.target]) placeToRegions[edge.target] = [];

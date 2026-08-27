@@ -32,7 +32,15 @@ type NodeEdgeStats = {
   experienceMonths: number;
   /** Start of the most recent employment in a public company. */
   latestEmploymentStart?: string | null;
+  /** Everything this node points at, of every edge type, plus the regions
+   * above whatever it points at. Type-blind on purpose: it backs the
+   * "region of a person" filter, which does not care why the two are linked. */
   targetNodeIds: string[];
+  /** Companies this node is the registered seat of. Only on region nodes, and
+   * only `seat` edges - `targetNodeIds` cannot answer this since the register's
+   * shareholder lists arrived, because a gmina points at the companies it owns
+   * as well as the ones seated in it. */
+  seatNodeIds?: string[];
   /** Whether the person still holds a post in a public company. */
   currentlyEmployed: boolean;
   /** Public companies (and their regions) the person still holds a post in. */
@@ -174,7 +182,15 @@ export type EdgeType =
   | "employed"
   | "connection"
   | "mentions"
+  /** Ownership: a shareholder, a parent company, the gmina that holds the
+   * shares. Region -> company means the region *owns* it, which since the
+   * `seat` split is a claim about shares rather than about geography. */
   | "owns"
+  /** Where a company is registered. Split out of `owns`, which meant both
+   * "sits in" and "is owned by" and could not mean both once the register's
+   * shareholder lists were ingested: a gmina that owns a company seated in the
+   * next town would otherwise move it there. */
+  | "seat"
   | "comment"
   | "election"
   | "tagged";

@@ -313,8 +313,13 @@ async function placesInRegions(
       .get();
     for (const doc of snapshot.docs) {
       const edge = doc.data();
+      // The filter is „Siedziba spółki", so it wants seats. `owns` is still
+      // accepted while the migration runs; once no region->place `owns` edge is
+      // left it can be dropped, and until then a region that owns a company
+      // elsewhere shows it here - which is what the site did for every company
+      // before the split anyway.
       if (
-        edge.type === "owns" &&
+        (edge.type === "seat" || edge.type === "owns") &&
         edge.target &&
         !allRegionIds.has(edge.target)
       ) {

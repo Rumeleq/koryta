@@ -219,6 +219,11 @@ const EDGE_STYLE: Record<Edge["type"], EdgeStyle> = {
   employed: { color: "#59707c", width: 2.2 },
   connection: { color: "#8d6a9f", width: 2, dasharray: "7 4" },
   owns: { color: "#6f8f5a", width: 1.8, dasharray: "3 3" },
+  // A seat is geography, not a claim about anybody, so it is drawn as faintly
+  // as the article-side relations - the same green as ownership, because they
+  // were one type until the register's shareholder lists arrived and a reader
+  // who remembers the old graph should still recognise the line.
+  seat: { color: "#6f8f5a", width: 1.2, dasharray: "2 5" },
   election: { color: "#b98235", width: 1.8, dasharray: "1 4" },
   mentions: ASIDE,
   comment: ASIDE,
