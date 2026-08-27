@@ -48,6 +48,28 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
  * before the list could be read at all. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "mniej-belek-nad-tabela",
+    title: "Mniej belek nad tabelą na Eksploruj",
+    description:
+      "Nad tabelą stały dwie belki, zanim zaczynały się filtry i same dane. " +
+      "Żółta prosiła o wsparcie na zrzutce - zbiórka już się nie toczy, więc " +
+      "belka zniknęła (razem z bliźniaczą na stronie wizualizacji). Niebieska " +
+      "mówiła „Zaloguj się, aby uzyskać dostęp do jeszcze nieopublikowanych / " +
+      "niezweryfikowanych osób”, co na telefonie zajmowało dwie linie; teraz " +
+      "mówi krótko „Zaloguj się, aby zobaczyć niezweryfikowane osoby”, a " +
+      "zdanie o tym, ile wpisów jest ukrytych, zostaje bez zmian.",
+    steps: [
+      "Wyloguj się i wejdź na /eksploruj/tabela?teryt=1465 - nad filtrami ma być tylko jedna, niebieska belka. Żółtej belki ze zrzutką nie ma.",
+      "Sprawdź, że niebieska belka mieści się w jednej linii na szerokim ekranie i mówi „Zaloguj się, aby zobaczyć niezweryfikowane osoby”.",
+      "Jeśli w tym widoku są ukryte wpisy, po tym zdaniu ma nadal stać „W tym widoku znaleźliśmy jeszcze N dodatkowych osób”.",
+      "Na telefonie (albo zwęź okno poniżej 960 px) sprawdź, że belka i przycisk „Zaloguj się” mieszczą się bez przewijania w bok.",
+      "Zaloguj się i odśwież - niebieskiej belki nie ma wcale, tak jak wcześniej.",
+      "Wejdź na stronę artykułu i na /tematy niezalogowany - tamte belki mają swoje własne teksty i mają zostać bez zmian.",
+    ],
+    link: "/eksploruj/tabela?teryt=1465",
+    area: "public",
+  },
+  {
     id: "graf-tematu-i-artykulu-za-przyciskiem",
     title: "Graf na stronie tematu i artykułu za przyciskiem na telefonie",
     description:

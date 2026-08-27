@@ -40,8 +40,11 @@ withDefaults(
   }>(),
   {
     hiddenCount: 0,
-    message:
-      "Zaloguj się, aby uzyskać dostęp do jeszcze nieopublikowanych / niezweryfikowanych osób.",
+    // Short on purpose. This banner sits between the page's title and its
+    // filters, so on a phone a two-line sentence is most of what a reader who
+    // has not signed in sees above the table they came for - and the count
+    // sentence beside it already says how much more there is.
+    message: "Zaloguj się, aby zobaczyć niezweryfikowane osoby.",
     forms: () => ["dodatkowa osoba", "dodatkowe osoby", "dodatkowych osób"],
   },
 );
