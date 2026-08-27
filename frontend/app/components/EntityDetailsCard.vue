@@ -10,56 +10,47 @@
         :party="party"
       />
       <v-spacer />
-      <div class="d-none d-md-flex flex-column align-end ga-1">
-        <div>
-          <DialogProposeEditNode
-            v-if="entity && type === 'person'"
-            :entity="entity"
+      <!-- One row of controls, in the order they escalate: the two an admin
+           gets, then the change anybody may propose, then how interesting the
+           reader found the person. The admin pair sits first so that a reader
+           without the claim is left with exactly the row that was there
+           before - the vote pill stays on the right edge either way. -->
+      <div class="d-none d-md-flex align-center ga-2">
+        <template v-if="isAdmin && entity?.id">
+          <!-- The table's "Eksploruj" icon, for the reader who arrived on the
+               page directly. It opens the same tabs - rejestr.io, Wikipedia
+               and a Google query per place the person is tied to - so that
+               checking somebody found through search costs the same one click
+               as checking somebody found through /eksploruj. -->
+          <ButtonIconAction
+            :icon="mdiOpenInNew"
+            label="Eksploruj"
+            :tooltip="SEARCH_ALL_TOOLTIP"
+            data-testid="admin-explore-link"
+            @click="searchAll()"
           />
-          <ButtonVoteNumber
-            v-if="entity"
-            :id="entity.id ?? ''"
-            :key="entity.id ?? ''"
-            category="interesting"
-            show-label
-          />
-        </div>
-        <!-- Admins reach a person from a list - /eksploruj/tabela, a search
-             result - and the revision list, which is where a page gets
-             published, was reachable only by typing the node id into a url. It
-             sits under the other two controls on the page rather than in a row
-             of its own, because it is the same kind of thing: what this reader
-             may do to the entity they are looking at. -->
-        <div v-if="isAdmin && entity?.id" class="d-flex ga-1">
-          <!-- The table's "Eksploruj" icon, in words, for the reader who
-               arrived on the page directly. It opens the same tabs - rejestr.io,
-               Wikipedia and a Google query per place the person is tied to -
-               so that checking somebody found through search costs the same
-               one click as checking somebody found through /eksploruj. -->
-          <v-tooltip :text="SEARCH_ALL_TOOLTIP" open-delay="600" location="top">
-            <template #activator="{ props: tooltipProps }">
-              <v-btn
-                v-bind="tooltipProps"
-                variant="tonal"
-                size="small"
-                :prepend-icon="mdiOpenInNew"
-                data-testid="admin-explore-link"
-                @click="searchAll()"
-              >
-                Eksploruj
-              </v-btn>
-            </template>
-          </v-tooltip>
-          <v-btn
-            variant="tonal"
-            size="small"
-            :prepend-icon="mdiHistory"
+          <!-- Admins reach a person from a list - /eksploruj/tabela, a search
+               result - and the revision list, which is where a page gets
+               published, was reachable only by typing the node id into a
+               url. -->
+          <ButtonIconAction
+            :icon="mdiHistory"
+            label="Rewizje"
             :to="`/admin/rewizje/${entity.id}`"
             data-testid="admin-revisions-link"
-          >
-            Rewizje
-          </v-btn>
-        </div>
+          />
+        </template>
+        <DialogProposeEditNode
+          v-if="entity && type === 'person'"
+          :entity="entity"
+        />
+        <ButtonVoteNumber
+          v-if="entity"
+          :id="entity.id ?? ''"
+          :key="entity.id ?? ''"
+          category="interesting"
+          show-label
+        />
       </div>
     </v-card-title>
     <template #append> </template>
