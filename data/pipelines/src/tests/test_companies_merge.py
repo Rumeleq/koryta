@@ -5,6 +5,7 @@ api-krs parser populates activity/is_public/owners, so merging must keep those
 fields regardless of which source is added first.
 """
 
+from analysis.interesting import Companies
 from entities.company import Company as KrsCompany
 from entities.company import Owner
 from scrapers.krs.list import CompaniesKRS
@@ -80,3 +81,84 @@ def test_merge_unions_owners_without_duplicates():
 
     merged = pipeline.companies["0000184990"]
     assert merged.parents.count(Owner(krs="0000019874", teryt=None)) == 1
+
+
+def test_the_merge_output_keeps_the_owners_krs_found():
+    """`Companies` used to drop `parents` on the floor.
+
+    `CompaniesKRS` reads dzial 1 and fills `parents` with a company owner by KRS
+    and a gmina/powiat/wojewodztwo by the TERYT its name resolved to. The merge
+    into `companies_merged` then built a `Company` without passing them - there
+    was a `# TODO add owners=[]` where that argument goes - so every consumer
+    downstream saw an empty list and had no way to tell that from "this company
+    has no registered owner".
+
+    Two of them are load-bearing: `CompaniesPayloads` turns `parents` into the
+    ingest's `owners`/`owner_teryts`, and `RegionPayloads` counts the gmina-level
+    codes to decide which region nodes the site needs. Both reported zero, and
+    reported it without failing, which is how this survived being written.
+
+    Runs the real `process`, because a test that rebuilds the record by hand
+    passes whether or not the argument is there.
+    """
+    krs = _api_krs_company()
+    krs.parents = [
+        Owner(krs="0000019193", teryt=None),
+        Owner(krs=None, teryt="2261011"),
+        Owner(krs=None, teryt="22"),
+    ]
+
+    class FakeKrs:
+        def read_or_process_list(self, ctx):
+            return [krs]
+
+    class FakeEmpty:
+        def read_or_process_list(self, ctx):
+            return []
+
+    class FakeTeryt:
+        cities_to_teryt: dict[str, str] = {}
+
+        def read_or_process(self, ctx):
+            return None
+
+    pipeline = Companies()
+    pipeline.scraped_companies = FakeKrs()  # type: ignore[assignment]
+    pipeline.hardcoded_companies = FakeEmpty()  # type: ignore[assignment]
+    pipeline.teryt_pipeline = FakeTeryt()  # type: ignore[assignment]
+
+    df = pipeline.process(None)  # type: ignore[arg-type]
+
+    assert len(df) == 1
+    parents = df.iloc[0]["parents"]
+    assert [p["teryt"] for p in parents if p["teryt"]] == ["2261011", "22"]
+    assert [p["krs"] for p in parents if p["krs"]] == ["0000019193"]
+
+
+def test_the_merge_output_keeps_the_legal_form():
+    """`form` places the 243 SPZOZ hospitals and comes from the same merge."""
+    krs = _api_krs_company()
+    krs.form = "SAMODZIELNY PUBLICZNY ZAKLAD OPIEKI ZDROWOTNEJ"
+
+    class FakeKrs:
+        def read_or_process_list(self, ctx):
+            return [krs]
+
+    class FakeEmpty:
+        def read_or_process_list(self, ctx):
+            return []
+
+    class FakeTeryt:
+        cities_to_teryt: dict[str, str] = {}
+
+        def read_or_process(self, ctx):
+            return None
+
+    pipeline = Companies()
+    pipeline.scraped_companies = FakeKrs()  # type: ignore[assignment]
+    pipeline.hardcoded_companies = FakeEmpty()  # type: ignore[assignment]
+    pipeline.teryt_pipeline = FakeTeryt()  # type: ignore[assignment]
+
+    df = pipeline.process(None)  # type: ignore[arg-type]
+
+    assert df.iloc[0]["form"] == "SAMODZIELNY PUBLICZNY ZAKLAD OPIEKI ZDROWOTNEJ"
