@@ -511,13 +511,10 @@ def get_teryt(pcs: DataFrame, city: str, code: str | None):
     return ""
 
 
-#: The KRS number the Skarb Panstwa is recorded under on koryta.pl. It is not a
-#: company and has no entry in the register, so the id is the site's own: the
-#: place node already exists and already carries `owns` edges. A government
-#: shareholder that is the Treasury is linked there rather than to a region -
-#: it is not a territory, and a TERYT code would enter it into the contest for
-#: a company's seat.
-SKARB_PANSTWA_NODE = "SKARB_PANSTWA"
+#: The Treasury is recognised - `jst.resolve` returns a sentinel for it and the
+#: company is marked public - but no ownership edge is drawn. See the comment in
+#: `company_from_api_krs`. Counted here so the gap has a number: 110 entries.
+SKARB_PANSTWA_OWNERS_UNLINKED = 110
 
 
 def company_from_api_krs(
@@ -572,7 +569,18 @@ def company_from_api_krs(
 
             resolved = jst.resolve(w["nazwa"], seat_wojewodztwo) if jst else None
             if resolved == SKARB_PANSTWA:
-                owners.append(Owner(krs=SKARB_PANSTWA_NODE, teryt=None))
+                # The Treasury owns 110 of the companies here and the site has a
+                # place node for it, already carrying two `owns` edges. It is
+                # not linked, because nothing identifies that node from the
+                # pipeline's side: it has no KRS number - it is not in the
+                # register at all - so the only handle is its Firestore id or
+                # its name, and neither belongs in a payload. Putting the
+                # sentinel in `owners` was worse: `findCompanyByKRS` 404s on it,
+                # and one 404 used to abort the whole upload.
+                #
+                # The company is still marked public, which is the half of this
+                # that matters for what the site shows. Linking needs a stable
+                # identifier on the node first.
                 is_public = True
                 continue
             if resolved == AMBIGUOUS:
