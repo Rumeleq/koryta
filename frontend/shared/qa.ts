@@ -48,6 +48,28 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
  * before the list could be read at all. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "naglowki-i-tytuly-kart-sie-zawijaja",
+    title: "Długie nazwy i tytuły kart nie są już ucinane",
+    description:
+      "Nagłówek strony osoby, spółki, artykułu i regionu był jedną linią bez " +
+      "zawijania - Vuetify domyślnie tnie go wielokropkiem. Na telefonie " +
+      "znaczyło to, że dłuższe nazwisko albo pełna nazwa spółki nie mieściły " +
+      "się w całości, a chip z partią obok nazwiska wypadał poza ekran i nie " +
+      "było go widać wcale. To samo obcinało tytuły kart „Wspomina o” i " +
+      "„Artykuł stanowi źródło dla:”, których tytuły to nagłówki artykułów, " +
+      "oraz kafli na /pomoc. Teraz wszystkie zawijają się do kolejnej linii.",
+    steps: [
+      "Na telefonie (albo zwęź okno poniżej 960 px) wejdź na stronę osoby o długim imieniu i nazwisku - całe ma być widoczne, choćby w dwóch liniach, bez wielokropka.",
+      "Sprawdź, że chip z partią jest widoczny obok nazwiska albo pod nim.",
+      "To samo na stronie spółki o długiej nazwie, na stronie artykułu i na stronie regionu.",
+      "Wejdź na stronę osoby wspomnianej w artykule o długim tytule - cały tytuł karty ma być widoczny.",
+      "Wejdź na /pomoc - „Zapisz się do newslettera” i pozostałe tytuły kafli mają być widoczne w całości.",
+      "Rozszerz okno - na szerokim ekranie nagłówek ma zostać w jednej linii jak wcześniej.",
+    ],
+    link: "/pomoc",
+    area: "public",
+  },
+  {
     id: "menu-nawigacji-w-pasku-na-telefonie",
     title: "Menu nawigacji w pasku u góry na telefonie",
     description:

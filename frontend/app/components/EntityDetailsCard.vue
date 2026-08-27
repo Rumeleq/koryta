@@ -1,7 +1,11 @@
 <template>
   <v-card v-if="type == 'person'" width="100%" variant="flat">
-    <v-card-title class="px-0 d-flex">
-      <h2 class="text-h5 font-weight-bold mr-2">
+    <!-- `text-wrap` and `flex-wrap`, because `.v-card-title` is `white-space:
+         nowrap; overflow: hidden` by Vuetify's default: at phone width that
+         ellipsised the person's name - the one thing the page is about - and
+         hid the party chip beside it off the end of the row entirely. -->
+    <v-card-title class="px-0 d-flex flex-wrap align-center ga-2 text-wrap">
+      <h2 class="text-h5 font-weight-bold">
         {{ entity?.name }}
       </h2>
       <PartyChip
@@ -61,7 +65,7 @@
   </v-card>
 
   <v-card v-if="type == 'place'" width="100%" variant="flat">
-    <v-card-title class="headline px-0">
+    <v-card-title class="headline px-0 text-wrap">
       <v-icon start :icon="mdiOfficeBuildingOutline" />
       <h2 class="text-h5 font-weight-bold d-inline">
         {{ entity?.name }}
@@ -76,7 +80,7 @@
   </v-card>
 
   <v-card v-if="type == 'article'" width="100%" variant="flat">
-    <v-card-title class="headline px-0">
+    <v-card-title class="headline px-0 text-wrap">
       <v-icon start :icon="mdiFileDocumentOutline" />
       <h2 class="text-h5 font-weight-bold d-inline">
         {{ entity?.name }}
@@ -94,7 +98,7 @@
   </v-card>
 
   <v-card v-if="type == 'region'" width="100%" variant="flat">
-    <v-card-title class="headline px-0">
+    <v-card-title class="headline px-0 text-wrap">
       <v-icon start :icon="mdiMapMarkerRadiusOutline" />
       <h2 class="text-h5 font-weight-bold d-inline">
         {{ region?.name }}

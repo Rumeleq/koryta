@@ -1,6 +1,7 @@
 <template>
   <v-card
     :key="edge.richNode.id"
+    class="short-node"
     :prepend-icon="entityIcon(edge.richNode.type)"
     :to="`/entity/${edge.richNode.type}/${edge.richNode.id}`"
   >
@@ -32,3 +33,17 @@ import { entityIcon } from "~/utils/entityIcon";
 
 const { edge } = defineProps<{ edge: EdgeNode }>();
 </script>
+
+<style scoped>
+/* Vuetify gives `.v-card-title` and `.v-card-subtitle` `white-space: nowrap;
+   overflow: hidden; text-overflow: ellipsis`. These cards carry article
+   headlines, and at 390px a headline that wants 720px gets 294px - so a person
+   mentioned in several pieces got a column of cards whose visible text was the
+   same prefix over and over, with the relation and its dates clipped off the
+   subtitle underneath. Written here rather than as `text-wrap` on the elements
+   because both are drawn by `v-card` from slots. */
+.short-node :deep(.v-card-title),
+.short-node :deep(.v-card-subtitle) {
+  white-space: normal;
+}
+</style>

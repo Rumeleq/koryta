@@ -39,7 +39,7 @@
           <template #prepend>
             <v-icon :icon="action.icon" size="large" color="primary" />
           </template>
-          <v-card-title>{{ action.title }}</v-card-title>
+          <v-card-title class="text-wrap">{{ action.title }}</v-card-title>
         </v-card-item>
         <v-card-text class="text-medium-emphasis">
           {{ action.desc }}
@@ -67,7 +67,7 @@
               color="primary"
             />
           </template>
-          <v-card-title>Zostań wolontariuszem</v-card-title>
+          <v-card-title class="text-wrap">Zostań wolontariuszem</v-card-title>
         </v-card-item>
         <v-card-text class="text-medium-emphasis">
           Wypełnij krótki formularz, a odezwiemy się z podprojektami
@@ -88,7 +88,7 @@
           <template #prepend>
             <v-icon :icon="mdiHeartOutline" size="large" color="primary" />
           </template>
-          <v-card-title>Wesprzyj na Patronite</v-card-title>
+          <v-card-title class="text-wrap">Wesprzyj na Patronite</v-card-title>
         </v-card-item>
         <v-card-text class="text-medium-emphasis">
           Nie mamy sponsorów ani partyjnego wsparcia. Regularne wpłaty pozwalają
@@ -102,7 +102,9 @@
           <template #prepend>
             <v-icon :icon="mdiEmailOutline" size="large" color="primary" />
           </template>
-          <v-card-title>Zapisz się do newslettera</v-card-title>
+          <v-card-title class="text-wrap"
+            >Zapisz się do newslettera</v-card-title
+          >
         </v-card-item>
         <v-card-text class="text-medium-emphasis">
           Załóż konto i wybierz, o czym chcesz dostawać wiadomości — nowych
@@ -130,7 +132,7 @@
           <template #prepend>
             <v-icon :icon="link.icon" size="large" color="primary" />
           </template>
-          <v-card-title>{{ link.title }}</v-card-title>
+          <v-card-title class="text-wrap">{{ link.title }}</v-card-title>
         </v-card-item>
         <v-card-text class="text-medium-emphasis">
           {{ link.desc }}
