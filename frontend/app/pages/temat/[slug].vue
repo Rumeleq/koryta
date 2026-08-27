@@ -50,12 +50,28 @@
         Graf powiązań
       </v-card-title>
       <v-card-text>
+        <!-- Behind a button on a phone, the way an entity page and a place page
+             already put theirs. The canvas asks v-network-graph for pan and
+             zoom, which sets `touch-action: none` on it - so 560px of the page
+             swallow every vertical swipe that starts on them and the reader is
+             stuck on the graph instead of scrolling past it. -->
         <GraphContainer
+          v-if="!smAndDown || showGraph"
           :key="topicId"
           focus-node-id=""
           :source="graphSource"
           :height="560"
         />
+        <div v-else class="d-flex justify-center">
+          <v-btn
+            color="primary"
+            variant="flat"
+            :prepend-icon="mdiGraphOutline"
+            @click="showGraph = true"
+          >
+            Pokaż graf powiązań
+          </v-btn>
+        </div>
         <p class="text-caption text-medium-emphasis mt-2">
           Pokazujemy osoby i instytucje wspomniane w artykułach z tego tematu
           oraz powiązania, dla których te artykuły są źródłem.
@@ -109,8 +125,9 @@
 
 <script setup lang="ts">
 /** One story: what it is about, who is in it, and what it rests on. */
-import { computed } from "vue";
-import { mdiTagOutline } from "@mdi/js";
+import { computed, ref } from "vue";
+import { mdiGraphOutline, mdiTagOutline } from "@mdi/js";
+import { useDisplay } from "vuetify";
 import { useCurrentUser } from "vuefire";
 import { authFetch } from "~/composables/auth";
 import { useDomainIcon } from "~/composables/useDomainIcon";
@@ -130,6 +147,10 @@ definePageMeta({ title: "Temat" });
 
 const route = useRoute();
 const user = useCurrentUser();
+
+/** Whether a phone reader has asked for the graph. See the template. */
+const { smAndDown } = useDisplay();
+const showGraph = ref(false);
 const { getDomainIcon } = useDomainIcon();
 
 const topicId = parseEntityUrlSlug(route.params.slug as string).id;

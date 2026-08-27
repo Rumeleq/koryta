@@ -240,12 +240,27 @@
         <template v-if="graphNodeIds.length">
           <v-divider class="my-4" />
           <h2 class="text-subtitle-1 font-weight-bold mb-2">Graf powiązań</h2>
+          <!-- Behind a button on a phone, the way an entity page and a place
+               page already put theirs: the canvas asks v-network-graph for pan
+               and zoom, which sets `touch-action: none` on it, so 460px of the
+               page swallow every vertical swipe that starts on them. -->
           <LazyGraphContainer
+            v-if="!smAndDown || showGraph"
             :key="nodeId"
             focus-node-id=""
             :source="graphSource"
             :height="460"
           />
+          <div v-else class="d-flex justify-center">
+            <v-btn
+              color="primary"
+              variant="flat"
+              :prepend-icon="mdiGraphOutline"
+              @click="showGraph = true"
+            >
+              Pokaż graf powiązań
+            </v-btn>
+          </div>
           <p class="text-caption text-medium-emphasis mt-2">
             Pokazujemy osoby i instytucje wspomniane w tym artykule, powiązania,
             dla których jest on źródłem, oraz najbliższe otoczenie wspomnianych
@@ -278,12 +293,14 @@ import { computed, ref } from "vue";
 import {
   mdiChevronDown,
   mdiChevronUp,
+  mdiGraphOutline,
   mdiLinkVariantPlus,
   mdiOpenInNew,
   mdiPlus,
   mdiRefresh,
 } from "@mdi/js";
 import { authFetch, authRequest, useAuthState } from "~/composables/auth";
+import { useDisplay } from "vuetify";
 import { useDomainIcon } from "~/composables/useDomainIcon";
 import { useExtractions } from "~/composables/extractions";
 import { useCanCapture } from "~/composables/captures";
@@ -301,6 +318,10 @@ const props = defineProps<{ nodeId: string }>();
 
 const nodeId = props.nodeId;
 const { user, isAdmin } = useAuthState();
+
+/** Whether a phone reader has asked for the graph. See the template. */
+const { smAndDown } = useDisplay();
+const showGraph = ref(false);
 const route = useRoute();
 const router = useRouter();
 const { getDomainIcon } = useDomainIcon();

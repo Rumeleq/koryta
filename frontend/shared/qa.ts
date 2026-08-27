@@ -48,6 +48,26 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
  * before the list could be read at all. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "graf-tematu-i-artykulu-za-przyciskiem",
+    title: "Graf na stronie tematu i artykułu za przyciskiem na telefonie",
+    description:
+      "Graf powiązań przechwytuje na ekranie dotykowym przesuwanie palcem - " +
+      "tak ma działać, bo inaczej nie dałoby się go przesunąć. Na stronie " +
+      "tematu zajmował 560 px, a na stronie artykułu 460 px, więc każde " +
+      "przesunięcie zaczęte na nim przewijało graf zamiast strony i nie dało " +
+      "się przejść niżej. Teraz na telefonie w jego miejscu jest przycisk " +
+      "„Pokaż graf powiązań” - dokładnie tak, jak od dawna działa strona " +
+      "osoby i strona spółki.",
+    steps: [
+      "Na telefonie (albo zwęź okno poniżej 960 px) wejdź na stronę tematu - w miejscu grafu ma być przycisk „Pokaż graf powiązań”.",
+      "Przewiń stronę palcem przez to miejsce - ma się przewijać normalnie, aż do listy artykułów pod spodem.",
+      "Naciśnij przycisk - graf ma się narysować tak jak wcześniej.",
+      "To samo na stronie artykułu, który ma wspomniane osoby.",
+      "Rozszerz okno powyżej 960 px - graf ma być rysowany od razu, bez przycisku.",
+    ],
+    area: "public",
+  },
+  {
     id: "pasek-stazu-miesci-sie-na-telefonie",
     title: "Pasek stażu mieści się na telefonie",
     description:
