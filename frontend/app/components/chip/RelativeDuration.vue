@@ -1,8 +1,22 @@
 <template>
   <div class="d-flex flex-column align-center">
+    <!-- `max-width: 100%` is what makes this work on a phone. The bar is 200px
+         wide and `EmploymentHistory` draws it below the row's text there, i.e.
+         inside `.v-list-item__content`, which Vuetify gives `overflow: hidden`
+         and which measures about 162px at 390px and 92px at 320px. Centred and
+         uncapped, the track was cut on both sides - and the green segment of a
+         post somebody still holds sits at the right-hand end, so exactly the
+         relations that matter drew nothing at all. The desktop copy in the
+         row's append slot has room for the full 200px and is unaffected. -->
     <div
       class="relative-duration-wrapper bg-surface-variant rounded-pill flex-shrink-0"
-      style="height: 6px; width: 200px; position: relative; overflow: hidden"
+      style="
+        height: 6px;
+        width: 200px;
+        max-width: 100%;
+        position: relative;
+        overflow: hidden;
+      "
     >
       <div
         class="bg-success rounded-pill"

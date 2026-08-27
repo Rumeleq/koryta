@@ -48,6 +48,45 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
  * before the list could be read at all. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "pasek-stazu-miesci-sie-na-telefonie",
+    title: "Pasek stażu mieści się na telefonie",
+    description:
+      "Pasek pokazujący długość zatrudnienia miał na sztywno 200 px, a na " +
+      "telefonie jest rysowany pod wierszem, w kolumnie szerokiej na jakieś " +
+      "160 px - obcinało go więc z obu stron. Zielony odcinek trwającego " +
+      "wciąż zatrudnienia siedzi przy prawej krawędzi paska, czyli akurat " +
+      "dla obecnych stanowisk nie było widać nic. Teraz pasek zwęża się do " +
+      "szerokości wiersza; na szerokim ekranie, gdzie stoi z prawej strony " +
+      "wiersza, ma pełne 200 px jak wcześniej.",
+    steps: [
+      "Na telefonie (albo zwęź okno poniżej 960 px) wejdź na stronę osoby, która ma trwające zatrudnienie („obecnie”) - pod wierszem ma być pasek z widocznym zielonym odcinkiem, mieszczący się w szerokości wiersza.",
+      "Sprawdź to samo dla zatrudnienia zakończonego dawno - zielony odcinek ma być bliżej lewej strony.",
+      "Sprawdź jeszcze przy szerokości 320 px - pasek nadal ma się mieścić.",
+      "Rozszerz okno powyżej 960 px - pasek po prawej stronie wiersza ma mieć pełne 200 px jak wcześniej.",
+    ],
+    area: "public",
+  },
+  {
+    id: "historia-powiazan-skrocona-na-telefonie",
+    title: "„Historia powiązań” na telefonie zaczyna się od sześciu wierszy",
+    description:
+      "Sekcja rysowała wszystkie powiązania naraz. Na telefonie, gdzie idą " +
+      "jedno pod drugim, osoba z trzydziestoma powiązaniami dawała kilka " +
+      "ekranów przewijania przed wszystkim, co jest niżej - „Zmianami na " +
+      "stanowisku”, notatkami i stopką. Teraz na telefonie widać sześć " +
+      "pierwszych, a reszta czeka za przyciskiem „Pokaż wszystkie " +
+      "powiązania”. Na szerokim ekranie nic się nie zmienia, a wszystkie " +
+      "wiersze są w kodzie strony - wyszukiwarki i Ctrl+F nadal je widzą.",
+    steps: [
+      "Na telefonie (albo zwęź okno poniżej 960 px) wejdź na stronę osoby z więcej niż sześcioma powiązaniami - ma być widocznych sześć i przycisk „Pokaż wszystkie powiązania (N)”.",
+      "Naciśnij przycisk - mają się pokazać wszystkie, a przycisk zniknąć.",
+      "Wejdź na stronę osoby z sześcioma powiązaniami albo mniej - przycisku nie ma być wcale.",
+      "Rozszerz okno powyżej 960 px - wszystkie wiersze mają być widoczne od razu, bez przycisku.",
+      "To samo w panelu bocznym otwieranym z /eksploruj/tabela i na stronie spółki.",
+    ],
+    area: "public",
+  },
+  {
     id: "naglowki-i-tytuly-kart-sie-zawijaja",
     title: "Długie nazwy i tytuły kart nie są już ucinane",
     description:

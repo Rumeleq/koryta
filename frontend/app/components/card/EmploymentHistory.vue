@@ -18,7 +18,7 @@
       </v-btn>
     </div>
 
-    <div class="pa-1">
+    <div class="pa-1 history-list" :class="{ 'history-list--capped': capped }">
       <v-list-item
         v-for="edge in edgesSorted"
         :key="edge.id"
@@ -143,6 +143,27 @@
         </template>
       </v-list-item>
     </div>
+
+    <!-- Phone only, and by CSS rather than by `v-if`: every row stays in the
+         document, so the ones past the cap are still there for a crawler, for
+         ctrl-F and for a desktop reader, and the server and the browser render
+         the same markup. A person can hold thirty relations, and thirty of
+         these rows in one column is several screens of page between the reader
+         and everything below it - on the home page that was the footer, here it
+         is „Zmiany na stanowisku" and the notes. -->
+    <div v-if="edgesSorted.length > PHONE_ROW_CAP" class="history-list__more">
+      <v-btn
+        v-if="capped"
+        block
+        class="text-none"
+        data-testid="relations-history-more"
+        rounded="lg"
+        variant="tonal"
+        @click="capped = false"
+      >
+        Pokaż wszystkie powiązania ({{ edgesSorted.length }})
+      </v-btn>
+    </div>
   </v-list>
 </template>
 
@@ -182,6 +203,17 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{ add: []; sources: [edge: EdgeNode] }>();
+
+/** How many rows a phone draws before the rest wait behind a button. Six is
+ * about a screen of them, which is enough to see what kind of relations this
+ * is a history of without being the whole page. */
+const PHONE_ROW_CAP = 6;
+
+/** Whether the rows past the cap are folded away. Starts true whatever the
+ * viewport - the class it drives only means anything below Vuetify's `md`, and
+ * a value read from `useDisplay` would differ between the server render and the
+ * browser's. */
+const capped = ref(true);
 
 /** How many articles a relation is cited to. An edge that predates
  * `references`, or one the graph returned without it, counts as none rather
@@ -338,5 +370,27 @@ function predecessorOf(edge: EdgeNode): Predecessor[] {
   font-size: 0.6875rem;
   line-height: 1.6;
   padding: 0 6px;
+}
+
+/* ---- more of them than a phone wants ---- */
+
+/* Vuetify's `md`. The cap is a phone problem: two columns of relations on a
+   desktop are a list somebody scrolls past, one column of thirty is the page.
+   Kept in step with `PHONE_ROW_CAP` above - `n + 7` is "from the seventh on". */
+@media (max-width: 959.98px) {
+  .history-list--capped > .history-row:nth-child(n + 7) {
+    display: none;
+  }
+}
+
+.history-list__more {
+  display: none;
+}
+
+@media (max-width: 959.98px) {
+  .history-list__more {
+    display: block;
+    padding: 8px 4px 0;
+  }
 }
 </style>
