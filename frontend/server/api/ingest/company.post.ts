@@ -191,7 +191,16 @@ export default defineEventHandler(async (event) => {
 
   await batch.commit();
 
-  return { id: nodeRef.id, code: 200, region };
+  // `unknownOwners` is reported rather than merely counted: a run in which it
+  // jumps is a run where the register started naming shareholders the site does
+  // not track, and the per-owner warnings above are one line each in a log of
+  // 3,928 uploads. Omitted when nought, so the ordinary response is unchanged.
+  return {
+    id: nodeRef.id,
+    code: 200,
+    region,
+    ...(unknownOwners > 0 ? { unknownOwners } : {}),
+  };
 });
 
 type DBB = {
