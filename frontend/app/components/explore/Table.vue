@@ -42,9 +42,9 @@
       />
     </template>
 
-    <template #[`header.votes.interesting`]="{ column }">
+    <template #[`header.stats.votes.interesting`]="{ column }">
       <ExploreTableColumnHeader
-        tooltip="Suma głosów społeczności określających jak interesująca jest ta osoba"
+        tooltip="Suma głosów społeczności i najwyższej oceny modelu. Kliknij liczbę, żeby zobaczyć, ile modeli oceniło tę osobę i ile osób na nią zagłosowało"
         :column="column"
         :sort-by="sortBy"
       />
@@ -168,8 +168,8 @@
       {{ item.stats?.notesCount || 0 }}
     </template>
 
-    <template #[`item.votes.interesting`]="{ item }">
-      {{ item.stats?.votes?.interesting || 0 }}
+    <template #[`item.stats.votes.interesting`]="{ item }">
+      <VoteBreakdown :votes="item.stats?.votes" />
     </template>
 
     <template #[`item.userVote`]="{ item }">
