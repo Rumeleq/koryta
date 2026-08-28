@@ -9,6 +9,7 @@ from analysis.scores import (
     PeopleScores,
     PeopleScoresCapture,
     PeopleScoresCoappointment,
+    PeopleScoresFacts,
     PeopleScoresPageRank,
     PeopleScoresSuccession,
     PeopleScoresTurnover,
@@ -30,7 +31,12 @@ from scrapers.cru.umowy import CruUmowy
 from scrapers.kmgp.companies import CompaniesKMGP
 from scrapers.kmgp.people import PeopleKMGP
 from scrapers.koryta.differ import KorytaDiffer
-from scrapers.koryta.download import KorytaCompanies, KorytaPeople, KorytaVotes
+from scrapers.koryta.download import (
+    KorytaCompanies,
+    KorytaFacts,
+    KorytaPeople,
+    KorytaVotes,
+)
 from scrapers.krs.censored import KRSCensoredPeople
 from scrapers.krs.coverage import PersonFeedCoverage, RejestrIOCoverage
 from scrapers.krs.list import CompaniesKRS, PeopleKRS
@@ -64,6 +70,7 @@ PIPELINES = [
     PeopleScores,
     PeopleScoresCapture,
     PeopleScoresCoappointment,
+    PeopleScoresFacts,
     PeopleScoresPageRank,
     PeopleScoresSuccession,
     PeopleScoresTurnover,
@@ -76,6 +83,7 @@ PIPELINES = [
     RejestrIOCoverage,
     KorytaCompanies,
     KorytaDiffer,
+    KorytaFacts,
     KorytaPeople,
     KorytaVotes,
     PeopleEnriched,
