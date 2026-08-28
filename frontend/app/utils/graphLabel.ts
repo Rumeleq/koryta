@@ -55,3 +55,51 @@ export function wrapLabel(
   kept[maxLines - 1] = `${kept[maxLines - 1]!.replace(/\s+$/, "")}…`;
   return kept.join("\n");
 }
+
+/** The name of a person, cut where it still names them.
+ *
+ * The outer ring of a two hop graph is drawn at fourteen characters over two
+ * lines, and a Pole with two given names does not fit: wrapped by width alone,
+ * "Sławomir Andrzej Kowalski" becomes "Sławomir Andrzej…", which identifies
+ * nobody - what the ellipsis ate is the surname, the one part that tells two
+ * Sławomirs apart. So before giving up the end of a name, give up its middle:
+ * the middle names shrink to initials, and if that is still too long the given
+ * names do too. "S. A. Kowalski" is a person; "Sławomir Andrzej…" is not.
+ *
+ * Only for the circles. An institution's name is long at the front as well as
+ * at the back and its initials would say nothing, so it keeps `wrapLabel`.
+ */
+export function personLabel(
+  name: string,
+  { maxChars = MAX_CHARS, maxLines = MAX_LINES } = {},
+): string {
+  const words = name.split(/\s+/).filter(Boolean);
+  const shorten = (from: number) => [
+    ...words.slice(0, from),
+    ...words.slice(from, -1).map((word) => `${[...word][0]}.`),
+    words[words.length - 1]!,
+  ];
+
+  // Fullest first, and the last candidate is what is drawn if even that has to
+  // be cut - by then it is the surname being cut, which is the best a
+  // fourteen-character line can do.
+  const candidates =
+    words.length > 2
+      ? [name, shorten(1).join(" "), shorten(0).join(" ")]
+      : words.length === 2
+        ? [name, shorten(0).join(" ")]
+        : [name];
+
+  let wrapped = wrapLabel(candidates[0]!, { maxChars, maxLines });
+  for (const candidate of candidates) {
+    wrapped = wrapLabel(candidate, { maxChars, maxLines });
+    // Nothing lost off the end, and nothing broken in the middle either:
+    // "Bogusław-Aleks / ander Nowak" fits the box and still costs a reader the
+    // second it takes to reassemble a name, where "B. Nowak" costs nothing.
+    const whole = candidate
+      .split(/\s+/)
+      .every((word) => word.length <= maxChars);
+    if (whole && !wrapped.endsWith("…")) return wrapped;
+  }
+  return wrapped;
+}
