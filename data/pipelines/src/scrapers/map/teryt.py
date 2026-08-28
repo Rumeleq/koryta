@@ -5,11 +5,31 @@ It fetches, parses, and provides lookup capabilities for Polish administrative
 division codes (województwo, powiat, gmina) from the official TERYT database.
 """
 
+import re
+
 import pandas as pd
 
 from scrapers.map.jst import JstIndex
 from scrapers.stores import Context, Pipeline
 from scrapers.stores.file import DownloadableFile
+
+#: How KRS writes a city that is its own powiat, against how TERYT does.
+#: The register has "M. OLSZTYN", "M.ST.WARSZAWA" and "MIASTO STOŁECZNE
+#: WARSZAWA" for TERYT's "Olsztyn" and "Warszawa". Each alternative ends in a
+#: separator on purpose: a bare ``m`` would eat the first letter of "MIECHÓW".
+_UNIT_PREFIX = re.compile(r"^(?:m\.|m\s+|miasto\s+)(?:st\.|st\s+|stołeczne\s+)?\s*")
+
+
+def normalize_unit_name(name: str) -> str:
+    """A województwo, powiat or gmina name in the one form both sides agree on.
+
+    TERYT names a city-powiat "Olsztyn" and a land one "olsztyński"; KRS
+    uppercases both and prefixes the first with "M.". Lowercasing and dropping
+    that prefix is enough to match the two by name, which is the only key they
+    share - the register does not carry the code.
+    """
+    return _UNIT_PREFIX.sub("", " ".join(str(name).lower().split()))
+
 
 teryt_data = DownloadableFile(
     "https://eteryt.stat.gov.pl/eTeryt/rejestr_teryt/udostepnianie_danych/baza_teryt/uzytkownicy_indywidualni/pobieranie/pliki_pelne.aspx",
@@ -80,7 +100,58 @@ class Teryt(Pipeline):
             if teryt.endswith("00")
         }
 
+        # Names are only unique inside their parent - "świdnicki" is a powiat of
+        # both 02 and 06 - so each lookup is keyed by the code above it.
+        self.powiat_by_woj = {
+            (str(row.WOJ), normalize_unit_name(row.NAZWA)): str(row.WOJ) + str(row.POW)
+            for row in powiaty_df.itertuples()
+        }
+
+        gminy_df = data[~data["POW"].isna() & ~data["GMI"].isna()]
+        codes_by_name: dict[tuple[str, str], set[str]] = {}
+        for row in gminy_df.itertuples():
+            powiat = str(row.WOJ) + str(row.POW)
+            # A miejsko-wiejska gmina is three rows - the gmina, its town and
+            # its rural part - sharing one GMI, so this set stays a single
+            # element and the gmina resolves.
+            codes_by_name.setdefault(
+                (powiat, normalize_unit_name(row.NAZWA)), set()
+            ).add(powiat + str(row.GMI))
+
+        # 143 of the 2,373 gmina names are a town and the rural gmina around it
+        # under one name and two codes - Białogard 320101 and 320102. A KRS
+        # entry names the gmina and not which of the two, so there is no
+        # answer at this level and the powiat above them is as far as the entry
+        # goes.
+        self.gmina_by_powiat = {
+            key: next(iter(codes))
+            for key, codes in codes_by_name.items()
+            if len(codes) == 1
+        }
+
         return pd.DataFrame([{"col": "empty"}])
+
+    def parse_siedziba(self, wojewodztwo: str, powiat: str, gmina: str) -> str:
+        """The TERYT code for the division a KRS entry says it sits in.
+
+        As precise as the three names allow and no more: the gmina if it is
+        one of that powiat's, else the powiat, else the województwo, else "".
+        Stopping early is the point - a company whose entry names a powiat that
+        was dissolved (the old "warszawski") still belongs to its województwo,
+        and 4 or 2 digits of a code every consumer reads as a prefix is worth
+        more than nothing.
+        """
+        woj_code = self.voj_lower_to_teryt.get(str(wojewodztwo).lower())
+        if not woj_code:
+            return ""
+
+        powiat_code = self.powiat_by_woj.get((woj_code, normalize_unit_name(powiat)))
+        if not powiat_code:
+            return woj_code
+
+        return self.gmina_by_powiat.get(
+            (powiat_code, normalize_unit_name(gmina)), powiat_code
+        )
 
     def parse_teryt(self, voj: str, pow: str, gmin: str, city: str) -> str:
         """
