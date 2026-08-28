@@ -25,7 +25,7 @@ class RegionPayloads(Pipeline):
     2,479, against the 9 the site had.
     """
 
-    filename = None
+    filename = "region_payloads"
 
     regions: Regions
     companies: Companies
