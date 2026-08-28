@@ -15,8 +15,7 @@ from scrapers.krs.data import CompaniesHardcoded
 from scrapers.krs.graph import QueryRelation
 from scrapers.map.jst import AMBIGUOUS, SKARB_PANSTWA, JstIndex
 from scrapers.map.postal_codes import PostalCodes
-from scrapers.map.teryt import Teryt, normalize_unit_name
-from scrapers.map.teryt import Jst
+from scrapers.map.teryt import Jst, Teryt, normalize_unit_name
 from scrapers.stores import CloudStorage, Context, Pipeline
 from scrapers.stores.file import DownloadableFile, latest_crawls, split_crawl_date
 
@@ -585,7 +584,7 @@ def get_teryt(pcs: DataFrame, city: str, code: str | None, fallback: str = ""):
 SKARB_PANSTWA_OWNERS = 110
 
 
-def company_from_api_krs(
+def company_from_api_krs(  # noqa: PLR0915
     pcs: DataFrame, teryt: Teryt, data: dict, jst: "JstIndex | None" = None
 ) -> KrsCompany | None:
     try:
