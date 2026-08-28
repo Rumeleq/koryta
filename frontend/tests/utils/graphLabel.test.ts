@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { wrapLabel } from "~/utils/graphLabel";
+import { personLabel, wrapLabel } from "~/utils/graphLabel";
 
 describe("wrapLabel", () => {
   it("leaves a name that fits on one line", () => {
@@ -44,5 +44,47 @@ describe("wrapLabel", () => {
 
   it("says nothing about a node with no name", () => {
     expect(wrapLabel("")).toBe("");
+  });
+});
+
+/** The outer ring of a two hop graph, which is where a name runs out of room. */
+const RING = { maxChars: 14, maxLines: 2 };
+
+describe("personLabel", () => {
+  it("leaves a name that fits alone", () => {
+    expect(personLabel("Jan Kowalski", RING)).toBe("Jan Kowalski");
+  });
+
+  it("keeps the surname by dropping the middle name to an initial", () => {
+    // Wrapped on width alone this was "Sławomir Andrzej…" - two given names
+    // and no way to tell which Sławomir.
+    expect(personLabel("Sławomir Andrzej Nowicki", RING)).toBe(
+      "Sławomir A.\nNowicki",
+    );
+  });
+
+  it("gives up the given names too, where the middle ones were not enough", () => {
+    expect(
+      personLabel("Aleksandra Katarzyna Wiśniewska", {
+        maxChars: 10,
+        maxLines: 2,
+      }),
+    ).toBe("A. K.\nWiśniewska");
+  });
+
+  it("shortens a two-word name whose first word is the long one", () => {
+    expect(personLabel("Bogusław-Aleksander Nowak", RING)).toBe("B. Nowak");
+  });
+
+  it("still cuts a surname no line can hold", () => {
+    const wrapped = personLabel("Jan Rozwadowski-Kwiatkowski", RING);
+    expect(wrapped.endsWith("…")).toBe(true);
+    expect(wrapped.split("\n")).toHaveLength(2);
+  });
+
+  it("leaves the full name where the page's own node has room", () => {
+    expect(personLabel("Sławomir Andrzej Nowicki")).toBe(
+      "Sławomir Andrzej\nNowicki",
+    );
   });
 });

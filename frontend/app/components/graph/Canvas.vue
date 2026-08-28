@@ -76,7 +76,7 @@ import type {
 } from "v-network-graph";
 import { useSimulationStore } from "@/stores/simulation";
 import type { Node as GraphNode, NodeStats, Edge } from "~~/shared/graph/model";
-import { wrapLabel } from "~/utils/graphLabel";
+import { personLabel, wrapLabel } from "~/utils/graphLabel";
 import { entityGlyph } from "~/utils/entityIcon";
 import { graphNodeDestination, readableInk } from "~/utils/graphNode";
 
@@ -346,11 +346,16 @@ const configs = reactive(
         // group walk that counts who works at a company also counts who a
         // person knows.
         text: (node) => {
-          const people = node.type === "circle" ? 0 : (node.stats?.people ?? 0);
+          // The outer ring is drawn narrow enough that a name has to give
+          // something up; `personLabel` gives up the middle names rather than
+          // the surname, which is what a reader is looking for.
+          const width =
+            ringOf(node) === 2 ? { maxChars: 14, maxLines: 2 } : undefined;
+          if (node.type === "circle") return personLabel(node.name, width);
+
+          const people = node.stats?.people ?? 0;
           const name = people ? `${node.name} (${people})` : node.name;
-          return ringOf(node) === 2
-            ? wrapLabel(name, { maxChars: 14, maxLines: 2 })
-            : wrapLabel(name);
+          return wrapLabel(name, width);
         },
       },
     },
