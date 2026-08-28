@@ -280,6 +280,44 @@ describe("/api/notes/admin", () => {
     expect(byAdminType.notes.map((n) => n.note)).toEqual(["załatwione"]);
   });
 
+  it("selects the entries the dashboard counts as needing action", async () => {
+    mockNotesGet.mockResolvedValue({
+      docs: [
+        noteDoc("note-1", {
+          nodeId: "node-1",
+          userUid: "user-a",
+          sources: [
+            // A correction nobody has triaged: waiting on somebody by virtue
+            // of being one. A reported gap counts the same way.
+            { note: "poprawka", kind: "change_request" },
+            { note: "brak zarządu", kind: "missing" },
+            // The same, once a reviewer has settled it.
+            {
+              note: "załatwiona poprawka",
+              kind: "change_request",
+              adminStatus: "resolved",
+            },
+            // A source is only on the list if a reviewer put it there.
+            { note: "źródło" },
+            { note: "źródło do sprawdzenia", adminStatus: "unresolved" },
+          ],
+        }),
+      ],
+    });
+    mockGetAll.mockResolvedValue([nodeDoc("node-1", "Jan Testowy", "person")]);
+
+    const needsAction = (await callHandler({
+      status: "needs_action",
+    })) as Result;
+
+    expect(needsAction.notes.map((n) => n.note)).toEqual([
+      "poprawka",
+      "brak zarządu",
+      "źródło do sprawdzenia",
+    ]);
+    expect(needsAction.total).toBe(3);
+  });
+
   it("answers a permalink with the one entry it names", async () => {
     mockNotesGet.mockResolvedValue({
       docs: [

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   approvedRevisionId,
+  noteNeedsAction,
   pageIsPublic,
   revisionCollection,
   revisionIsPending,
@@ -74,5 +75,31 @@ describe("approvedRevisionId", () => {
     expect(approvedRevisionId({ id: "r1" })).toBe("r1");
     expect(approvedRevisionId(undefined)).toBeUndefined();
     expect(approvedRevisionId(null)).toBeUndefined();
+  });
+});
+
+describe("noteNeedsAction", () => {
+  it("takes a correction or a reported gap as waiting on somebody the moment it is written", () => {
+    expect(noteNeedsAction({ kind: "change_request" })).toBe(true);
+    expect(noteNeedsAction({ kind: "missing" })).toBe(true);
+  });
+
+  it("leaves a source to a reviewer to flag", () => {
+    expect(noteNeedsAction({ kind: "source" })).toBe(false);
+    // Entries written before kinds existed are sources.
+    expect(noteNeedsAction({})).toBe(false);
+    expect(noteNeedsAction({ kind: null, adminStatus: null })).toBe(false);
+  });
+
+  it("lets an explicit status win over the kind, either way", () => {
+    expect(
+      noteNeedsAction({ kind: "change_request", adminStatus: "resolved" }),
+    ).toBe(false);
+    expect(noteNeedsAction({ kind: "missing", adminStatus: "resolved" })).toBe(
+      false,
+    );
+    expect(noteNeedsAction({ kind: "source", adminStatus: "unresolved" })).toBe(
+      true,
+    );
   });
 });

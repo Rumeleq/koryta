@@ -501,6 +501,26 @@ export type NoteSource = {
   adminTypeDeferred?: boolean;
 };
 
+/** Whether an entry is still waiting on an admin, which is what the dashboard
+ * counts under "Notatki wymagające działania".
+ *
+ * Two ways in. A reviewer can flag any entry "Nierozwiązane" by hand, and a
+ * correction ("Do poprawy") or a gap somebody reported ("Brakuje danych") is
+ * one the moment it is written - its author is saying the data is wrong or
+ * absent, so it needs acting on before anybody has triaged it. A source is
+ * not: it is something to read, and only a reviewer can say it is more.
+ *
+ * Either way it is the reviewer marking it "Rozwiązane" that takes it off the
+ * list; an explicit status always wins over the kind.
+ */
+export function noteNeedsAction(entry: {
+  kind?: NoteEntryKind | null;
+  adminStatus?: NoteAdminStatus | null;
+}): boolean {
+  if (entry.adminStatus) return entry.adminStatus === "unresolved";
+  return (entry.kind ?? "source") !== "source";
+}
+
 /** Note allows users to collaborate on a node content without accessing the node itself.
  * A node can have multiple notes but one per user.
  * User can view/edit their own note and admins can view all notes.

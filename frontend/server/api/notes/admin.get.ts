@@ -3,7 +3,7 @@ import { getFirestore } from "firebase-admin/firestore";
 import { defineEventHandler, getValidatedQuery } from "h3";
 import { getUser } from "~~/server/utils/auth";
 import { getNoteRows } from "~~/server/utils/notes";
-import { nodeTypes } from "~~/shared/model";
+import { nodeTypes, noteNeedsAction } from "~~/shared/model";
 import type { NoteRow } from "~~/shared/model";
 
 const queryValidator = z.object({
@@ -11,8 +11,10 @@ const queryValidator = z.object({
   page: z.coerce.number().int().min(1).default(1),
 
   kind: z.enum(["source", "change_request", "missing"]).optional(),
-  /** "none" selects the entries nobody has triaged yet. */
-  status: z.enum(["resolved", "unresolved", "none"]).optional(),
+  /** "none" selects the entries nobody has triaged yet; "needs_action" the
+   * ones the dashboard counts as waiting on somebody, which is a status of its
+   * own rather than a stored one - see `noteNeedsAction`. */
+  status: z.enum(["resolved", "unresolved", "none", "needs_action"]).optional(),
   /** A stored type, or "none" for the entries nobody has classified - which is
    * the queue /admin/notatki/kategoryzacja works through. */
   adminType: z.string().min(1).optional(),
@@ -65,10 +67,12 @@ export default defineEventHandler(async (event) => {
   const needle = query.q?.toLowerCase();
   const matching = rows.filter((row) => {
     if (query.kind && row.kind !== query.kind) return false;
+    if (query.status === "needs_action" && !noteNeedsAction(row)) return false;
     if (query.status === "none" && row.adminStatus) return false;
     if (
       query.status &&
       query.status !== "none" &&
+      query.status !== "needs_action" &&
       row.adminStatus !== query.status
     ) {
       return false;

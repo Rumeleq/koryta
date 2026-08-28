@@ -144,6 +144,46 @@ describe("GET /api/admin/summary", () => {
     });
   });
 
+  it("counts an untriaged correction or reported gap as needing action", async () => {
+    results.notes = [
+      doc("note-1", {
+        nodeId: "node-1",
+        sources: [
+          // "Do poprawy" - somebody saying the data is wrong, which is work
+          // waiting on an admin before anybody has triaged it.
+          { note: "zła data urodzenia", kind: "change_request" },
+          // "Brakuje danych" - the same, reported as an absence rather than
+          // as a mistake.
+          { note: "brakuje zarządu", kind: "missing" },
+          // Settled, so it is off the list even though it is a correction.
+          {
+            note: "poprawione",
+            kind: "change_request",
+            adminStatus: "resolved",
+          },
+          // A source only counts once a reviewer flags it.
+          { note: "ciekawy artykuł", url: "https://example.com" },
+          { note: "do sprawdzenia", adminStatus: "unresolved" },
+        ],
+      }),
+    ];
+    results.namedNodes = [doc("node-1", { name: "Jan Kowalski" })];
+
+    const summary = await handler({} as never);
+
+    expect(summary.notes.needsAction).toBe(3);
+    expect(summary.notes.sample.map((item) => item.note)).toEqual([
+      "zła data urodzenia",
+      "brakuje zarządu",
+      "do sprawdzenia",
+    ]);
+    expect(summary.notes.sample[0]).toMatchObject({
+      name: "Jan Kowalski",
+      kind: "change_request",
+      adminType: null,
+    });
+  });
+
   it("counts unsettled edge revisions alongside unapproved nodes", async () => {
     results.unapprovedNodes = {
       count: 3,
