@@ -216,6 +216,8 @@
             v-if="focusedEdges.length"
             :key="focusedPerson.id"
             :edges="focusedEdges"
+            :can-remove="canRemoveRelations"
+            @remove="openRemove"
           />
           <div v-else class="pa-2">
             <div class="sec-head mb-1">
@@ -232,6 +234,14 @@
             </p>
           </div>
         </v-card>
+
+        <DialogRemoveEdgeHost
+          v-model="removeOpen"
+          v-model:shown="removedShown"
+          :edge="removeEdge"
+          :label="removeLabel"
+          @removed="onEdgeRemoved()"
+        />
 
         <v-row>
           <v-col cols="12" md="6">
@@ -304,6 +314,7 @@ import type { Query } from "~~/server/api/nodes/index.get";
 import { useCurrentUser } from "vuefire";
 
 import { useEdges } from "~/composables/edges";
+import { useEdgeRemoval } from "~/composables/edgeRemoval";
 
 definePageMeta({
   affineLink: "BYOEeL1iG0mvIR3yz2pOs",
@@ -532,12 +543,34 @@ const focusedPerson = computed<PersonRich | undefined>(
   () => tableItems.value?.[0],
 );
 const focusedPersonId = computed(() => focusedPerson.value?.id);
-const { sources: focusedSources, targets: focusedTargets } =
-  await useEdges(focusedPersonId);
+const {
+  sources: focusedSources,
+  targets: focusedTargets,
+  refresh: refreshFocusedEdges,
+} = await useEdges(focusedPersonId);
 const focusedEdges = computed(() => [
   ...(focusedSources.value || []),
   ...(focusedTargets.value || []),
 ]);
+
+/** Removing a relation from the queue itself. This is where a wrongly merged
+ * person is most likely to be caught - it is the page for judging whether one
+ * is worth publishing - so sending the reviewer off to the profile to clear the
+ * relation, and then back, is a detour through the thing they are reviewing.
+ * See `.agent/skills/relation-surfaces.md` for why this page and
+ * /eksploruj/tabela get the same capabilities. */
+const {
+  canRemove: canRemoveRelations,
+  removeOpen,
+  removeEdge,
+  removedShown,
+  removeLabel,
+  openRemove,
+  onEdgeRemoved,
+} = useEdgeRemoval({
+  subjectName: () => focusedPerson.value?.name,
+  refresh: refreshFocusedEdges,
+});
 
 const { workLocations, mapLocations } = usePersonPlaces(
   focusedPerson,

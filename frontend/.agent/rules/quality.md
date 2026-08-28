@@ -23,3 +23,8 @@
 
 1. **Domain Knowledge**:
    - For working with Revisions and Edges, verify `.agent/skills/revisions.md`.
+   - Before changing anything that lists a node's relations, read
+     `.agent/skills/relation-surfaces.md`. There are five such surfaces sharing
+     three helpers, and `/eksploruj/nowe` and `/eksploruj/tabela` are kept in
+     parity on purpose - a capability added to one belongs on the other, in its
+     own shape.

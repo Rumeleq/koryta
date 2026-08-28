@@ -23,12 +23,22 @@ const ids = {
   worker: `rmworker${stamp}`,
   friend: `rmfriend${stamp}`,
   company: `rmcompany${stamp}`,
+  queued: `rmqueued${stamp}`,
 };
 const edges = {
   job: `rm-edge-job-${stamp}`,
   friendship: `rm-edge-friendship-${stamp}`,
   colleague: `rm-edge-colleague-${stamp}`,
+  queuedJob: `rm-edge-queued-job-${stamp}`,
 };
+
+/** What /eksploruj/nowe is asked for, so the queue holds exactly one person.
+ *
+ * The page focuses `tableItems[0]`, so a test that just opened the queue would
+ * be asserting against whoever happens to sort first. Filtering on a score no
+ * seeded person has is what makes that one person ours - see `minVotes` in
+ * server/api/nodes/index.get.ts. */
+const QUEUE_SCORE = 900;
 
 /** Three pages and three relations of this spec's own.
  *
@@ -46,21 +56,40 @@ const edges = {
 async function seed() {
   const batch = db.batch();
 
-  const page = (name: string, type: "person" | "place") => ({
+  /** The employer stats /api/stats/computeNodes would work out. The explore
+   * table finds people by them - `?place=` filters on `targetNodeIds` - so a
+   * fixture person without them has a working profile page and no row in the
+   * table that leads to it. */
+  const employment = {
+    experienceMonths: 12,
+    latestEmploymentStart: "2019-03-01",
+    targetNodeIds: [ids.company],
+    currentlyEmployed: true,
+  };
+
+  const page = (
+    name: string,
+    type: "person" | "place",
+    stats: Record<string, unknown> = {},
+  ) => ({
     name,
     type,
     revision_id: `rev-${stamp}`,
     published: true,
-    stats: { isApproved: true, nodeGroupSize: 1 },
+    stats: { isApproved: true, nodeGroupSize: 1, ...stats },
   });
 
   batch.set(
     db.collection("nodes").doc(ids.worker),
-    page(`Usuwany Pracownik ${stamp}`, "person"),
+    page(`Usuwany Pracownik ${stamp}`, "person", {
+      edges: { all: employment, approved: employment },
+    }),
   );
   batch.set(
     db.collection("nodes").doc(ids.friend),
-    page(`Znajomy Pracownika ${stamp}`, "person"),
+    page(`Znajomy Pracownika ${stamp}`, "person", {
+      edges: { all: employment, approved: employment },
+    }),
   );
   batch.set(
     db.collection("nodes").doc(ids.company),
@@ -88,6 +117,36 @@ async function seed() {
     target: ids.company,
     type: "employed",
     name: "Rada Nadzorcza",
+    published: true,
+  });
+
+  // A fourth page, for the review queue rather than for a profile: a draft
+  // nobody has voted on, carrying a score high enough that `?minVotes` can
+  // single it out. The queue sorts on `latestEmploymentStart`, and Firestore's
+  // orderBy drops a document that does not carry the field at all.
+  const queuedEmployment = {
+    ...employment,
+    latestEmploymentStart: "2030-01-01",
+  };
+  batch.set(db.collection("nodes").doc(ids.queued), {
+    name: `Kolejkowy Pracownik ${stamp}`,
+    type: "person",
+    revision_id: `rev-${stamp}`,
+    published: false,
+    stats: {
+      isApproved: false,
+      nodeGroupSize: 1,
+      notesCount: 0,
+      votes: { interesting: QUEUE_SCORE, quality: 0, humanVoted: false },
+      edges: { all: queuedEmployment, approved: queuedEmployment },
+    },
+  });
+  batch.set(db.collection("edges").doc(edges.queuedJob), {
+    source: ids.queued,
+    target: ids.company,
+    type: "employed",
+    name: "Prezes",
+    start_date: "2030-01-01",
     published: true,
   });
 
@@ -167,6 +226,78 @@ test.describe("Removing a relation", () => {
     await expect(
       page.getByTestId(`edge-remove-${edges.colleague}`),
     ).toBeVisible();
+  });
+
+  test("an admin removes one from the /eksploruj/nowe queue", async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    // The queue is where a wrongly merged person is most likely to be caught,
+    // so it carries the same control as the profile - in its own shape. See
+    // .agent/skills/relation-surfaces.md.
+    await logIn(page, USERS.admin, `/eksploruj/nowe?minVotes=${QUEUE_SCORE}`);
+
+    const relations = page.getByTestId("explore-relations");
+    await expect(relations.getByText(`Spolka Usuwana ${stamp}`)).toBeVisible({
+      timeout: 30_000,
+    });
+
+    await relations.getByTestId(`edge-remove-${edges.queuedJob}`).click();
+
+    const dialog = page.getByTestId("remove-edge-dialog");
+    await expect(dialog).toBeVisible({ timeout: 30_000 });
+    await expect(dialog).toContainText(`Kolejkowy Pracownik ${stamp}`);
+    await dialog
+      .getByTestId("remove-edge-reason")
+      .locator("textarea")
+      .first()
+      .fill("Blednie scalona osoba");
+    await dialog.getByTestId("remove-edge-confirm").click();
+
+    // Gone from the card without the page moving on to somebody else - the
+    // reviewer is still judging this person.
+    await expect(dialog).toBeHidden({ timeout: 30_000 });
+    await expect(relations.getByText(`Spolka Usuwana ${stamp}`)).toBeHidden({
+      timeout: 30_000,
+    });
+  });
+
+  test("an admin removes one from the /eksploruj/tabela drawer", async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    await logIn(page, USERS.admin, `/eksploruj/tabela?place=${ids.company}`);
+
+    // The table is filtered to this spec's company, so its rows are the two
+    // people it employs. Clicking a name is what draws the drawer - by text
+    // rather than by role, because the name is a `NuxtLink` with no `to` and an
+    // anchor without an href is not a link to the accessibility tree.
+    const row = page
+      .locator(".name-cell")
+      .filter({ hasText: `Usuwany Pracownik ${stamp}` })
+      .first();
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    await row.click();
+
+    // The bin, not the company's name: the name is also on the "Wybrane firmy"
+    // card at the top of this page, so it would pass without a drawer at all.
+    const bin = page.getByTestId(`edge-remove-${edges.job}`);
+    await expect(bin).toBeVisible({ timeout: 30_000 });
+    await bin.click();
+
+    const dialog = page.getByTestId("remove-edge-dialog");
+    await expect(dialog).toBeVisible({ timeout: 30_000 });
+    await dialog
+      .getByTestId("remove-edge-reason")
+      .locator("textarea")
+      .first()
+      .fill("Blednie scalona osoba");
+    await dialog.getByTestId("remove-edge-confirm").click();
+
+    await expect(dialog).toBeHidden({ timeout: 30_000 });
+    await expect(page.getByTestId(`edge-remove-${edges.job}`)).toHaveCount(0, {
+      timeout: 30_000,
+    });
   });
 
   test("a reader who is not an admin is offered no removal", async ({

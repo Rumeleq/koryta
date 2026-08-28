@@ -51,8 +51,9 @@ export const QA_ITEMS: QaItem[] = [
     id: "admin-usuwanie-powiazania",
     title: "Admin może usunąć powiązanie ze strony podmiotu",
     description:
-      "Na stronie osoby, spółki i regionu przy każdym powiązaniu widać teraz " +
-      "- tylko dla admina - kosz. Kliknięcie pyta o powód i od razu zdejmuje " +
+      "Na stronie osoby, spółki i regionu, w kolejce /eksploruj/nowe i w " +
+      "szufladzie /eksploruj/tabela przy każdym powiązaniu widać teraz - " +
+      "tylko dla admina - kosz. Kliknięcie pyta o powód i od razu zdejmuje " +
       "powiązanie ze strony i z grafu; nie trafia ono do kolejki rewizji, bo " +
       "nie ma tu drugiej opinii, na którą warto czekać. Powstało to dla " +
       "powiązań po źle scalonej osobie: zatrudnienia z niewłaściwej połowy " +
@@ -72,6 +73,8 @@ export const QA_ITEMS: QaItem[] = [
       "Otwórz stronę drugiej strony powiązania (np. firmy) - tam też ma go nie być.",
       "Wejdź na stronę spółki (/instytucja/...): kosz jest tak samo przy wierszach „Historii powiązań” oraz przy „Właścicielach” i „Spółkach zależnych”.",
       "Wejdź na stronę regionu (/region/krakow-teryt1261): powiązania są tam kartami, a kosz siedzi w rogu karty. Artykuły i tematy mają własne widoki i kosza nie mają - to nie jest błąd.",
+      "Wejdź na /eksploruj/nowe jako admin: w „Historii powiązań” osoby z kolejki jest ten sam kosz. Usuń powiązanie - ma zniknąć bez przeładowania strony i bez przeskoku na inną osobę.",
+      "Wejdź na /eksploruj/tabela, kliknij osobę, żeby otworzyć szufladę z boku: kosz jest i tam, przy powiązaniach na dole szuflady. To samo w /admin/notatki.",
       "Kliknięcie kosza nigdzie nie przechodzi - wiersz i karta same są linkami do drugiej strony powiązania, więc sprawdź, że po kliknięciu zostajesz na miejscu.",
     ],
     area: "admin",
