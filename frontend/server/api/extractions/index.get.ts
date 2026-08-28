@@ -27,10 +27,28 @@ const queryValidator = z.object({
    * normalisation here, so this stays a plain equality the index can serve.
    */
   articleUrl: z.string().optional(),
+  /** Everything the pipeline matched to one person, by their node id.
+   *
+   * The id rather than the name: `personNodeId` is settled once at ingest,
+   * against the graph, and two people share a name often enough that matching
+   * the string here would hand a reader somebody else's facts - which is the
+   * very mistake the card's "To nie ta osoba" flag exists to report.
+   */
+  personNodeId: z.string().optional(),
   // Mirrors `hideVoted` on /api/nodes: filters on the vote aggregate that the
   // onVoteWritten trigger keeps on the document, so it costs no extra read.
   reviewed: z.enum(["all", "yes", "no"]).default("all"),
   groupBy: z.enum(["article"]).optional(),
+  /** How many match, without any of them.
+   *
+   * For the teaser a person's page shows a logged out reader: it says how much
+   * is behind the login and nothing about what. Blurring the cards in CSS would
+   * not do - the sentences would still sit in the html for anyone reading the
+   * source, and for a crawler indexing unverified machine claims against a
+   * named person's canonical url. So the facts must not be sent at all, and
+   * this skips the read that would fetch them.
+   */
+  countOnly: z.coerce.boolean().default(false),
 });
 
 export default authCachedEventHandler(
@@ -55,6 +73,14 @@ export default authCachedEventHandler(
       );
     }
 
+    if (query.personNodeId) {
+      firestoreQuery = firestoreQuery.where(
+        "personNodeId",
+        "==",
+        query.personNodeId,
+      );
+    }
+
     if (query.reviewed !== "all") {
       firestoreQuery = firestoreQuery.where(
         "stats.votes.humanVoted",
@@ -65,6 +91,14 @@ export default authCachedEventHandler(
 
     // Newest first, so a freshly ingested batch is what reviewers see.
     firestoreQuery = firestoreQuery.orderBy("createdAt", "desc");
+
+    // Count and nothing else. Returned before the page read rather than
+    // alongside it, so a caller that only says how many there are never causes
+    // the documents to be fetched at all.
+    if (query.countOnly) {
+      const only = await firestoreQuery.count().get();
+      return { facts: [], total: only.data().count };
+    }
 
     // The count is of the filtered query, not the page — it is what tells a
     // reviewer how much backlog is left behind the slice they were served.

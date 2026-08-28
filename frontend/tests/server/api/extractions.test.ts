@@ -146,6 +146,59 @@ describe("GET /api/extractions", () => {
     ]);
   });
 
+  it("narrows to one person by node id, which is what a person's page asks for", async () => {
+    // An id equality, not a name match: `/api/ingest/extraction` resolves the
+    // person once, against the graph, and writes `personNodeId` alongside
+    // `personNodeName`. Filtering on the name here would hand a person's page
+    // their namesake's facts — the very mistake the card's "To nie ta osoba"
+    // flag exists to report.
+    await handler({
+      query: { personNodeId: "8DJ3NbeAtnJ8PStVtzFk" },
+    } as any);
+
+    expect(extractionsQuery.calls).toContainEqual([
+      "where",
+      ["personNodeId", "==", "8DJ3NbeAtnJ8PStVtzFk"],
+    ]);
+    // Still newest-first, which is the half of the query the composite index
+    // (personNodeId ASC, createdAt DESC) has to be deployed for.
+    expect(extractionsQuery.calls).toContainEqual([
+      "orderBy",
+      ["createdAt", "desc"],
+    ]);
+  });
+
+  it("counts without reading the documents when asked for a count", async () => {
+    // What a logged out person page gets: how many facts are behind the login
+    // and none of their text. Blurring fetched text in CSS would leave the
+    // sentences in the html of a named person's canonical url.
+    extractionsQuery.docs = [
+      factDoc("f1", timestamp("2026-07-27T10:00:00.000Z")),
+    ];
+    extractionsQuery.total = 7;
+
+    const result = (await handler({
+      query: { personNodeId: "abc123", countOnly: "true" },
+    } as any)) as { facts: unknown[]; total: number };
+
+    expect(result).toEqual({ facts: [], total: 7 });
+    expect(extractionsQuery.get).not.toHaveBeenCalled();
+    // Still narrowed to the one person, or the number would be meaningless.
+    expect(extractionsQuery.calls).toContainEqual([
+      "where",
+      ["personNodeId", "==", "abc123"],
+    ]);
+  });
+
+  it("does not filter by person unless asked", async () => {
+    await handler({ query: { reviewed: "no" } } as any);
+    expect(extractionsQuery.where).not.toHaveBeenCalledWith(
+      "personNodeId",
+      "==",
+      expect.anything(),
+    );
+  });
+
   it("does not filter by article unless asked", async () => {
     await handler({ query: { reviewed: "no" } } as any);
     expect(extractionsQuery.where).not.toHaveBeenCalledWith(
