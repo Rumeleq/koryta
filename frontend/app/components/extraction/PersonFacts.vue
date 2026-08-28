@@ -16,14 +16,14 @@
          person by name and not yet judged by anybody. -->
     <p v-if="user" class="k-lead" data-testid="person-extractions-lead">
       Automatycznie wyszukane w prasie i przypisane do tej osoby po imieniu i
-      nazwisku. Nikt ich jeszcze nie sprawdził - jeśli fakt dotyczy kogoś
-      innego, zgłoś to przyciskiem „To nie ta osoba”.
+      nazwisku. Mogą być błędne - jeśli fakt dotyczy kogoś innego, zgłoś to
+      przyciskiem "To nie ta osoba".
     </p>
     <p v-else class="k-lead" data-testid="person-extractions-count">
       Znaleźliśmy
       <strong>{{ polishCounting(total, ...FACT_FORMS) }}</strong>
-      o tej osobie w artykułach prasowych. Są to niesprawdzone jeszcze
-      dopasowania, więc pokazujemy je tylko zalogowanym.
+      o tej osobie w artykułach prasowych. Ponieważ nie są jeszcze sprawdzone,
+      pokazujemy je tylko zalogowanym osobom.
     </p>
 
     <v-row v-if="user">
