@@ -1,6 +1,7 @@
 import collections
 import dataclasses
 import json
+import re
 import typing
 from datetime import datetime
 from typing import Type
@@ -14,6 +15,7 @@ from scrapers.krs.data import CompaniesHardcoded
 from scrapers.krs.graph import QueryRelation
 from scrapers.map.jst import AMBIGUOUS, SKARB_PANSTWA, JstIndex
 from scrapers.map.postal_codes import PostalCodes
+from scrapers.map.teryt import Teryt, normalize_unit_name
 from scrapers.map.teryt import Jst
 from scrapers.stores import CloudStorage, Context, Pipeline
 from scrapers.stores.file import DownloadableFile, latest_crawls, split_crawl_date
@@ -249,6 +251,7 @@ class CompaniesKRS(Pipeline[KrsCompany]):
     postal_codes: PostalCodes
     jst: Jst
     hardcoded_companies: CompaniesHardcoded
+    teryt: Teryt
 
     def __init__(self) -> None:
         super().__init__()
@@ -369,7 +372,7 @@ class CompaniesKRS(Pipeline[KrsCompany]):
     ) -> None:
         if "Biuletyn" in blob_name:
             return
-        c = company_from_api_krs(postal_codes, data, self.jst_index)
+        c = company_from_api_krs(postal_codes, self.teryt, data, self.jst_index)
         if c is None:
             return
         self.add_company(c)
@@ -477,8 +480,13 @@ def company_from_rejestrio(data: dict, pcs: DataFrame | None = None) -> KrsCompa
         teryt_code = t.get("powiat") or t.get("wojewodztwo")
 
     if not teryt_code and pcs is not None:
-        postal_code = data.get("adres", {}).get("kodPocztowy")
-        teryt_code = get_teryt(pcs, city.lower(), postal_code)
+        # rejestr.io calls it `kod`; `kodPocztowy` is what api-krs calls it, and
+        # reading only that name here meant every company this branch had to
+        # handle - the ones rejestr.io gave no `teryt` for - was looked up on
+        # its city alone.
+        adres = data.get("adres", {})
+        postal_code = adres.get("kod") or adres.get("kodPocztowy")
+        teryt_code = get_teryt(pcs, city, postal_code)
 
     nip = data.get("numery", {}).get("nip")
     regon = data.get("numery", {}).get("regon")
@@ -488,24 +496,83 @@ def company_from_rejestrio(data: dict, pcs: DataFrame | None = None) -> KrsCompa
     )
 
 
-def get_teryt(pcs: DataFrame, city: str, code: str | None):
-    code = code or ""
-    code = code.replace(" ", "")
-    try:
-        return pcs[(pcs["city"] == city) & (pcs["postal_code"] == code)].iloc[0][
-            "teryt"
-        ]
-    except IndexError:
-        pass
+#: The register is inconsistent about the hyphen in "Kudowa-Zdrój" and
+#: "Kędzierzyn-Koźle"; GeoNames is not.
+_SPACED_HYPHEN = re.compile(r"\s*-\s*")
+_SPA_SUFFIX = re.compile(r"\s+(zdrój|zdroj)$")
 
-    # Fallback: check if the city has a dominant TERYT code
-    candidates = pcs[pcs["city"] == city]
-    if not candidates.empty:
-        counts = candidates["teryt"].value_counts()
-        if not counts.empty:
-            top_teryt = counts.index[0]
-            if counts.iloc[0] / len(candidates) > 0.9:
-                return top_teryt
+
+def normalize_city(city: str) -> str:
+    """A city name in the form the postal code table spells it.
+
+    The same "M. NOWY SĄCZ" prefix TERYT names never carry, plus the hyphen: a
+    company whose city no table matches is a company with no region at all, and
+    every rewrite here was one of those.
+    """
+    city = _SPACED_HYPHEN.sub("-", normalize_unit_name(city))
+    return _SPA_SUFFIX.sub(r"-\1", city)
+
+
+def _dominant(candidates: DataFrame) -> str | None:
+    """The TERYT code of these rows, if they are near enough unanimous.
+
+    Near enough and not exactly, because one stray row - a hamlet sharing a
+    name or a postal code with a town - should not disqualify the town.
+    """
+    if candidates.empty:
+        return None
+    counts = candidates["teryt"].value_counts()
+    if counts.empty:
+        return None
+    if counts.iloc[0] / len(candidates) > 0.9:
+        return counts.index[0]
+    return None
+
+
+#: How long a TERYT code that names a gmina is. `fallback` only outranks the
+#: postal code table when it got this far: a register entry that resolves to a
+#: gmina is one whose three names agree with each other and with TERYT, and one
+#: that stopped at the powiat or the województwo is an entry that contradicted
+#: itself somewhere - the old powiat "warszawski", or a gmina in the wrong
+#: powiat - which is no reason to prefer it over a table.
+GMINA_CODE_LENGTH = 6
+
+
+def get_teryt(pcs: DataFrame, city: str, code: str | None, fallback: str = ""):
+    """Where a company sits, as a TERYT code, from its address.
+
+    Tried in order of how much each answer is worth: the whole address agreeing
+    on one row, then the division the register itself names, then the two keys
+    that only guess - the city name as it always did, and the postal code,
+    which places the addresses no name in the table matches.
+    """
+    code = (code or "").replace(" ", "")
+    names = [n for n in dict.fromkeys([city.lower(), normalize_city(city)]) if n]
+
+    for name in names:
+        exact = pcs[(pcs["city"] == name) & (pcs["postal_code"] == code)]
+        if not exact.empty:
+            return exact.iloc[0]["teryt"]
+
+    if len(fallback) >= GMINA_CODE_LENGTH:
+        return fallback
+
+    for name in names:
+        by_city = _dominant(pcs[pcs["city"] == name])
+        if by_city is not None:
+            return by_city
+
+    # "Warszawa-Włochy" is a district, and in no table keyed on city names;
+    # 04-128 is in every one.
+    if code:
+        by_code = _dominant(pcs[pcs["postal_code"] == code])
+        if by_code is not None:
+            return by_code
+
+    if fallback:
+        # A powiat or a województwo, which every consumer reads as a prefix of
+        # the code it wanted, and which beats having no region at all.
+        return fallback
 
     print(f"Failing to find teryt code for: '{city}' '{code}'")
     return ""
@@ -519,7 +586,7 @@ SKARB_PANSTWA_OWNERS = 110
 
 
 def company_from_api_krs(
-    pcs: DataFrame, data: dict, jst: "JstIndex | None" = None
+    pcs: DataFrame, teryt: Teryt, data: dict, jst: "JstIndex | None" = None
 ) -> KrsCompany | None:
     try:
         if data.get("title") == "Not Found":
@@ -530,18 +597,33 @@ def company_from_api_krs(
         dane = odpis.get("dane", {})
         dzial1 = dane.get("dzial1", {})
         nazwa = dzial1.get("danePodmiotu", {}).get("nazwa")
-        siedziba = dzial1.get("siedzibaIAdres", {})
-        miejscowosc = siedziba.get("adres", {}).get("miejscowosc", "").lower()
-        postal_code = siedziba.get("adres", {}).get("kodPocztowy")
+        siedziba_i_adres = dzial1.get("siedzibaIAdres", {})
+        adres = siedziba_i_adres.get("adres", {})
+        siedziba = siedziba_i_adres.get("siedziba", {})
+        miejscowosc = adres.get("miejscowosc", "").lower()
+        postal_code = adres.get("kodPocztowy")
 
         activity = []
         if odpis["naglowekA"]["rejestr"] == "RejP":
             activity = parse_activity_from_api_krs(dane.get("dzial3", {}))
 
         is_public = "organPodmiotZalozycielskiMinisterNadzorujacy" in dzial1
+
         form = dzial1.get("danePodmiotu", {}).get("formaPrawna")
 
-        teryt_code = get_teryt(pcs, miejscowosc, postal_code)
+        # `siedziba` is the register's own answer to which województwo,
+        # powiat and gmina this company is in - three names rather than a code,
+        # but three names the postal code table never has to be guessed from.
+        teryt_code = get_teryt(
+            pcs,
+            miejscowosc,
+            postal_code,
+            fallback=teryt.parse_siedziba(
+                siedziba.get("wojewodztwo", ""),
+                siedziba.get("powiat", ""),
+                siedziba.get("gmina", ""),
+            ),
+        )
         owners: list[Owner] = []
 
         # Which wojewodztwo the company itself sits in, used only to break a tie
