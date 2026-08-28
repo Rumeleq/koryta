@@ -13,14 +13,22 @@ from scrapers.tests.mocks import MockIO
 # Sample CSV data for testing, including voivodeships, powiats, and other data
 FAKE_TERYT_CSV = """WOJ;POW;GMI;RODZ;NAZWA;NAZWA_DOD;STAN_NA
 02;;;;DOLNOŚLĄSKIE;województwo;2025-11-15
+02;19;;;świdnicki;powiat;2025-11-15
+02;19;01;1;Świdnica;gmina miejska;2025-11-15
 02;61;;;Jelenia Góra;miasto na prawach powiatu;2025-11-15
 06;;;;LUBELSKIE;województwo;2025-11-15
+06;17;;;świdnicki;powiat;2025-11-15
+06;17;01;1;Świdnik;gmina miejska;2025-11-15
+06;17;02;2;Mełgiew;gmina wiejska;2025-11-15
 06;61;;;Biała Podlaska;miasto na prawach powiatu;2025-11-15
 10;;;;ŁÓDZKIE;województwo;2025-11-15
 12;;;;MAŁOPOLSKIE;województwo;2025-11-15
+12;62;;;Nowy Sącz;miasto na prawach powiatu;2025-11-15
+12;62;01;1;Nowy Sącz;gmina miejska;2025-11-15
 14;;;;MAZOWIECKIE;województwo;2025-11-15
 14;01;;;białobrzeski;powiat;2025-11-15
 14;65;;;Warszawa;miasto na prawach powiatu;2025-11-15
+14;65;01;1;Warszawa;gmina miejska;2025-11-15
 30;;;;WIELKOPOLSKIE;województwo;2025-11-15
 32;;;;ZACHODNIOPOMORSKIE;województwo;2025-11-15
 """
@@ -89,6 +97,38 @@ class TestTeryt(unittest.TestCase):
         """Tests the mapping from lowercase voivodeship names to TERYT codes."""
         self.assertEqual(self.teryt.voj_lower_to_teryt["małopolskie"], "12")
         self.assertEqual(self.teryt.voj_lower_to_teryt["lubelskie"], "06")
+
+    def test_parse_siedziba(self):
+        """The three names a KRS entry carries, as one code."""
+        self.assertEqual(
+            self.teryt.parse_siedziba("LUBELSKIE", "ŚWIDNICKI", "ŚWIDNIK"), "061701"
+        )
+        # The same powiat name in another województwo is another powiat.
+        self.assertEqual(
+            self.teryt.parse_siedziba("DOLNOŚLĄSKIE", "ŚWIDNICKI", "ŚWIDNICA"), "021901"
+        )
+        # A city that is its own powiat, however the register writes it.
+        self.assertEqual(
+            self.teryt.parse_siedziba("MAZOWIECKIE", "M.ST.WARSZAWA", "M.ST.WARSZAWA"),
+            "146501",
+        )
+        self.assertEqual(
+            self.teryt.parse_siedziba("MAŁOPOLSKIE", "M. NOWY SĄCZ", "NOWY SĄCZ"),
+            "126201",
+        )
+
+    def test_parse_siedziba_stops_where_the_names_stop_matching(self):
+        """A name that is not one of TERYT's leaves the code it did resolve."""
+        # "warszawski" was dissolved in 2002 and entries still name it; the
+        # województwo is still right.
+        self.assertEqual(
+            self.teryt.parse_siedziba("MAZOWIECKIE", "WARSZAWSKI", "WARSZAWA"), "14"
+        )
+        # A gmina the register puts in the wrong powiat leaves the powiat.
+        self.assertEqual(
+            self.teryt.parse_siedziba("LUBELSKIE", "ŚWIDNICKI", "KRAKÓW"), "0617"
+        )
+        self.assertEqual(self.teryt.parse_siedziba("BAWARIA", "", ""), "")
 
     def test_parse_teryt(self):
         """Tests the parse_teryt function."""
