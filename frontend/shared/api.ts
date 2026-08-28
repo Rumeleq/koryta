@@ -50,6 +50,14 @@ export const companyRequestSchema = z.object({
    * array does. Absent means the payload did not work it out and the stored
    * value is left alone. */
   supervisory_body: z.string().optional(),
+  /** Whether the register names the Treasury among the company's shareholders.
+   *
+   * A flag rather than an entry in `owners` or `owner_teryts`, because the
+   * Treasury is neither: it has no KRS number - it is not in the register at
+   * all - and it is not a territory, so giving it a TERYT would let it compete
+   * with real regions for the company's seat. The ingest resolves it to the
+   * site's own „Skarb Państwa" node; see `SKARB_PANSTWA_NODE_ID`. */
+  owner_skarb_panstwa: z.boolean().optional(),
   /** Whether the public sector owns the company, as far as KRS shows — not
    * whether it is publicly traded. Only `true` is an assertion, see
    * `Company.isPublic`. */
@@ -61,6 +69,7 @@ export type CompanyRequest = {
   name: string;
   owners?: string[];
   owner_teryts?: string[];
+  owner_skarb_panstwa?: boolean;
   teryt?: string;
   activity?: string[];
   categories?: string[];

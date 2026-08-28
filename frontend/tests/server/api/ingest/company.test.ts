@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createRevisionTransaction } from "../../../../server/utils/revisions";
-import handler from "../../../../server/api/ingest/company.post";
+import handler, {
+  SKARB_PANSTWA_NODE_ID,
+} from "../../../../server/api/ingest/company.post";
 
 // Mock dependencies
 const mockGet = vi.fn();
@@ -648,6 +650,70 @@ describe("api/ingest/company", () => {
 
     expect(result).toMatchObject({ id: "child-id", code: 200 });
     // The company's own revision, and no ownership edge.
+    expect(createRevisionTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("links a Treasury-owned company to the Skarb Państwa node", async () => {
+    // The one owner that can only be named by a node id: no KRS number, and no
+    // TERYT either, because the Treasury is not a territory. The pipeline sends
+    // a flag; the id lives in the handler.
+    mockReadBody.mockResolvedValue({
+      krs: "123456",
+      name: "Polska Grupa Zbrojeniowa",
+      owner_skarb_panstwa: true,
+    });
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
+    mockDoc.mockReturnValueOnce({ id: "company-id" });
+    mockDoc.mockReturnValueOnce({
+      id: SKARB_PANSTWA_NODE_ID,
+      get: vi.fn().mockResolvedValue({ exists: true }),
+    });
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
+
+    await handler({} as any);
+
+    // The company, and the ownership edge beside it.
+    expect(createRevisionTransaction).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(createRevisionTransaction).mock.calls[1]![4]).toEqual({
+      source: SKARB_PANSTWA_NODE_ID,
+      target: "company-id",
+      type: "owns",
+    });
+  });
+
+  it("skips the Treasury edge where that node does not exist", async () => {
+    // A local stack seeded by `scripts/seed-emulator.ts` has no such node, and
+    // an edge pointing at a document that is not there draws as a nameless dot
+    // and folds into every employee's targetNodeIds.
+    mockReadBody.mockResolvedValue({
+      krs: "123456",
+      name: "Polska Grupa Zbrojeniowa",
+      owner_skarb_panstwa: true,
+    });
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
+    mockDoc.mockReturnValueOnce({ id: "company-id" });
+    mockDoc.mockReturnValueOnce({
+      id: SKARB_PANSTWA_NODE_ID,
+      get: vi.fn().mockResolvedValue({ exists: false }),
+    });
+
+    await handler({} as any);
+
+    // The company's own revision, and nothing else.
+    expect(createRevisionTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("draws no Treasury edge when the register names no such owner", async () => {
+    mockReadBody.mockResolvedValue({
+      krs: "123456",
+      name: "Prywatna Sp. z o.o.",
+    });
+    // `...Once`: `beforeEach` clears calls but not implementations, so a
+    // default set here would leak into the next test.
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
+
+    await handler({} as any);
+
     expect(createRevisionTransaction).toHaveBeenCalledTimes(1);
   });
 

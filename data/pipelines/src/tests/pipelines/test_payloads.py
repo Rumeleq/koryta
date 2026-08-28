@@ -6,6 +6,7 @@ import pytest
 
 from analysis.payloads import CompaniesPayloads, PeoplePayloads, RegionPayloads
 from analysis.payloads.person import _extract_elections
+from scrapers.map.jst import SKARB_PANSTWA
 from scrapers.stores import Context, Pipeline, ProcessPolicy
 
 
@@ -252,6 +253,61 @@ def test_upload_payloads_company_shape(mock_ctx, monkeypatch):
 
     assert by_krs["0000158240"]["categories"] == []
     assert by_krs["0000999999"]["categories"] == ["szpitale"]
+
+
+def test_the_treasury_travels_as_a_flag_not_as_an_owner(mock_ctx, monkeypatch):
+    """The Treasury is neither a company nor a territory.
+
+    It has no KRS number - it is not in the register - so it cannot ride in
+    `owners`, where the ingest would look it up with `findCompanyByKRS` and 404.
+    It is not a territory either, so it must not ride in `owner_teryts`, where a
+    lookup would either find nothing or, worse, let it compete with real regions
+    for the company's seat. `owner_skarb_panstwa` is what carries it.
+    """
+    pipeline = Pipeline.create(CompaniesPayloads)
+    pipeline.companies = MockPipeline(
+        [
+            {
+                "krs": "0000322757",
+                "name": "Polska Grupa Zbrojeniowa",
+                "city": "Radom",
+                "activity": [],
+                "is_public": True,
+                "parents": [
+                    {"krs": None, "teryt": SKARB_PANSTWA},
+                    {"krs": None, "teryt": "1465"},
+                    {"krs": "0000019193", "teryt": None},
+                ],
+            },
+            {
+                "krs": "0000076705",
+                "name": "PKP Szybka Kolej Miejska w Trojmiescie",
+                "city": "Gdynia",
+                "activity": [],
+                "is_public": True,
+                "parents": [{"krs": None, "teryt": "2261011"}],
+            },
+        ]
+    )
+    monkeypatch.setattr(
+        "analysis.payloads.company.KorytaCompanies",
+        lambda *args, **kwargs: MockPipeline(
+            [{"krs": krs} for krs in ("0000322757", "0000076705")]
+        ),
+    )
+
+    by_krs = {
+        row["krs"]: row for row in pipeline.process(mock_ctx).to_dict(orient="records")
+    }
+
+    treasury = by_krs["0000322757"]
+    assert treasury["owner_skarb_panstwa"] is True
+    # ...and it is in neither of the lists the ingest resolves by lookup.
+    assert treasury["owner_teryts"] == ["1465"]
+    assert treasury["owners"] == ["0000019193"]
+
+    # A company the Treasury does not own says so, rather than saying nothing.
+    assert by_krs["0000076705"]["owner_skarb_panstwa"] is False
 
 
 def test_upload_payloads_carry_the_supervisory_organ(mock_ctx, monkeypatch):
