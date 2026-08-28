@@ -333,8 +333,15 @@ async function findSeatFromAnotherRegion(
     .where("type", "==", "seat")
     .get();
   for (const doc of snapshot.docs) {
-    const source = doc.data().source;
-    if (source && source !== regionNodeId) return source as string;
+    const data = doc.data();
+    // A seat somebody has removed through /api/edges/delete is not a competing
+    // claim - it is one an admin has already ruled on. Without this the ingest
+    // would keep refusing to write the correct seat on the strength of a
+    // relation that is no longer on the graph.
+    if (data.deleted === true) continue;
+    if (data.source && data.source !== regionNodeId) {
+      return data.source as string;
+    }
   }
   return null;
 }

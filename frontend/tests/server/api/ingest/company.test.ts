@@ -690,6 +690,51 @@ describe("api/ingest/company", () => {
     expect(createRevisionTransaction).toHaveBeenCalledTimes(1);
   });
 
+  it("writes the seat when the conflicting one has been removed", async () => {
+    // /api/edges/delete is a soft delete, so the stale seat is still a
+    // document. Reading it as a competing claim would make the ingest refuse
+    // the correct seat forever, on the strength of a relation an admin has
+    // already taken off the graph.
+    mockReadBody.mockResolvedValue({
+      krs: "123456",
+      name: "Regional Company",
+      teryt: "1061",
+    });
+
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
+    mockDoc.mockReturnValueOnce({ id: "company-id" });
+    mockDoc.mockReturnValueOnce({
+      id: "teryt1061",
+      get: vi.fn().mockResolvedValue({ exists: true }),
+    });
+    mockGet.mockResolvedValueOnce({
+      empty: false,
+      docs: [
+        {
+          id: "stale",
+          data: () => ({
+            source: "teryt1261",
+            target: "company-id",
+            type: "seat",
+            deleted: true,
+          }),
+        },
+      ],
+    });
+    // `findEdge` for the seat about to be written, and the pre-split `owns`
+    // lookup behind it: neither exists. `...Once` rather than setting the
+    // default - `beforeEach` clears calls but not implementations, so a default
+    // set here would leak into the next test.
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
+
+    const result = await handler({} as any);
+
+    expect(result).toMatchObject({ region: "added" });
+    // The company, and the seat beside it.
+    expect(createRevisionTransaction).toHaveBeenCalledTimes(2);
+  });
+
   it("falls back to the powiat when the exact teryt has no node", async () => {
     // A seat TERYT comes from geonames and is six digits, WOJ+POW+GMI with no
     // RODZ, so it matches no node - `Regions` mints gminy with the RODZ on the
