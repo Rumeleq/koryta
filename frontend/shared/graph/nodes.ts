@@ -23,9 +23,12 @@ export function personNode(
     person.parties && person.parties.length > 0
       ? (person.parties[0] ?? "")
       : "";
-  const color = (
-    party != "" ? partyColors[party] : NODE_COLORS.person
-  ) as Node["color"];
+  // Falls back on the plain person blue rather than on nothing. A party with
+  // no colour here - one the pipeline knows and `shared/misc` does not, Razem
+  // among them - used to leave `color` undefined, and an svg shape with no
+  // fill is drawn black: a node that read as a party of its own, and a legend
+  // that could not name it.
+  const color = (partyColors[party] ?? NODE_COLORS.person) as Node["color"];
   return {
     ...person,
     entityType: person.type,
