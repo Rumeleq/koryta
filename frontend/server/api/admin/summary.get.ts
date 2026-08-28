@@ -2,6 +2,7 @@ import { getFirestore, FieldPath } from "firebase-admin/firestore";
 import type { Firestore } from "firebase-admin/firestore";
 import { defineEventHandler } from "h3";
 import { getUser } from "~~/server/utils/auth";
+import { noteNeedsAction } from "~~/shared/model";
 import type {
   Feedback,
   FeedbackKind,
@@ -29,7 +30,8 @@ export type AdminSummary = {
     }[];
   };
   notes: {
-    // Sources an admin has explicitly flagged as unresolved.
+    // Entries waiting on an admin: the ones flagged unresolved by hand, plus
+    // every correction nobody has settled yet. See `noteNeedsAction`.
     needsAction: number;
     // Sources nobody has given a type yet, minus the ones a reviewer handed
     // back to the table view - i.e. the length of the phone queue at
@@ -86,7 +88,7 @@ export default defineEventHandler(async (event): Promise<AdminSummary> => {
 
   // --- Notes needing action -------------------------------------------------
   // Firestore can't query into an array of source objects, so read the notes
-  // (only the fields we need) and count sources flagged unresolved.
+  // (only the fields we need) and count the entries waiting on somebody.
   const notesSnap = await db
     .collection("notes")
     .select("sources", "nodeId")
@@ -107,7 +109,7 @@ export default defineEventHandler(async (event): Promise<AdminSummary> => {
     const data = doc.data() as Note;
     for (const source of data.sources || []) {
       if (!source.adminType && !source.adminTypeDeferred) uncategorized++;
-      if (source.adminStatus === "unresolved") {
+      if (noteNeedsAction(source)) {
         needsAction++;
         if (noteSampleRaw.length < SAMPLE_SIZE) {
           noteSampleRaw.push({

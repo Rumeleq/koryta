@@ -150,7 +150,8 @@
 
           <v-card-text>
             <div class="text-caption text-medium-emphasis mb-2">
-              Źródła oznaczone jako „Nierozwiązane”.
+              Zgłoszone poprawki i braki oraz wpisy oznaczone jako
+              „Nierozwiązane”.
             </div>
 
             <template v-if="pending">
@@ -175,8 +176,18 @@
                   lines="two"
                 >
                   <template #append>
+                    <!-- An untriaged correction has no type yet, and it is
+                         what it is on the list for, so its kind stands in. -->
                     <v-chip v-if="item.adminType" size="x-small" label>
                       {{ noteAdminTypeLabel(item.adminType) }}
+                    </v-chip>
+                    <v-chip
+                      v-else
+                      size="x-small"
+                      label
+                      :color="noteKindConfig[item.kind].color"
+                    >
+                      {{ noteKindConfig[item.kind].title }}
                     </v-chip>
                   </template>
                 </v-list-item>
@@ -193,10 +204,15 @@
           </v-card-text>
 
           <v-card-actions>
+            <!-- Filtered to the same set the number above counts, so the
+                 page it opens is the list it promised. -->
             <v-btn
               variant="text"
               color="primary"
-              to="/admin/notatki"
+              :to="{
+                path: '/admin/notatki',
+                query: { status: 'needs_action' },
+              }"
               :append-icon="mdiChevronRight"
             >
               Przejdź do notatek
@@ -363,7 +379,7 @@ import {
   mdiMessageAlertOutline,
 } from "@mdi/js";
 import { authRequest } from "~/composables/auth";
-import { noteAdminTypeLabel } from "~/composables/notes";
+import { noteAdminTypeLabel, noteKindConfig } from "~/composables/notes";
 import type { AdminSummary } from "~~/server/api/admin/summary.get";
 import type { ActivityStats } from "~~/server/api/stats/activity.get";
 

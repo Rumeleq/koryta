@@ -367,6 +367,9 @@ const kindFilterOptions = Object.entries(noteKindConfig).map(
 );
 
 const statusFilterOptions = [
+  // Not a stored status but the one the dashboard counts, so the number on it
+  // has a page that shows exactly those rows.
+  { title: "Wymagające działania", value: "needs_action" },
   { title: "Bez statusu", value: "none" },
   { title: "Nierozwiązane", value: "unresolved" },
   { title: "Rozwiązane", value: "resolved" },
