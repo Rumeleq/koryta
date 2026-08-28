@@ -9,6 +9,7 @@ from entities.company import display_name
 from entities.company_bodies import supervisory_body
 from entities.company_categories import categories_for
 from scrapers.koryta.download import KorytaCompanies
+from scrapers.map.jst import SKARB_PANSTWA
 from scrapers.stores import Context, Pipeline
 
 
@@ -105,11 +106,18 @@ class CompaniesPayloads(Pipeline):
             # - which is why 3,927 of 4,024 of them had exactly one `owns` edge
             # and it was the seat.
             owners, owner_teryts = [], []
+            # The Treasury rides in on `teryt` because it has no KRS, but it is
+            # not a territory and the ingest must not look it up as one - see
+            # `company_from_api_krs`. Split out here into a flag the ingest
+            # resolves to the site's own "Skarb Panstwa" node.
+            skarb_panstwa = False
             for parent in row.get("parents") or []:
                 if not isinstance(parent, dict):
                     continue
                 if parent.get("krs"):
                     owners.append(str(parent["krs"]).zfill(10))
+                elif parent.get("teryt") == SKARB_PANSTWA:
+                    skarb_panstwa = True
                 elif parent.get("teryt"):
                     owner_teryts.append(str(parent["teryt"]))
 
@@ -122,6 +130,7 @@ class CompaniesPayloads(Pipeline):
                 "is_public": is_public,
                 "owners": owners,
                 "owner_teryts": owner_teryts,
+                "owner_skarb_panstwa": skarb_panstwa,
             }
 
             teryt_code = row.get("teryt_code")
@@ -138,10 +147,12 @@ class CompaniesPayloads(Pipeline):
         # companies on the site and a JST owner for 1,354.
         with_owners = sum(1 for p in payloads if p["owners"])
         with_jst = sum(1 for p in payloads if p["owner_teryts"])
+        with_skarb = sum(1 for p in payloads if p["owner_skarb_panstwa"])
         print(
             f"Emitting {len(payloads)} company payloads "
             f"({with_teryt} with a TERYT code, {with_owners} with a company "
-            f"owner, {with_jst} with a JST owner)"
+            f"owner, {with_jst} with a JST owner, {with_skarb} owned by the "
+            f"Treasury)"
         )
         if not payloads:
             return pd.DataFrame(
@@ -154,6 +165,7 @@ class CompaniesPayloads(Pipeline):
                     "is_public",
                     "owners",
                     "owner_teryts",
+                    "owner_skarb_panstwa",
                     "teryt_code",
                 ]
             )

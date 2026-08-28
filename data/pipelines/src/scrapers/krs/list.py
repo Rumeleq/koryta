@@ -511,10 +511,11 @@ def get_teryt(pcs: DataFrame, city: str, code: str | None):
     return ""
 
 
-#: The Treasury is recognised - `jst.resolve` returns a sentinel for it and the
-#: company is marked public - but no ownership edge is drawn. See the comment in
-#: `company_from_api_krs`. Counted here so the gap has a number: 110 entries.
-SKARB_PANSTWA_OWNERS_UNLINKED = 110
+#: How many companies the register names the Treasury as an owner of. Kept as a
+#: number because it is the size of what `owner_skarb_panstwa` carries: a run
+#: that reports far fewer has lost the sentinel somewhere between
+#: `company_from_api_krs` and the payload, and would do it silently.
+SKARB_PANSTWA_OWNERS = 110
 
 
 def company_from_api_krs(
@@ -569,18 +570,19 @@ def company_from_api_krs(
 
             resolved = jst.resolve(w["nazwa"], seat_wojewodztwo) if jst else None
             if resolved == SKARB_PANSTWA:
-                # The Treasury owns 110 of the companies here and the site has a
-                # place node for it, already carrying two `owns` edges. It is
-                # not linked, because nothing identifies that node from the
-                # pipeline's side: it has no KRS number - it is not in the
-                # register at all - so the only handle is its Firestore id or
-                # its name, and neither belongs in a payload. Putting the
-                # sentinel in `owners` was worse: `findCompanyByKRS` 404s on it,
-                # and one 404 used to abort the whole upload.
+                # The Treasury owns 110 of the companies here, and the site has
+                # a place node for it. It is carried as an owner like any other,
+                # but through `teryt` holding the sentinel rather than a code -
+                # the Treasury is not a territory and must never be given a
+                # TERYT, or it would compete with real regions for a company's
+                # seat.
                 #
-                # The company is still marked public, which is the half of this
-                # that matters for what the site shows. Linking needs a stable
-                # identifier on the node first.
+                # `CompaniesPayloads` and `uploader.submit_company` split it out
+                # of `owner_teryts` into `owner_skarb_panstwa`, and the ingest
+                # resolves that to the node. It deliberately does not travel as
+                # a KRS number: `findCompanyByKRS` 404s on a sentinel, and one
+                # 404 used to abort the whole upload.
+                owners.append(Owner(krs=None, teryt=SKARB_PANSTWA))
                 is_public = True
                 continue
             if resolved == AMBIGUOUS:

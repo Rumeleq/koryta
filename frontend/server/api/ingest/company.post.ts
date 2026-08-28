@@ -12,6 +12,22 @@ import {
 import { pageIsPublic, type EdgeType } from "#shared/model";
 import { edgeDocumentId, findEdge } from "~~/server/utils/edges";
 
+/** The site's „Skarb Państwa" node.
+ *
+ * A Firestore document id in the source, which is not something to do lightly -
+ * but it is the only handle this node has. The Treasury is not in KRS, so it
+ * has no `krsNumber`; it is not a territory, so it has no `teryt`; and matching
+ * on the name would silently stop linking the day somebody renames it, which is
+ * exactly the failure this is meant to end. The id cannot change: it is what
+ * every `owns` edge already stored against it points at.
+ *
+ * Hardcoded on this side of the wire rather than sent in the payload, because a
+ * document id is the site's business and the pipelines have no way to know it.
+ * `entities.company_bodies` and `scrapers.map.jst` name the Treasury with a
+ * sentinel instead, and `owner_skarb_panstwa` carries it here.
+ */
+export const SKARB_PANSTWA_NODE_ID = "qMsAXmM5nDGNdUqmQpWR";
+
 export default defineEventHandler(async (event) => {
   console.info("Handling ingest/company.post");
   const body: Request = await readValidatedBody(event, (body) =>
@@ -118,6 +134,29 @@ export default defineEventHandler(async (event) => {
         continue;
       }
       await createEdge(dbb, parentRef.id, nodeRef.id, "owns", publish);
+    }
+  }
+  // The Treasury. It owns 110 of the companies the register describes and it is
+  // the one owner that can only be named by a node id: it has no KRS number -
+  // it is not in the register - and it is not a territory, so there is no TERYT
+  // to resolve either. The pipeline therefore sends a flag and the id lives
+  // here, on the side of the wire that already deals in node ids.
+  if (body.owner_skarb_panstwa) {
+    // Checked rather than assumed. The id is stable on production, but a local
+    // stack seeded by `scripts/seed-emulator.ts` has no such node, and an edge
+    // pointing at a document that does not exist is worse than no edge: it
+    // draws on the graph as a nameless dot and `computeNodes` folds it into
+    // every employee's `targetNodeIds`.
+    const treasury = await db
+      .collection("nodes")
+      .doc(SKARB_PANSTWA_NODE_ID)
+      .get();
+    if (treasury.exists) {
+      await createEdge(dbb, SKARB_PANSTWA_NODE_ID, nodeRef.id, "owns", publish);
+    } else {
+      console.warn(
+        `No „Skarb Państwa" node (${SKARB_PANSTWA_NODE_ID}); skipping the Treasury owner edge for krs=${body.krs}`,
+      );
     }
   }
   if (body.owner_teryts && Array.isArray(body.owner_teryts)) {

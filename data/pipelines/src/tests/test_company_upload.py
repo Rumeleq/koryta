@@ -137,3 +137,46 @@ def test_an_organ_the_pipeline_worked_out_is_not_recomputed():
         },
     )
     assert sent(instance)["supervisory_body"] == "rada-spoleczna"
+
+
+def test_the_treasury_is_split_out_of_the_parents_shape():
+    """The `Companies` path: a company created because somebody works there.
+
+    `submit_company` derives the owner lists from `parents` when the payload has
+    none, and has to make the same three-way split `CompaniesPayloads` does -
+    otherwise the sentinel lands in `owner_teryts` and the ingest looks for a
+    region called "SKARB PANSTWA".
+    """
+    instance = uploader()
+    instance.submit_company(
+        "0000322757",
+        {
+            "krs": "0000322757",
+            "name": "Polska Grupa Zbrojeniowa",
+            "parents": [
+                {"krs": None, "teryt": "SKARB PANSTWA"},
+                {"krs": None, "teryt": "1465"},
+            ],
+        },
+    )
+    payload = sent(instance)
+    assert payload["owner_skarb_panstwa"] is True
+    assert payload["owner_teryts"] == ["1465"]
+    assert payload["owners"] == []
+
+
+def test_a_payload_that_states_its_owners_keeps_its_treasury_flag():
+    """`CompaniesPayloads` has already made the split; do not redo it."""
+    instance = uploader()
+    instance.submit_company(
+        "0000322757",
+        {
+            "krs": "0000322757",
+            "name": "Polska Grupa Zbrojeniowa",
+            "owners": [],
+            "owner_teryts": ["1465"],
+            "owner_skarb_panstwa": True,
+            "parents": [{"krs": "0000019193", "teryt": None}],
+        },
+    )
+    assert sent(instance)["owner_skarb_panstwa"] is True

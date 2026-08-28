@@ -14,6 +14,7 @@ from entities.company_bodies import supervisory_body
 from entities.company_categories import categories_for
 from entities.composite import PersonScore
 from entities.person import is_pipeline_uid
+from scrapers.map.jst import SKARB_PANSTWA
 from scrapers.stores import iterate_pipeline_dict
 from stores.auth import authenticate_user
 from util.firestore import Firestore
@@ -251,15 +252,21 @@ class CompanyUploader(Uploader):
         # `CompaniesPayloads` is the other way round.
         if "owners" not in payload and "owner_teryts" not in payload:
             owners, owner_teryts = [], []
+            skarb_panstwa = False
             for parent in payload.get("parents", []):
                 if not isinstance(parent, dict):
                     continue
                 if parent.get("krs"):
                     owners.append(parent["krs"])
+                elif parent.get("teryt") == SKARB_PANSTWA:
+                    # Not a territory, and the ingest must not look it up as
+                    # one. Same split `CompaniesPayloads` does.
+                    skarb_panstwa = True
                 elif parent.get("teryt"):
                     owner_teryts.append(parent["teryt"])
             payload["owners"] = owners
             payload["owner_teryts"] = owner_teryts
+            payload["owner_skarb_panstwa"] = skarb_panstwa
         if "teryt_code" in payload and payload["teryt_code"]:
             payload["teryt"] = payload["teryt_code"]
         # `CompaniesPayloads` already worked these out, but a company created
