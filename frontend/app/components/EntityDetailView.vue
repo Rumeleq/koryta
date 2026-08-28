@@ -232,6 +232,17 @@
           </v-btn>
         </div>
 
+        <!-- Under the graph. The facts themselves are for logged in readers
+             only - they are a model's reading of a newspaper, matched by name
+             and judged by nobody yet, and this is the indexed public url for a
+             named individual - so the section locks itself and shows a logged
+             out reader only how many there are. That gate lives inside the
+             component, because the count is public and the facts are not. -->
+        <ExtractionPersonFacts
+          v-if="entity?.type === 'person'"
+          :node-id="node"
+        />
+
         <FormAddRelationDialog
           v-if="entity"
           v-model="addRelationOpen"
