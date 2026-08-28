@@ -45,6 +45,15 @@ const locationEdges = [
   { source: "teryt1261", target: "szpitalKrakow", type: "owns" },
   // Region hierarchy edges share the collection and must be ignored.
   { source: "teryt14", target: "teryt1465", type: "owns" },
+  // A seat an admin has taken off the graph through /api/edges/delete. The
+  // document stays - the removal is soft - so the filter has to read the flag
+  // or the company goes on being placed in a region nobody says it is in.
+  {
+    source: "teryt1465",
+    target: "przychodniaPrzeniesiona",
+    type: "seat",
+    deleted: true,
+  },
 ];
 
 /** Wires the mocked Firestore up for one test. */
@@ -292,6 +301,20 @@ describe("buildStructuralFilterOps, company level filters", () => {
     );
     // teryt14 -> teryt1465 is an `owns` edge too, but a region is not a place.
     expect(ops[0]!.applyMem([worker("region", ["teryt1465"])])).toEqual([]);
+  });
+
+  it("does not place a company by a seat somebody has removed", async () => {
+    const { ops } = await buildStructuralFilterOps(
+      db,
+      { companyTeryt: "14" },
+      "approved",
+    );
+    // `deleted: true` is how /api/edges/delete removes a relation - the
+    // document is still there. Reading it would keep the company in this
+    // województwo forever, and no correction could ever move it out.
+    expect(
+      ops[0]!.applyMem([worker("pracownik", ["przychodniaPrzeniesiona"])]),
+    ).toEqual([]);
   });
 
   it("intersects category with company location instead of crossing them", async () => {

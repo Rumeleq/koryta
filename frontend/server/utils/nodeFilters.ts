@@ -318,8 +318,17 @@ async function placesInRegions(
       // left it can be dropped, and until then a region that owns a company
       // elsewhere shows it here - which is what the site did for every company
       // before the split anyway.
+      //
+      // A removed seat is not a seat. `/api/edges/delete` lets an admin take
+      // any relation off the graph, and it is a soft delete - the document
+      // stays, carrying `deleted: true` - so without this a seat somebody has
+      // removed goes on placing the company in that region forever.
+      //
+      // `deleted` rather than `pageIsPublic`: an unpublished seat still says
+      // where a company is, and this filter runs for signed-in readers too.
       if (
         (edge.type === "seat" || edge.type === "owns") &&
+        edge.deleted !== true &&
         edge.target &&
         !allRegionIds.has(edge.target)
       ) {

@@ -222,6 +222,13 @@ export default defineEventHandler(async (event) => {
     // the seat edges were retyped would empty /eksploruj?teryt= for all of them.
     if (
       (edge.type === "owns" || edge.type === "seat") &&
+      // A removed tie carries nothing up. `/api/edges/delete` writes
+      // `deleted: true` rather than removing the document, so without this a
+      // relation an admin has taken off the graph still folds its region - or
+      // its parent company - into every employee's `targetNodeIds`, in the
+      // `approved` scope as much as in `all`, because `transitiveTargets` is
+      // built once from this map and neither scope filters it again.
+      edge.deleted !== true &&
       edge.source &&
       edge.target
     ) {
