@@ -208,6 +208,12 @@ const sourceCaption = computed(() => {
 </script>
 
 <style scoped>
+/* Named so the stacking rule at the bottom can ask about this card's width
+   rather than the window's. */
+.extraction-card {
+  container: extraction-card / inline-size;
+}
+
 .edge {
   display: grid;
   /* Cap the connector column so a long role label wraps inside its chip
@@ -295,8 +301,13 @@ const sourceCaption = computed(() => {
   margin-top: 4px;
 }
 
-/* Phones: three columns don't fit, so stack into full-width rows. */
-@media (max-width: 599px) {
+/* Narrow card: three columns don't fit, so stack into full-width rows.
+   Measured against the card rather than the viewport, because the card is no
+   longer always the width of the page - the person page puts two of them in a
+   `md="6"` row, where each is ~424px on a 960px screen and the three-column
+   edge would leave a Polish surname about 115px to wrap in. The threshold is
+   the phone one it replaces, so a full-width card behaves exactly as before. */
+@container extraction-card (max-width: 420px) {
   .edge {
     grid-template-columns: minmax(0, 1fr);
     gap: 6px;
