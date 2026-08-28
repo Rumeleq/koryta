@@ -13,14 +13,16 @@ const vuetify = createVuetify({ components, directives });
  * for. */
 const asked: { maxDepth?: unknown }[] = [];
 
+/** What the canvas is holding, for the tests that care what the legend makes of
+ * it. Reset per test by `beforeEach`. */
+let nodes: Record<string, Record<string, unknown>> = {};
+
 vi.mock("~/composables/graph", () => {
   return {
     useGraph: vi.fn().mockImplementation((opts: { maxDepth?: unknown }) => {
       asked.push(opts);
       return {
-        nodesFiltered: ref({
-          "2": { name: "Orlen", type: "rect", color: "#6b7a83" },
-        }),
+        nodesFiltered: computed(() => nodes),
         edgesFiltered: ref([]),
         ready: ref(true),
         omitted: computed(() => 0),
@@ -33,6 +35,7 @@ describe("GraphContainer unit tests", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     asked.length = 0;
+    nodes = { "2": { name: "Orlen", type: "rect", color: "#6b7a83" } };
   });
 
   it("names what the reader picked, and offers its page", async () => {
@@ -74,5 +77,54 @@ describe("GraphContainer unit tests", () => {
     expect(component.text()).toContain("Osoba");
     expect(component.text()).toContain("Instytucja");
     expect(component.text()).toContain("Region");
+  });
+
+  it("names the party colours the canvas is actually using", async () => {
+    nodes = {
+      "2": { name: "Jan Kowalski", type: "circle", parties: ["PiS"] },
+      "3": { name: "Anna Nowak", type: "circle", parties: ["Nowa Lewica"] },
+      // Same red as Nowa Lewica - the same party renamed - so the legend has
+      // to say so on one line rather than draw the swatch twice.
+      "4": { name: "Piotr Wójcik", type: "circle", parties: ["SLD"] },
+      // No colour of its own, so it is drawn as a person with no party and
+      // must not get a line here.
+      "5": { name: "Ewa Lis", type: "circle", parties: ["Razem"] },
+    };
+
+    const component = await mountSuspended(Container, {
+      global: { plugins: [vuetify], stubs: { GraphCanvas: true } },
+      props: { focusNodeId: "1" },
+    });
+
+    const legend = component.get('[data-testid="graph-legend"]');
+    expect(legend.text()).toContain("PiS");
+    expect(legend.text()).toContain("Nowa Lewica / SLD");
+    expect(legend.text()).not.toContain("Razem");
+    // PO is nobody's here, and a legend listing all eight parties would be
+    // longer than the graph it explains.
+    expect(legend.text()).not.toContain("PO");
+    // The plain blue stops being "a person" once a colour means something.
+    expect(legend.text()).toContain("Osoba: inne / brak partii");
+
+    const swatches = legend.findAll("circle").map((c) => c.attributes("fill"));
+    expect(swatches).toContain("#073b76");
+    expect(swatches).toContain("#D40E20");
+  });
+
+  it("folds the legend away and back", async () => {
+    const component = await mountSuspended(Container, {
+      global: { plugins: [vuetify], stubs: { GraphCanvas: true } },
+      props: { focusNodeId: "1" },
+    });
+
+    const toggle = component.get('[data-testid="graph-legend-toggle"]');
+
+    expect(component.find('[data-testid="graph-legend"]').exists()).toBe(true);
+    await toggle.trigger("click");
+    expect(component.find('[data-testid="graph-legend"]').exists()).toBe(false);
+    expect(component.text()).toContain("Legenda");
+
+    await toggle.trigger("click");
+    expect(component.find('[data-testid="graph-legend"]').exists()).toBe(true);
   });
 });
