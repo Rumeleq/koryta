@@ -20,13 +20,17 @@ from scrapers.stores.file import DownloadableFile
 _UNIT_PREFIX = re.compile(r"^(?:m\.|m\s+|miasto\s+)(?:st\.|st\s+|stołeczne\s+)?\s*")
 
 
-def normalize_unit_name(name: str) -> str:
+def normalize_unit_name(name: object) -> str:
     """A województwo, powiat or gmina name in the one form both sides agree on.
 
     TERYT names a city-powiat "Olsztyn" and a land one "olsztyński"; KRS
     uppercases both and prefixes the first with "M.". Lowercasing and dropping
     that prefix is enough to match the two by name, which is the only key they
     share - the register does not carry the code.
+
+    Takes anything and coerces, because neither side promises a string: a TERC
+    cell reaches this as whatever pandas inferred, and the register's names
+    come out of JSON where the key can be present and null.
     """
     return _UNIT_PREFIX.sub("", " ".join(str(name).lower().split()))
 
