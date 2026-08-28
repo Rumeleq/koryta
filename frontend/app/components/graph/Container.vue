@@ -1,34 +1,61 @@
 <template>
   <div class="graph-panel" data-testid="graph-panel">
     <div class="graph-panel__bar">
-      <ul class="graph-panel__legend">
-        <li v-for="item in LEGEND" :key="item.type" class="graph-panel__key">
-          <svg
-            class="graph-panel__swatch"
-            viewBox="-12 -12 24 24"
-            width="17"
-            height="17"
-            aria-hidden="true"
-          >
-            <circle v-if="item.shape === 'circle'" r="11" :fill="item.color" />
-            <rect
-              v-else
-              x="-11"
-              y="-9"
-              width="22"
-              height="18"
-              rx="3"
-              :fill="item.color"
-            />
-            <path
-              :d="entityGlyph(item.type)"
-              :fill="readableInk(item.color)"
-              transform="translate(-6.5 -6.5) scale(0.542)"
-            />
-          </svg>
-          {{ item.label }}
-        </li>
-      </ul>
+      <div class="graph-panel__legendbox">
+        <!-- Closable, because with the party colours in it this is the longest
+             thing on the bar, and a reader who has already learnt them wants
+             the room back rather than the lesson again on every page. -->
+        <v-btn
+          class="text-none"
+          data-testid="graph-legend-toggle"
+          size="small"
+          variant="text"
+          density="comfortable"
+          :append-icon="legendOpen ? mdiChevronUp : mdiChevronDown"
+          :aria-expanded="legendOpen"
+          aria-controls="graph-legend"
+          :text="legendOpen ? 'Ukryj legendę' : 'Legenda'"
+          @click="legendOpen = !legendOpen"
+        />
+
+        <ul
+          v-if="legendOpen"
+          id="graph-legend"
+          class="graph-panel__legend"
+          data-testid="graph-legend"
+        >
+          <li v-for="item in legend" :key="item.key" class="graph-panel__key">
+            <svg
+              class="graph-panel__swatch"
+              viewBox="-12 -12 24 24"
+              width="17"
+              height="17"
+              aria-hidden="true"
+            >
+              <circle
+                v-if="item.shape === 'circle'"
+                r="11"
+                :fill="item.color"
+              />
+              <rect
+                v-else
+                x="-11"
+                y="-9"
+                width="22"
+                height="18"
+                rx="3"
+                :fill="item.color"
+              />
+              <path
+                :d="entityGlyph(item.entity)"
+                :fill="readableInk(item.color)"
+                transform="translate(-6.5 -6.5) scale(0.542)"
+              />
+            </svg>
+            {{ item.label }}
+          </li>
+        </ul>
+      </div>
 
       <div class="graph-panel__controls">
         <v-btn
@@ -108,6 +135,8 @@
 import { ref } from "vue";
 import {
   mdiArrowRight,
+  mdiChevronDown,
+  mdiChevronUp,
   mdiFitToScreenOutline,
   mdiPlusCircleOutline,
 } from "@mdi/js";
@@ -115,6 +144,7 @@ import { useGraph } from "~/composables/graph";
 import { entityGlyph } from "~/utils/entityIcon";
 import { graphNodeDestination, readableInk } from "~/utils/graphNode";
 import { NODE_COLORS } from "~~/shared/graph/nodes";
+import { parties, partyColors } from "~~/shared/misc";
 
 const props = withDefaults(
   defineProps<{
@@ -129,25 +159,6 @@ const props = withDefaults(
   }>(),
   { maxDepth: 1, source: undefined, height: 520 },
 );
-
-/** What the legend explains, in the order a person page needs it. The colours
- * are the node builders' own, so a change there shows up here rather than
- * drifting quietly out of step. */
-const LEGEND = [
-  {
-    type: "person",
-    label: "Osoba",
-    shape: "circle",
-    color: NODE_COLORS.person,
-  },
-  {
-    type: "place",
-    label: "Instytucja",
-    shape: "rect",
-    color: NODE_COLORS.place,
-  },
-  { type: "region", label: "Region", shape: "rect", color: NODE_COLORS.region },
-] as const;
 
 /** How far out to draw, as the reader has it. Starts at whatever the page asked
  * for; a person's page asks for two, because one hop is a list of employers
@@ -185,6 +196,85 @@ const { nodesFiltered, edgesFiltered, ready, omitted } = useGraph({
   maxDepth: depth,
   expandedNodes,
 });
+
+/** Whether the legend is unfolded. Shared state rather than a plain ref, so
+ * that closing it holds while the reader moves between pages that draw a graph
+ * instead of springing open again on every navigation. */
+const legendOpen = useState("graph-legend-open", () => true);
+
+/** The party colours standing on the canvas right now, in the order
+ * `shared/misc` lists the parties.
+ *
+ * Only the ones in front of the reader: the whole table is eight parties, and
+ * naming all of them would make the legend longer than most of the graphs it
+ * explains. Grouped by colour rather than listed by party, because Nowa Lewica
+ * and SLD are painted the same red - they are the same party renamed - and two
+ * identical swatches on separate lines would read as a distinction the canvas
+ * is not making. */
+const partyKeys = computed(() => {
+  const present = new Set<string>();
+  for (const node of Object.values(nodesFiltered.value)) {
+    // The node builder paints a person with the first of their parties, so
+    // that is the one the legend has to account for.
+    const party = node.parties?.[0];
+    if (party && partyColors[party]) present.add(party);
+  }
+
+  const rank = (party: string) => {
+    const at = parties.indexOf(party);
+    return at < 0 ? parties.length : at;
+  };
+  const byColor = new Map<string, string[]>();
+  for (const party of [...present].sort((a, b) => rank(a) - rank(b))) {
+    const color = partyColors[party]!;
+    byColor.set(color, [...(byColor.get(color) ?? []), party]);
+  }
+  return [...byColor].map(([color, names]) => ({
+    color,
+    label: names.join(" / "),
+  }));
+});
+
+/** What the legend explains, in the order a person page needs it: first what a
+ * shape means, then what a colour does. The entity colours are the node
+ * builders' own and the party ones are the chips', so a change there shows up
+ * here rather than drifting quietly out of step. */
+const legend = computed(() => [
+  {
+    key: "person",
+    entity: "person",
+    // Said in full as soon as anybody on the canvas is coloured by party:
+    // this blue is not "a person", it is a person whose party we do not paint,
+    // and that is exactly what a reader looking at a blue dot next to a navy
+    // one is trying to work out. The wording is the statistics' own bucket,
+    // because it holds the same people - no party, and the parties
+    // `shared/misc` gives no colour.
+    label: partyKeys.value.length > 0 ? "Osoba: inne / brak partii" : "Osoba",
+    shape: "circle",
+    color: NODE_COLORS.person as string,
+  },
+  {
+    key: "place",
+    entity: "place",
+    label: "Instytucja",
+    shape: "rect",
+    color: NODE_COLORS.place as string,
+  },
+  {
+    key: "region",
+    entity: "region",
+    label: "Region",
+    shape: "rect",
+    color: NODE_COLORS.region as string,
+  },
+  ...partyKeys.value.map((party) => ({
+    key: `party-${party.color}`,
+    entity: "person",
+    label: party.label,
+    shape: "circle",
+    color: party.color,
+  })),
+]);
 
 /** The node the reader clicked, if it is still on the canvas. Cleared by the
  * canvas itself when the selection is dropped. */
@@ -227,6 +317,16 @@ const selectedHref = computed(() => {
 .graph-panel__foot {
   border-top: 1px solid rgba(var(--v-border-color), 0.18);
   min-height: 40px;
+}
+
+.graph-panel__legendbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  /* The legend is the half of the bar that grows; the controls keep the width
+     their buttons need. */
+  flex: 1 1 auto;
 }
 
 .graph-panel__legend {
