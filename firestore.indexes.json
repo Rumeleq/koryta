@@ -117,6 +117,20 @@
       ]
     },
     {
+      "collectionGroup": "extractions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "personNodeId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "nodes",
       "queryScope": "COLLECTION",
       "fields": [

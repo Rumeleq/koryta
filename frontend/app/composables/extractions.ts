@@ -22,6 +22,10 @@ export function useExtractions(options?: {
   tag?: MaybeRefOrGetter<string | undefined>;
   /** Everything from one article, by the url the uploader recorded. */
   articleUrl?: MaybeRefOrGetter<string | undefined>;
+  /** Everything matched to one person, by their node id. */
+  personNodeId?: MaybeRefOrGetter<string | undefined>;
+  /** How many match, without fetching any of them. */
+  countOnly?: MaybeRefOrGetter<boolean | undefined>;
   groupBy?: "article";
   reviewed?: MaybeRefOrGetter<"all" | "yes" | "no">;
   limit?: MaybeRefOrGetter<number | undefined>;
@@ -31,11 +35,15 @@ export function useExtractions(options?: {
     const q: Record<string, string> = {};
     const tag = toValue(options?.tag);
     const articleUrl = toValue(options?.articleUrl);
+    const personNodeId = toValue(options?.personNodeId);
+    const countOnly = toValue(options?.countOnly);
     const reviewed = toValue(options?.reviewed);
     const limit = toValue(options?.limit);
     const page = toValue(options?.page);
     if (tag) q.tag = tag;
     if (articleUrl) q.articleUrl = articleUrl;
+    if (personNodeId) q.personNodeId = personNodeId;
+    if (countOnly) q.countOnly = "true";
     if (options?.groupBy) q.groupBy = options.groupBy;
     if (reviewed) q.reviewed = reviewed;
     if (limit !== undefined) q.limit = String(limit);
