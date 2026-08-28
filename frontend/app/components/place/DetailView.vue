@@ -150,17 +150,13 @@
           @changed="refreshEdges()"
         />
 
-        <DialogRemoveEdge
-          v-if="removeEdge?.id"
+        <DialogRemoveEdgeHost
           v-model="removeOpen"
-          :edge-id="removeEdge.id"
-          :edge-label="edgeSentence(removeEdge)"
+          v-model:shown="removedShown"
+          :edge="removeEdge"
+          :label="removeLabel"
           @removed="onEdgeRemoved()"
         />
-
-        <v-snackbar v-model="removedShown" color="info" :timeout="5000">
-          Powiązanie zostało usunięte.
-        </v-snackbar>
       </div>
 
       <v-divider />
@@ -194,6 +190,8 @@ import {
 } from "@mdi/js";
 import { useDisplay } from "vuetify";
 import { useEdges, type EdgeNode } from "~/composables/edges";
+import { edgeSentence } from "~/utils/edgeSentence";
+import { useEdgeRemoval } from "~/composables/edgeRemoval";
 import {
   entityDescription,
   entityOgType,
@@ -210,7 +208,7 @@ const nodeId = props.nodeId;
 
 const route = useRoute();
 const router = useRouter();
-const { user, isAdmin } = useAuthState();
+const { user } = useAuthState();
 const { smAndDown } = useDisplay();
 
 // The graph is the heaviest thing on the page and a phone shows one node at a
@@ -300,12 +298,6 @@ useSeoMeta({
 
 const canAddRelations = computed(() => !!user.value);
 
-/** Removing is an administrator's decision, and unlike everything else on this
- * page it takes effect at once rather than joining a review queue - which is
- * the point. The relations that come off a wrongly merged person are nobody's
- * claim, so there is no second opinion to wait for. */
-const canRemoveRelations = computed(() => isAdmin.value === true);
-
 const addRelationOpen = ref(false);
 const addRelationTypes = ref<edgeTypeExt[] | undefined>(undefined);
 const addRelationTitle = ref("Dodaj powiązanie");
@@ -323,43 +315,28 @@ function openAdd(types: edgeTypeExt[] | undefined, title: string) {
 const sourcesOpen = ref(false);
 const sourcesEdge = ref<EdgeNode | undefined>(undefined);
 
-/** One relation read as a sentence. Both dialogs know only an edge id, and an
- * id tells the reader nothing about which row they clicked - which matters most
- * for the one that removes it. */
-function edgeSentence(edge: EdgeNode | undefined) {
-  if (!edge) return "";
-  const period = [edge.start_date, edge.end_date].filter(Boolean).join(" - ");
-  return [
-    `${company.value?.name ?? ""} - ${edge.label} - ${edge.richNode.name}`,
-    period,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-}
-
-const sourcesLabel = computed(() => edgeSentence(sourcesEdge.value));
+const sourcesLabel = computed(() =>
+  edgeSentence(company.value?.name, sourcesEdge.value),
+);
 
 function openSources(edge: EdgeNode) {
   sourcesEdge.value = edge;
   sourcesOpen.value = true;
 }
 
-/** The relation an admin is about to take off the graph. One dialog for the
- * page, like the sources one above and for the same reason. */
-const removeOpen = ref(false);
-const removeEdge = ref<EdgeNode | undefined>(undefined);
-const removedShown = ref(false);
-
-function openRemove(edge: EdgeNode) {
-  removeEdge.value = edge;
-  removeOpen.value = true;
-}
-
-/** Refetched rather than spliced out of the list in the browser: the board
+/** Refetching rather than splicing the row out in the browser: the board
  * summary at the top of the page, the rows and the graph all read the one
  * local-graph response. */
-async function onEdgeRemoved() {
-  removedShown.value = true;
-  await refreshEdges();
-}
+const {
+  canRemove: canRemoveRelations,
+  removeOpen,
+  removeEdge,
+  removedShown,
+  removeLabel,
+  openRemove,
+  onEdgeRemoved,
+} = useEdgeRemoval({
+  subjectName: () => company.value?.name,
+  refresh: refreshEdges,
+});
 </script>

@@ -1,5 +1,7 @@
 <template>
   <ClientOnly>
+    <!-- Whatever this page can do to a person's relations, /eksploruj/nowe can
+         do too, in its own shape - see `.agent/skills/relation-surfaces.md`. -->
     <ExploreNodeDrawer
       v-model="openDrawer"
       :node="focusedPerson"
@@ -7,6 +9,7 @@
       :region="region"
       :company="company"
       :company-regions="companyRegions"
+      @removed="refreshFocusedEdges()"
     />
     <div class="pa-4">
       <!-- Three lines of text-h4 is a fifth of a phone screen spent on a
@@ -394,8 +397,11 @@ const { tableItems, totalItems, pending } = await useListWithStats(
 const openDrawer = shallowRef(false);
 const focusedPerson = shallowRef<PersonRich | undefined>(undefined);
 const focusedPersonId = computed(() => focusedPerson.value?.id);
-const { sources: focusedSources, targets: focusedTargets } =
-  await useEdges(focusedPersonId);
+const {
+  sources: focusedSources,
+  targets: focusedTargets,
+  refresh: refreshFocusedEdges,
+} = await useEdges(focusedPersonId);
 const focusedEdges = computed(() => [
   ...focusedSources.value,
   ...focusedTargets.value,

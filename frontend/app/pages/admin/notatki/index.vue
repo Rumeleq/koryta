@@ -5,6 +5,7 @@
       :node="focusedNode"
       :edges="focusedEdges"
       :company-regions="companyRegions"
+      @removed="refreshFocusedEdges()"
     />
 
     <div class="d-flex align-center justify-space-between flex-wrap ga-3 mb-4">
@@ -532,8 +533,11 @@ const { companyRegions } = useCompanyLocations();
 const openDrawer = shallowRef(false);
 const focusedNode = shallowRef<NodeMaybeRich | undefined>(undefined);
 const focusedNodeId = shallowRef<string | undefined>(undefined);
-const { sources: focusedSources, targets: focusedTargets } =
-  await useEdges(focusedNodeId);
+const {
+  sources: focusedSources,
+  targets: focusedTargets,
+  refresh: refreshFocusedEdges,
+} = await useEdges(focusedNodeId);
 const focusedEdges = computed(() => [
   ...focusedSources.value,
   ...focusedTargets.value,

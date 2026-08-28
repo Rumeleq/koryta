@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mount, flushPromises } from "@vue/test-utils";
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { createVuetify } from "vuetify";
 import * as components from "vuetify/components";
 import * as directives from "vuetify/directives";
@@ -11,12 +11,19 @@ const vuetify = createVuetify({ components, directives });
 
 // The route query is what the filters read and write, so it is a live object
 // the tests rewrite between mounts rather than a fixed one.
-const { routeQuery, lastQuery, items } = vi.hoisted(() => ({
+const { routeQuery, lastQuery, items, authUser, edges } = vi.hoisted(() => ({
   routeQuery: { value: {} as Record<string, string> },
   lastQuery: { value: null as { value: Query } | null },
   // What the list composable hands back. Empty unless a test asks for a
   // focused person, because most of them only look at the query it built.
   items: { value: [] as Record<string, unknown>[] },
+  // Who is signed in, for the controls that only an admin is offered. A
+  // hoisted box rather than a fixed mock return, because `vi.mock` is lifted
+  // above anything this file defines and the tests need to change it.
+  authUser: { value: null as { getIdTokenResult: () => unknown } | null },
+  // The focused person's relations. Empty by default: the card is behind a
+  // `v-if` on there being any, so a test that wants to look at it has to say so.
+  edges: { value: [] as Record<string, unknown>[] },
 }));
 
 vi.mock("vue-router", async (importOriginal) => {
@@ -59,7 +66,11 @@ vi.mock("~~/app/composables/entity/listWithStats", () => ({
 
 vi.mock("~/composables/edges", () => ({
   useEdges: vi.fn(() =>
-    Promise.resolve({ sources: ref([]), targets: ref([]) }),
+    Promise.resolve({
+      sources: ref(edges.value),
+      targets: ref([]),
+      refresh: vi.fn(),
+    }),
   ),
 }));
 
@@ -87,7 +98,7 @@ vi.mock("firebase/firestore", async (importOriginal) => {
 });
 
 vi.mock("vuefire", () => ({
-  useCurrentUser: vi.fn(() => ref(null)),
+  useCurrentUser: vi.fn(() => computed(() => authUser.value)),
   useFirestore: vi.fn(() => ({})),
   useFirebaseApp: vi.fn(() => ({ name: "[DEFAULT]" })),
   useFirebaseAuth: vi.fn(() => ({})),
@@ -126,6 +137,18 @@ async function mountPage(query: Record<string, string> = {}) {
   return wrapper;
 }
 
+/** One relation of the focused person, enough for the card to draw a row. */
+function relation() {
+  return {
+    id: "edge-1",
+    type: "employed",
+    label: "Zatrudniony/a w",
+    source: "company-1",
+    target: "person-1",
+    richNode: { id: "company-1", type: "place", name: "Orlen" },
+  };
+}
+
 function currentQuery(): Query {
   if (!lastQuery.value) throw new Error("useListWithStats was never called");
   return lastQuery.value.value;
@@ -135,6 +158,8 @@ describe("/eksploruj/nowe", () => {
   beforeEach(() => {
     lastQuery.value = null;
     items.value = [];
+    authUser.value = null;
+    edges.value = [];
   });
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -200,6 +225,44 @@ describe("/eksploruj/nowe", () => {
 
     // The long version is one click away rather than open on the page.
     expect(steps.text()).toContain("Jak to działa?");
+  });
+
+  /** The queue is where a wrongly merged person is most likely to be caught, so
+   * it carries the same admin control as the profile - see
+   * `.agent/skills/relation-surfaces.md` on keeping this page and
+   * /eksploruj/tabela in parity. */
+  it("offers an admin the removal on the relations card", async () => {
+    authUser.value = {
+      getIdTokenResult: () => Promise.resolve({ claims: { admin: true } }),
+    };
+    items.value = [{ id: "person-1", name: "Testowa Osoba", type: "person" }];
+    edges.value = [relation()];
+
+    const wrapper = await mountPage();
+    await flushPromises();
+
+    expect(
+      wrapper
+        .findComponent({ name: "CardEmploymentHistory" })
+        .props("canRemove"),
+    ).toBe(true);
+  });
+
+  it("does not offer it to a contributor who is not an admin", async () => {
+    authUser.value = {
+      getIdTokenResult: () => Promise.resolve({ claims: {} }),
+    };
+    items.value = [{ id: "person-1", name: "Testowa Osoba", type: "person" }];
+    edges.value = [relation()];
+
+    const wrapper = await mountPage();
+    await flushPromises();
+
+    expect(
+      wrapper
+        .findComponent({ name: "CardEmploymentHistory" })
+        .props("canRemove"),
+    ).toBeFalsy();
   });
 
   it("puts the relations above the person card and the notes", async () => {

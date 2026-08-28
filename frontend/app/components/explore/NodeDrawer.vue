@@ -74,7 +74,19 @@
         single-column
       />
       <v-divider class="my-4" />
-      <CardEmploymentHistory :edges="edges" />
+      <CardEmploymentHistory
+        :edges="edges"
+        :can-remove="canRemoveRelations"
+        @remove="openRemove"
+      />
+
+      <DialogRemoveEdgeHost
+        v-model="removeOpen"
+        v-model:shown="removedShown"
+        :edge="removeEdge"
+        :label="removeLabel"
+        @removed="onEdgeRemoved()"
+      />
     </div>
   </v-navigation-drawer>
 </template>
@@ -88,6 +100,7 @@ import type { EdgeNode } from "~/composables/edges";
 import type { NodeMaybeRich, PersonRich } from "~~/shared/model";
 import type { PlaceRegion } from "~/utils/companyLocation";
 import { usePersonPlaces } from "~/composables/personPlaces";
+import { useEdgeRemoval } from "~/composables/edgeRemoval";
 
 const props = withDefaults(
   defineProps<{
@@ -115,6 +128,28 @@ const props = withDefaults(
     companyRegions: undefined,
   },
 );
+
+const emit = defineEmits<{
+  /** An admin took one of `edges` off the graph. The drawer does not own the
+   * fetch - `edges` is the caller's - so the caller re-reads it. */
+  removed: [];
+}>();
+
+/** Removing a relation from the drawer, which is how /eksploruj/tabela and
+ * /admin/notatki read one node's relations. See
+ * `.agent/skills/relation-surfaces.md`. */
+const {
+  canRemove: canRemoveRelations,
+  removeOpen,
+  removeEdge,
+  removedShown,
+  removeLabel,
+  openRemove,
+  onEdgeRemoved,
+} = useEdgeRemoval({
+  subjectName: () => props.node?.name,
+  refresh: () => emit("removed"),
+});
 
 const open = defineModel<boolean>({ required: true });
 
