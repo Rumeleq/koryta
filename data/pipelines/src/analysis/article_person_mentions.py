@@ -1114,7 +1114,9 @@ async def _scan_and_judge(
                     dropped += dropped_in_article
                     candidates += len(requests)
                     rows += 1
-                    bar.total += len(requests)
+                    # `or 0` for the type checker only: tqdm types `total` as
+                    # optional, and this bar was built with `total=0`.
+                    bar.total = (bar.total or 0) + len(requests)
                     await _submit_requests(
                         pool, inflight, drain, row, content, requests
                     )
