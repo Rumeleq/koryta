@@ -84,22 +84,28 @@
             :edges="owners"
             title="Właściciele"
             :can-add="canAddRelations"
+            :can-remove="canRemoveRelations"
             add-testid="owners"
             @add="openAdd(['owns_parent'], 'Dodaj właściciela')"
+            @remove="openRemove"
           />
           <CardConnectionList
             :edges="subsidiaries"
             title="Spółki zależne"
             :can-add="canAddRelations"
+            :can-remove="canRemoveRelations"
             add-testid="subsidiaries"
             @add="openAdd(['owns_child'], 'Dodaj spółkę zależną')"
+            @remove="openRemove"
           />
           <CardEmploymentHistory
             :edges="edges"
             :can-add="canAddRelations"
             :can-edit="canAddRelations"
+            :can-remove="canRemoveRelations"
             @add="openAdd(['employed'], 'Dodaj osobę pracującą tutaj')"
             @sources="openSources"
+            @remove="openRemove"
           />
         </div>
 
@@ -143,6 +149,18 @@
           :edge-label="sourcesLabel"
           @changed="refreshEdges()"
         />
+
+        <DialogRemoveEdge
+          v-if="removeEdge?.id"
+          v-model="removeOpen"
+          :edge-id="removeEdge.id"
+          :edge-label="edgeSentence(removeEdge)"
+          @removed="onEdgeRemoved()"
+        />
+
+        <v-snackbar v-model="removedShown" color="info" :timeout="5000">
+          Powiązanie zostało usunięte.
+        </v-snackbar>
       </div>
 
       <v-divider />
@@ -192,7 +210,7 @@ const nodeId = props.nodeId;
 
 const route = useRoute();
 const router = useRouter();
-const { user } = useAuthState();
+const { user, isAdmin } = useAuthState();
 const { smAndDown } = useDisplay();
 
 // The graph is the heaviest thing on the page and a phone shows one node at a
@@ -282,6 +300,12 @@ useSeoMeta({
 
 const canAddRelations = computed(() => !!user.value);
 
+/** Removing is an administrator's decision, and unlike everything else on this
+ * page it takes effect at once rather than joining a review queue - which is
+ * the point. The relations that come off a wrongly merged person are nobody's
+ * claim, so there is no second opinion to wait for. */
+const canRemoveRelations = computed(() => isAdmin.value === true);
+
 const addRelationOpen = ref(false);
 const addRelationTypes = ref<edgeTypeExt[] | undefined>(undefined);
 const addRelationTitle = ref("Dodaj powiązanie");
@@ -299,22 +323,43 @@ function openAdd(types: edgeTypeExt[] | undefined, title: string) {
 const sourcesOpen = ref(false);
 const sourcesEdge = ref<EdgeNode | undefined>(undefined);
 
-/** The claim being cited, read as a sentence. The dialog knows only an edge id,
- * and an id tells the reader nothing about which row they clicked. */
-const sourcesLabel = computed(() => {
-  const edge = sourcesEdge.value;
+/** One relation read as a sentence. Both dialogs know only an edge id, and an
+ * id tells the reader nothing about which row they clicked - which matters most
+ * for the one that removes it. */
+function edgeSentence(edge: EdgeNode | undefined) {
   if (!edge) return "";
   const period = [edge.start_date, edge.end_date].filter(Boolean).join(" - ");
   return [
-    `${company.value?.name ?? ""} - ${edge.label} - ${edge.richNode?.name ?? ""}`,
+    `${company.value?.name ?? ""} - ${edge.label} - ${edge.richNode.name}`,
     period,
   ]
     .filter(Boolean)
     .join(" · ");
-});
+}
+
+const sourcesLabel = computed(() => edgeSentence(sourcesEdge.value));
 
 function openSources(edge: EdgeNode) {
   sourcesEdge.value = edge;
   sourcesOpen.value = true;
+}
+
+/** The relation an admin is about to take off the graph. One dialog for the
+ * page, like the sources one above and for the same reason. */
+const removeOpen = ref(false);
+const removeEdge = ref<EdgeNode | undefined>(undefined);
+const removedShown = ref(false);
+
+function openRemove(edge: EdgeNode) {
+  removeEdge.value = edge;
+  removeOpen.value = true;
+}
+
+/** Refetched rather than spliced out of the list in the browser: the board
+ * summary at the top of the page, the rows and the graph all read the one
+ * local-graph response. */
+async function onEdgeRemoved() {
+  removedShown.value = true;
+  await refreshEdges();
 }
 </script>
