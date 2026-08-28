@@ -17,6 +17,7 @@ export const auditActions = [
   "reject",
   "publish",
   "unpublish",
+  "delete",
 ] as const;
 
 export type AuditAction = (typeof auditActions)[number];
@@ -35,7 +36,8 @@ export type AuditEntry = {
   /** ISO 8601, UTC. A string rather than a Timestamp so the activity scan is a
    * plain range query on one field, the way votes and notes are read. */
   at: string;
-  /** Why the suggestion was turned down. Only a rejection carries one. */
+  /** Why the suggestion was turned down, or why the entry was removed. Only a
+   * rejection and a removal carry one. */
   reason?: string;
 };
 
@@ -52,4 +54,5 @@ export const auditActionLabels: Record<AuditAction, string> = {
   reject: "Odrzucenie rewizji",
   publish: "Opublikowanie strony",
   unpublish: "Ukrycie strony",
+  delete: "Usunięcie wpisu",
 };
