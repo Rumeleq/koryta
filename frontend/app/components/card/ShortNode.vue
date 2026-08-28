@@ -20,6 +20,20 @@
         {{ edge.start_date }} - {{ edge.end_date || "obecnie" }}
       </div>
     </template>
+    <!-- Admins only. The card itself is a link to the other end, so this stops
+         the click rather than letting it navigate away from the relation it is
+         about - same as the sources button on a person's rows. -->
+    <template v-if="edge.id && canRemove" #append>
+      <v-btn
+        variant="text"
+        size="small"
+        color="error"
+        title="Usuń powiązanie"
+        :icon="mdiTrashCanOutline"
+        :data-testid="`edge-remove-${edge.id}`"
+        @click.stop.prevent="emit('remove', edge)"
+      />
+    </template>
     <v-card-text v-if="edge.richNode.content">
       {{ edge.richNode.content }}
     </v-card-text>
@@ -27,8 +41,16 @@
 </template>
 
 <script setup lang="ts">
+import { mdiTrashCanOutline } from "@mdi/js";
 import type { EdgeNode } from "~/composables/edges";
 import { entityIcon } from "~/utils/entityIcon";
 
-const { edge } = defineProps<{ edge: EdgeNode }>();
+const { edge, canRemove } = defineProps<{
+  edge: EdgeNode;
+  /** Whether the card offers taking the relation off the graph outright, which
+   * is an administrator's decision and nobody else's. */
+  canRemove?: boolean;
+}>();
+
+const emit = defineEmits<{ remove: [edge: EdgeNode] }>();
 </script>

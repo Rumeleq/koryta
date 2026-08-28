@@ -56,6 +56,25 @@ describe("CardEmploymentHistory", () => {
     const wrapper = await render([edge({ label: "zastępca prezesa" })]);
     expect(wrapper.text()).not.toContain("undefined");
   });
+
+  it("offers no removal to a reader who is not an admin", async () => {
+    // Removing takes effect at once rather than joining a review queue, so the
+    // control has to be absent rather than merely refused by the server.
+    const wrapper = await render([edge({})]);
+    expect(wrapper.find('[data-testid="edge-remove-e1"]').exists()).toBe(false);
+  });
+
+  it("asks the page to remove the row an admin clicked", async () => {
+    const wrapper = await mountSuspended(EmploymentHistory, {
+      props: { edges: [edge({})], canRemove: true },
+    });
+
+    await wrapper.get('[data-testid="edge-remove-e1"]').trigger("click");
+
+    // The edge itself, not its id: the dialog names the relation being removed
+    // and needs the far end and the dates to do it.
+    expect(wrapper.emitted("remove")?.[0]?.[0]).toMatchObject({ id: "e1" });
+  });
 });
 
 /** The one-line hint that ties a row to the "Zmiany na stanowisku" section

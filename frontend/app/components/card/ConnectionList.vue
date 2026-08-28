@@ -28,6 +28,20 @@
               ({{ getPeopleCount(edge) }})
             </span>
           </v-list-item-title>
+
+          <!-- Admins only. The row is a link to the other end, so this stops
+               the click rather than letting it navigate away. -->
+          <template v-if="edge.id && canRemove" #append>
+            <v-btn
+              variant="text"
+              size="small"
+              color="error"
+              title="Usuń powiązanie"
+              :icon="mdiTrashCanOutline"
+              :data-testid="`edge-remove-${edge.id}`"
+              @click.stop.prevent="emit('remove', edge)"
+            />
+          </template>
         </v-list-item>
       </v-list>
     </v-card>
@@ -36,11 +50,11 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { mdiPlus } from "@mdi/js";
+import { mdiPlus, mdiTrashCanOutline } from "@mdi/js";
 import { entityIcon } from "~/utils/entityIcon";
 import type { EdgeNode } from "~~/app/composables/edges";
 
-const { edges, title } = defineProps<{
+const { edges, title, canRemove } = defineProps<{
   title: string;
   edges: EdgeNode[];
   /** Whether this section offers adding a relation of its own kind. */
@@ -48,9 +62,12 @@ const { edges, title } = defineProps<{
   /** Suffix for the add button's test hook, since a page renders several of
    * these and they would otherwise be indistinguishable. */
   addTestid?: string;
+  /** Whether each row offers taking the relation off the graph outright, which
+   * is an administrator's decision and nobody else's. */
+  canRemove?: boolean;
 }>();
 
-const emit = defineEmits<{ add: [] }>();
+const emit = defineEmits<{ add: []; remove: [edge: EdgeNode] }>();
 
 function getPeopleCount(edge: EdgeNode) {
   const stats = edge.richNode.stats as

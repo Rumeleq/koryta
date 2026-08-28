@@ -139,6 +139,20 @@
                 {{ sourceCount(edge) }}
               </span>
             </v-btn>
+            <!-- Admins only, and last in the row: this is the one control here
+                 that takes something away. Stops the click for the same reason
+                 the sources button does - the row is a link to the other end. -->
+            <v-btn
+              v-if="edge.id && canRemove"
+              variant="text"
+              size="small"
+              color="error"
+              class="px-1"
+              title="Usuń powiązanie"
+              :icon="mdiTrashCanOutline"
+              :data-testid="`edge-remove-${edge.id}`"
+              @click.stop.prevent="emit('remove', edge)"
+            />
           </div>
         </template>
       </v-list-item>
@@ -152,6 +166,7 @@ import {
   mdiFileDocumentMultipleOutline,
   mdiFileDocumentPlusOutline,
   mdiPlus,
+  mdiTrashCanOutline,
 } from "@mdi/js";
 import { entityIcon } from "~/utils/entityIcon";
 import { gapLabel } from "~~/shared/succession";
@@ -171,6 +186,9 @@ const props = defineProps<{
   /** Whether each row offers citing the relation to an article. A reader who
    * cannot edit still sees the count on the relations that have one. */
   canEdit?: boolean;
+  /** Whether each row offers taking the relation off the graph outright, which
+   * is an administrator's decision and nobody else's. */
+  canRemove?: boolean;
   /** Who held each seat before, keyed by the edge id of the spell that took it
    * over. Optional because most callers of this card do not ask
    * `/api/edges/successions` at all - and because the successions of a company
@@ -181,7 +199,11 @@ const props = defineProps<{
   predecessors?: Record<string, Predecessor>;
 }>();
 
-const emit = defineEmits<{ add: []; sources: [edge: EdgeNode] }>();
+const emit = defineEmits<{
+  add: [];
+  sources: [edge: EdgeNode];
+  remove: [edge: EdgeNode];
+}>();
 
 /** How many articles a relation is cited to. An edge that predates
  * `references`, or one the graph returned without it, counts as none rather
