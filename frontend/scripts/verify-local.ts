@@ -1,15 +1,22 @@
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import type { Edge } from "../shared/model";
+import { bodyIsPaidPost, namesASupervisorySeat } from "../shared/companyBodies";
+import { computeEdgeStats } from "../shared/stats";
 
 /**
- * What the categories and ownership work actually put on a local stack.
+ * What this branch actually put on a local stack.
  *
  * Read-only. Run it against the emulator after the seat migration, the region
- * nodes and the company ingest, to check the three things that are easy to get
+ * nodes and the company ingest, to check the four things that are easy to get
  * silently wrong: the seat split left every company exactly one seat, the
- * register's owners landed as `owns` edges, and the categories moved.
+ * register's owners landed as `owns` edges, the categories moved, and the
+ * hospitals' rada społeczna stopped counting as employment.
  *
  *   npx tsx scripts/verify-local.ts
+ *
+ * The last section needs `/api/stats/computeNodes` to have run since the
+ * company ingest - that is what writes the counters this compares against.
  */
 
 process.env.FIRESTORE_EMULATOR_HOST =
@@ -106,6 +113,95 @@ async function main() {
     return list.length === 0;
   }).length;
   console.info(`  ${"(none)".padEnd(22)} ${uncategorised}`);
+
+  // Supervisory organs, and whether the counters honour them. See
+  // `shared/companyBodies.ts` - a rada społeczna seat is unpaid, so it is not
+  // employment, and the whole point is that nothing about the stored edge says
+  // so: every one of them is named "Rada Nadzorcza".
+  const unpaidSeatPlaceIds = new Set(
+    places
+      .filter((d) => !bodyIsPaidPost(d.data().supervisoryBody))
+      .map((d) => d.id),
+  );
+  const publicPlaceIds = new Set(
+    places.filter((d) => d.data().isPublic === true).map((d) => d.id),
+  );
+  const bodies = new Map<string, number>();
+  for (const d of places) {
+    const body = d.data().supervisoryBody;
+    if (body) bodies.set(body, (bodies.get(body) ?? 0) + 1);
+  }
+  console.info(`\nsupervisory organs`);
+  if (bodies.size === 0) {
+    console.info(
+      "  (none stored - the company ingest has not run, or ran without `form`)",
+    );
+  }
+  for (const [body, n] of [...bodies].sort((a, b) => b[1] - a[1])) {
+    console.info(`  ${body.padEnd(22)} ${n}`);
+  }
+
+  const employment = edges.docs
+    .map((d) => d.data() as Edge)
+    .filter((e) => e.type === "employed");
+  const atUnpaid = employment.filter((e) => unpaidSeatPlaceIds.has(e.target));
+  const dropped = atUnpaid.filter((e) => namesASupervisorySeat(e.name));
+  const kept = atUnpaid.filter((e) => !namesASupervisorySeat(e.name));
+  console.info(`  employment edges at those places: ${atUnpaid.length}`);
+  console.info(`    dropped (a seat on the organ) : ${dropped.length}`);
+  console.info(
+    `    kept (a real post)            : ${kept.length}` +
+      (kept.length
+        ? `   ${[...new Set(kept.map((e) => e.name ?? "(unnamed)"))].join(", ")}`
+        : ""),
+  );
+  console.info(
+    `    people holding a dropped seat : ${new Set(dropped.map((e) => e.source)).size}`,
+  );
+
+  // Does the *stored* counter agree with what the code would compute now? This
+  // is what says `/api/stats/computeNodes` has run since the ingest - without
+  // it every number above can be right and the table still sorts on the old
+  // one. `experienceMonths` is deliberately not compared: an open-ended spell
+  // measures to `new Date()`, so it moves between the stats run and this one.
+  const bySource = new Map<string, Edge[]>();
+  for (const doc of edges.docs) {
+    const e = doc.data() as Edge;
+    if (!e.source) continue;
+    bySource.set(e.source, [...(bySource.get(e.source) ?? []), e]);
+  }
+  let checked = 0;
+  const stale: string[] = [];
+  for (const doc of nodes.docs) {
+    const node = doc.data();
+    if (node.type !== "person") continue;
+    const own = bySource.get(doc.id);
+    if (!own?.some((e) => e.type === "employed")) continue;
+    checked += 1;
+    const expected = computeEdgeStats(
+      own,
+      publicPlaceIds,
+      {},
+      unpaidSeatPlaceIds,
+    );
+    const stored = node.stats?.edges?.all;
+    if (
+      (stored?.latestEmploymentStart ?? null) !==
+        expected.all.latestEmploymentStart ||
+      (stored?.currentlyEmployed ?? false) !== expected.all.currentlyEmployed
+    ) {
+      stale.push(
+        `${String(node.name).slice(0, 32)}: stored ${stored?.latestEmploymentStart ?? "null"}` +
+          `, expected ${expected.all.latestEmploymentStart ?? "null"}`,
+      );
+    }
+  }
+  console.info(`  people whose counters were checked: ${checked}`);
+  console.info(
+    `    disagreeing with the code       : ${stale.length}` +
+      (stale.length ? "   <- run /api/stats/computeNodes" : "   (all current)"),
+  );
+  for (const line of stale.slice(0, 10)) console.info(`      ${line}`);
 
   console.info(`\nnamed companies`);
   for (const check of CHECKS) {

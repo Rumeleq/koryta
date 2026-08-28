@@ -3,6 +3,7 @@ import * as logger from "firebase-functions/logger";
 import { getFirestore } from "firebase-admin/firestore";
 import { initializeApp, getApps } from "firebase-admin/app";
 import { computeEdgeStats } from "./stats";
+import { bodyIsPaidPost } from "./companyBodies";
 import type { Edge } from "./model";
 
 // Ensure the Firebase Admin SDK is initialized
@@ -47,6 +48,7 @@ export const onEdgeWritten = onDocumentWritten(
       ] as string[];
       const transitiveTargets: Record<string, string[]> = {};
       const publicPlaceIds = new Set<string>();
+      const unpaidSeatPlaceIds = new Set<string>();
 
       if (targetIds.length > 0) {
         // Determine which of the targets are public places, so that experience
@@ -56,10 +58,17 @@ export const onEdgeWritten = onDocumentWritten(
         );
         for (const doc of targetNodes) {
           const node = doc.data();
+          if (node?.type !== "place") continue;
           // Confirmed public only - `false` and absent both mean the ownership
           // is unknown, not that it is private. See `Company.isPublic`.
-          if (node?.type === "place" && node.isPublic === true) {
+          if (node.isPublic === true) {
             publicPlaceIds.add(doc.id);
+          }
+          // ...and of those, the ones whose supervisory organ nobody is paid to
+          // sit on, so a rada społeczna seat at an SPZOZ is left out too. Read
+          // from the same documents this loop already has, so it costs no reads.
+          if (!bodyIsPaidPost(node.supervisoryBody)) {
+            unpaidSeatPlaceIds.add(doc.id);
           }
         }
 
@@ -94,6 +103,7 @@ export const onEdgeWritten = onDocumentWritten(
         allEdges,
         publicPlaceIds,
         transitiveTargets,
+        unpaidSeatPlaceIds,
       );
 
       const nodeRef = db.collection("nodes").doc(sourceId);

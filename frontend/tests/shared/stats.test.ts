@@ -331,6 +331,99 @@ describe("shared/stats.ts", () => {
       expect(stats.all.latestEmploymentStart).toBeNull();
       expect(stats.all.experienceMonths).toBe(0);
     });
+
+    describe("seats on an unpaid supervisory organ", () => {
+      // How the 892 stored SPZOZ seats look: a public hospital, an `employed`
+      // edge, and the role every supervisory seat carries whatever the organ
+      // is really called.
+      const councilSeat = {
+        target: "szpital",
+        type: "employed",
+        name: "Rada Nadzorcza",
+        start_date: "2024-01-01T00:00:00Z",
+      } as Edge;
+
+      it("drops them from every employment number", () => {
+        const edges: Edge[] = [
+          councilSeat,
+          {
+            target: "public-co",
+            type: "employed",
+            name: "Zarząd",
+            start_date: "2020-01-01T00:00:00Z",
+            end_date: "2021-01-01T00:00:00Z",
+          } as Edge,
+        ];
+
+        const stats = computeEdgeStats(
+          edges,
+          new Set(["szpital", "public-co"]),
+          {},
+          new Set(["szpital"]),
+        );
+
+        // The 2024 seat is the most recent thing this person did, and it must
+        // not be what the „Ostatnie zatrudnienie" column reports.
+        expect(stats.all.latestEmploymentStart).toBe("2020-01-01");
+        expect(stats.all.experienceMonths).toBeCloseTo(1.0, 1);
+        expect(stats.all.currentlyEmployed).toBe(false);
+        expect(stats.all.currentlyEmployedTargetNodeIds).toEqual([]);
+      });
+
+      it("leaves the hospital reachable as a target", () => {
+        const stats = computeEdgeStats(
+          [councilSeat],
+          new Set(["szpital"]),
+          {},
+          new Set(["szpital"]),
+        );
+
+        // The seat is still a fact about the person, so they stay in the
+        // hospital's „Firmy" column and on the graph. Only the counters change.
+        expect(stats.all.targetNodeIds).toEqual(["szpital"]);
+      });
+
+      it("keeps a management post at the same hospital", () => {
+        // The register lists an SPZOZ's kierownik as its representation, which
+        // rejestr.io reports as a board seat: 16 stored `Zarząd` edges point at
+        // these hospitals, and every one of them is a salaried director.
+        const edges: Edge[] = [
+          {
+            target: "szpital",
+            type: "employed",
+            name: "Zarząd",
+            start_date: "2024-01-01T00:00:00Z",
+          } as Edge,
+        ];
+
+        const stats = computeEdgeStats(
+          edges,
+          new Set(["szpital"]),
+          {},
+          new Set(["szpital"]),
+        );
+
+        expect(stats.all.latestEmploymentStart).toBe("2024-01-01");
+        expect(stats.all.currentlyEmployed).toBe(true);
+      });
+
+      it("keeps the same seat at a company with an ordinary board", () => {
+        const stats = computeEdgeStats(
+          [{ ...councilSeat, target: "public-co" } as Edge],
+          new Set(["public-co"]),
+          {},
+          new Set(["szpital"]),
+        );
+
+        expect(stats.all.latestEmploymentStart).toBe("2024-01-01");
+      });
+
+      it("counts everything when no caller worked the organs out", () => {
+        const stats = computeEdgeStats([councilSeat], new Set(["szpital"]));
+
+        expect(stats.all.latestEmploymentStart).toBe("2024-01-01");
+      });
+    });
   });
 
   describe("computeNodeStats", () => {

@@ -252,3 +252,53 @@ def test_upload_payloads_company_shape(mock_ctx, monkeypatch):
 
     assert by_krs["0000158240"]["categories"] == []
     assert by_krs["0000999999"]["categories"] == ["szpitale"]
+
+
+def test_upload_payloads_carry_the_supervisory_organ(mock_ctx, monkeypatch):
+    """An SPZOZ payload says its supervisory organ is a rada spoleczna.
+
+    The whole reason the field exists is that the site cannot work this out: it
+    follows from `formaPrawna`, which never reaches a node. Asserted on the
+    payload rather than on `supervisory_body()` - that has its own tests in
+    `entities/tests/test_company_bodies.py` - because what matters here is that
+    the answer travels.
+    """
+    pipeline = Pipeline.create(CompaniesPayloads)
+    pipeline.companies = MockPipeline(
+        [
+            {
+                # SP ZOZ Szpital Specjalistyczny nr I w Bytomiu: in the
+                # associations register, so no PKD code at all.
+                "krs": "0000079907",
+                "name": "SP ZOZ Szpital Specjalistyczny nr I",
+                "city": "Bytom",
+                "activity": [],
+                "form": "SAMODZIELNY PUBLICZNY ZAKŁAD OPIEKI ZDROWOTNEJ",
+                "is_public": True,
+            },
+            {
+                "krs": "0000076705",
+                "name": "PKP Szybka Kolej Miejska w Trojmiescie",
+                "city": "Gdynia",
+                "activity": ["49.12.Z"],
+                "form": "SPÓŁKA AKCYJNA",
+                "is_public": True,
+            },
+        ]
+    )
+    monkeypatch.setattr(
+        "analysis.payloads.company.KorytaCompanies",
+        lambda *args, **kwargs: MockPipeline(
+            [{"krs": krs} for krs in ("0000079907", "0000076705")]
+        ),
+    )
+
+    by_krs = {
+        row["krs"]: row for row in pipeline.process(mock_ctx).to_dict(orient="records")
+    }
+
+    assert by_krs["0000079907"]["supervisory_body"] == "rada-spoleczna"
+    # ...and the same form is the only thing that can file it under szpitale.
+    assert by_krs["0000079907"]["categories"] == ["szpitale"]
+    # The empty string, not a missing key: it is what clears a stored value.
+    assert by_krs["0000076705"]["supervisory_body"] == ""

@@ -53,6 +53,24 @@ export default defineEventHandler(async (event) => {
   ) {
     revisionData.categories = body.categories;
   }
+  // Which organ supervises the company, on the same terms as `categories`: an
+  // empty string is a real answer and an absent one leaves the stored value
+  // alone. No `...Source: "manual"` escape hatch, unlike `categories` and
+  // `isPublic` below - those exist because a person can know something the
+  // register cannot show, and here the register *is* the answer. The value
+  // follows from `formaPrawna`, so a wrong one is a bug in
+  // `entities/company_bodies.py` rather than something to correct per company.
+  //
+  // Cleared rather than stored as "": absent is what every ordinary company
+  // says, so writing an empty marker onto 3,900 nodes would be a field that
+  // means nothing on all but 103 of them.
+  if (body.supervisory_body !== undefined) {
+    if (body.supervisory_body === "") {
+      delete revisionData.supervisoryBody;
+    } else {
+      revisionData.supervisoryBody = body.supervisory_body;
+    }
+  }
   // A human answer wins. KRS cannot see who owns a spółka akcyjna, so the
   // scrapers' `false` is "no evidence" rather than "privately owned", and
   // re-running an ingest must not undo somebody who knew better.

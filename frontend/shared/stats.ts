@@ -1,5 +1,6 @@
 import type { NodeStats, VoteDocument, Note, Edge } from "./model";
 import { pageIsPublic } from "./model";
+import { namesASupervisorySeat } from "./companyBodies";
 
 export function calculateExperience(edges: Edge[]): number {
   const intervals: { start: number; end: number }[] = [];
@@ -182,20 +183,34 @@ export function computeVoteStats(
   return aggregatedVotes;
 }
 
-/** Keeps only employment in a place the public sector is known to own.
+/** Keeps only employment the site counts: a paid post, in a place the public
+ * sector is known to own.
  *
  * The explore table reports experience and the latest employment date for
  * public institutions only — time spent in a private company is not what the
  * site tracks. Known is the operative word: a place whose ownership nobody
  * could establish is left out too, so these numbers are a floor rather than a
  * count. See `Company.isPublic` for why that gap exists.
+ *
+ * `unpaidSeatPlaceIds` takes out the seats that are not posts. A samodzielny
+ * publiczny zakład opieki zdrowotnej is supervised by a rada społeczna, whose
+ * members are delegates of the founding authority and are not paid for sitting
+ * on it — so it is out for the same reason a private employer is, and 892 such
+ * seats are stored across 238 hospitals. Which places those are is a claim
+ * about the institution (`Company.supervisoryBody`); which of a person's edges
+ * are seats on that organ rather than jobs at it is a claim about the role, so
+ * both have to hold. See `shared/companyBodies.ts`.
  */
 function publicEmployment(
   edges: Edge[],
   publicPlaceIds: ReadonlySet<string>,
+  unpaidSeatPlaceIds: ReadonlySet<string>,
 ): Edge[] {
   return edges.filter(
-    (e) => e.type === "employed" && publicPlaceIds.has(e.target),
+    (e) =>
+      e.type === "employed" &&
+      publicPlaceIds.has(e.target) &&
+      !(unpaidSeatPlaceIds.has(e.target) && namesASupervisorySeat(e.name)),
   );
 }
 
@@ -203,10 +218,23 @@ export function computeEdgeStats(
   nodeEdges: Edge[],
   publicPlaceIds: ReadonlySet<string>,
   transitiveTargets: Record<string, string[]> = {},
+  /** Places whose supervisory organ is one nobody is paid to sit on. Defaults
+   * to none, so a caller that has not worked them out keeps the numbers it
+   * computed before this existed rather than silently dropping seats it cannot
+   * classify. */
+  unpaidSeatPlaceIds: ReadonlySet<string> = new Set(),
 ) {
   const approvedEdges = nodeEdges.filter((e) => pageIsPublic(e));
-  const publicEdges = publicEmployment(nodeEdges, publicPlaceIds);
-  const publicApprovedEdges = publicEmployment(approvedEdges, publicPlaceIds);
+  const publicEdges = publicEmployment(
+    nodeEdges,
+    publicPlaceIds,
+    unpaidSeatPlaceIds,
+  );
+  const publicApprovedEdges = publicEmployment(
+    approvedEdges,
+    publicPlaceIds,
+    unpaidSeatPlaceIds,
+  );
 
   const allTargetNodeIds = [
     ...new Set(
@@ -280,6 +308,7 @@ export function computeNodeStats(
   nodeVotes: VoteDocument[],
   publicPlaceIds: ReadonlySet<string>,
   transitiveTargets: Record<string, string[]> = {},
+  unpaidSeatPlaceIds: ReadonlySet<string> = new Set(),
 ): NodeStats {
   return {
     isApproved: nodeIsApproved,
@@ -288,6 +317,11 @@ export function computeNodeStats(
       .map((n) => n.sources?.length || 0)
       .reduce((a, b) => a + b, 0),
     votes: computeVoteStats(nodeVotes),
-    edges: computeEdgeStats(nodeEdges, publicPlaceIds, transitiveTargets),
+    edges: computeEdgeStats(
+      nodeEdges,
+      publicPlaceIds,
+      transitiveTargets,
+      unpaidSeatPlaceIds,
+    ),
   };
 }

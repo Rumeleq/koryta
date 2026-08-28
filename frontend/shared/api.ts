@@ -39,6 +39,17 @@ export const companyRequestSchema = z.object({
    * Absent means they did not compute one at all, and the stored set is left
    * alone. */
   categories: z.array(z.string()).optional(),
+  /** What the company's supervisory organ is called, decided by the pipelines
+   * in `data/pipelines/src/entities/company_bodies.py` from the register's
+   * `formaPrawna`.
+   *
+   * Not validated against `supervisoryBodyValues`, for the reason `categories`
+   * is not: the pipelines and the site deploy separately. The empty string is
+   * a real answer - "the register was read and this form has no organ worth
+   * naming" - and clears whatever is stored, the way an empty `categories`
+   * array does. Absent means the payload did not work it out and the stored
+   * value is left alone. */
+  supervisory_body: z.string().optional(),
   /** Whether the public sector owns the company, as far as KRS shows — not
    * whether it is publicly traded. Only `true` is an assertion, see
    * `Company.isPublic`. */
@@ -53,6 +64,7 @@ export type CompanyRequest = {
   teryt?: string;
   activity?: string[];
   categories?: string[];
+  supervisory_body?: string;
   is_public?: boolean;
 };
 

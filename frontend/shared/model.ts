@@ -300,6 +300,23 @@ export interface Company extends Omit<Node, "type"> {
    * Absent means the scrapers wrote it, which is the case for every value
    * predating the edit form. */
   isPublicSource?: "manual";
+  /** What this institution's supervisory organ is called, e.g.
+   * `"rada-spoleczna"`.
+   *
+   * Absent is the ordinary case and means "nothing special to say": either the
+   * pipelines have not read the register's `formaPrawna` for this company, or
+   * they have and it is one whose organ is the rada nadzorcza every stored
+   * supervisory edge already claims. Only a value present here changes how the
+   * site reads those edges - see `shared/companyBodies.ts` for what each one
+   * means and `computeEdgeStats` for what it does.
+   *
+   * Worked out by the pipelines in
+   * `data/pipelines/src/entities/company_bodies.py`, because the answer comes
+   * from `formaPrawna`, which never reaches the node. Not editable from the
+   * page and so with no `...Source` marker of its own: `categories` and
+   * `isPublic` have one because a person can know what the register cannot
+   * show, and here the register is the answer. */
+  supervisoryBody?: string;
 }
 
 /** A stored array field, however Firestore happens to be holding it.

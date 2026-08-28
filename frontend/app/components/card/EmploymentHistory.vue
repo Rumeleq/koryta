@@ -170,6 +170,7 @@ import {
 } from "@mdi/js";
 import { entityIcon } from "~/utils/entityIcon";
 import { gapLabel } from "~~/shared/succession";
+import { displayRole } from "~~/shared/companyBodies";
 import type { Company } from "~~/shared/model";
 import type { PersonSuccession } from "~~/server/api/edges/successions.get";
 
@@ -232,8 +233,15 @@ const maxEnd = computed(() => {
   return new Date().toISOString().split("T")[0];
 });
 
+/** What the row calls the relation.
+ *
+ * `edge.label` is the edge's own name, which for a supervisory seat is
+ * "Rada Nadzorcza" whatever the institution's organ is really called - so a
+ * hospital's rada społeczna would read as a supervisory board it does not
+ * have. See `displayRole`.
+ */
 function edgeLabel(edge: EdgeNode) {
-  return edge.label;
+  return displayRole(edge.label, asCompany(edge)) ?? edge.label;
 }
 
 /** The party a candidacy was run for, on the edges that assert one.
