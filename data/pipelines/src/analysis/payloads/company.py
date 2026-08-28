@@ -6,6 +6,7 @@ import pandas as pd
 
 from analysis.interesting import Companies
 from entities.company import display_name
+from entities.company_bodies import supervisory_body
 from entities.company_categories import categories_for
 from scrapers.koryta.download import KorytaCompanies
 from scrapers.stores import Context, Pipeline
@@ -26,6 +27,11 @@ class CompaniesPayloads(Pipeline):
     correctly - behind a frontend constant that nothing could test against the
     register. A category a person has edited on the site is not overwritten:
     the ingest endpoint skips any node carrying `categoriesSource: "manual"`.
+
+    They also carry `supervisory_body`, from `entities.company_bodies`: the
+    243 SPZOZ hospitals are supervised by a rada spoleczna rather than a rada
+    nadzorcza, and a seat on one is unpaid, so the site has to be able to tell
+    those seats apart from the board seats it counts as employment.
 
     The payloads carry `teryt_code`, which the uploader maps to the `teryt`
     field the ingest endpoint links a company to its region with. They also
@@ -112,6 +118,7 @@ class CompaniesPayloads(Pipeline):
                 "name": name,
                 "activity": list(activity),
                 "categories": categories_for(krs, list(activity), form),
+                "supervisory_body": supervisory_body(form),
                 "is_public": is_public,
                 "owners": owners,
                 "owner_teryts": owner_teryts,
@@ -143,6 +150,7 @@ class CompaniesPayloads(Pipeline):
                     "name",
                     "activity",
                     "categories",
+                    "supervisory_body",
                     "is_public",
                     "owners",
                     "owner_teryts",

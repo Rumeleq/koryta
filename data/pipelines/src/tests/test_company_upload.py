@@ -86,3 +86,54 @@ def test_parents_are_split_when_the_payload_has_no_owners():
     payload = sent(instance)
     assert payload["owners"] == ["0000019193"]
     assert payload["owner_teryts"] == ["2261011", "22"]
+
+
+def test_the_supervisory_organ_is_filled_in_from_the_legal_form():
+    """The `Companies` shape again: a hospital created because somebody sits on
+    its rada spoleczna arrives with a `form` and nothing worked out from it."""
+    instance = uploader()
+    instance.submit_company(
+        "0000079907",
+        {
+            "krs": "0000079907",
+            "name": "SP ZOZ Szpital Specjalistyczny nr I w Bytomiu",
+            "form": "SAMODZIELNY PUBLICZNY ZAKŁAD OPIEKI ZDROWOTNEJ",
+        },
+    )
+    payload = sent(instance)
+    assert payload["supervisory_body"] == "rada-spoleczna"
+    # ...and the same form is what puts it in the hospitals category, which no
+    # PKD rule can do: an SPZOZ sits in the associations register and declares
+    # no przedmiot dzialalnosci at all.
+    assert payload["categories"] == ["szpitale"]
+
+
+def test_an_ordinary_company_says_its_organ_is_nothing_special():
+    """The empty string rather than a missing key: it is what clears a value
+    written before the mapping was corrected. See `ingest/company.post.ts`."""
+    instance = uploader()
+    instance.submit_company(
+        "0000076705",
+        {
+            "krs": "0000076705",
+            "name": "PKP SKM w Trojmiescie",
+            "form": "SPÓŁKA AKCYJNA",
+        },
+    )
+    assert sent(instance)["supervisory_body"] == ""
+
+
+def test_an_organ_the_pipeline_worked_out_is_not_recomputed():
+    """`CompaniesPayloads` decides it against the same table, but a payload that
+    states the field owns it - the same guard `categories` and `owners` have."""
+    instance = uploader()
+    instance.submit_company(
+        "0000079907",
+        {
+            "krs": "0000079907",
+            "name": "SP ZOZ Szpital Specjalistyczny nr I w Bytomiu",
+            "form": "SPÓŁKA AKCYJNA",
+            "supervisory_body": "rada-spoleczna",
+        },
+    )
+    assert sent(instance)["supervisory_body"] == "rada-spoleczna"

@@ -17,6 +17,7 @@ import {
 } from "~~/shared/revisions";
 import { computeNodeStats } from "~~/shared/stats";
 import { pageIsPublic } from "~~/shared/model";
+import { bodyIsPaidPost } from "~~/shared/companyBodies";
 import { getEdges, getNodesNoStats, getNodeGroups } from "~~/shared/graph/util";
 import { partyColors } from "~~/shared/misc";
 import {
@@ -59,6 +60,7 @@ function buildNodeUpdateData(
   nodeGroupSizeMap: Record<string, number>,
   targetCounts: Record<string, Set<string>>,
   publicPlaceIds: ReadonlySet<string>,
+  unpaidSeatPlaceIds: ReadonlySet<string>,
 ) {
   const transitiveTargets = calculateTransitiveTargets(
     nodeEdges,
@@ -73,6 +75,7 @@ function buildNodeUpdateData(
     nodeVotes,
     publicPlaceIds,
     transitiveTargets,
+    unpaidSeatPlaceIds,
   );
 
   stats.nodeGroupSize = nodeGroupSizeMap[node.id] || 0;
@@ -175,6 +178,17 @@ export default defineEventHandler(async (event) => {
   const publicPlaceIds = new Set(
     Object.entries(placesMap)
       .filter(([, place]) => place.isPublic === true)
+      .map(([id]) => id),
+  );
+
+  // Institutions whose supervisory organ is one nobody is paid to sit on - the
+  // SPZOZ hospitals and their rada społeczna. A seat there is dropped from the
+  // employment counters the same way a seat at a place nobody could show is
+  // publicly owned is. `supervisoryBody` is absent on every other company, so
+  // this is 243 of the 4,047 places.
+  const unpaidSeatPlaceIds = new Set(
+    Object.entries(placesMap)
+      .filter(([, place]) => !bodyIsPaidPost(place.supervisoryBody))
       .map(([id]) => id),
   );
 
@@ -292,6 +306,7 @@ export default defineEventHandler(async (event) => {
       nodeGroupSizeMap,
       targetCounts,
       publicPlaceIds,
+      unpaidSeatPlaceIds,
     );
 
     if (node.data.type === "region") {

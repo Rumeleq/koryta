@@ -385,6 +385,89 @@ describe("api/ingest/company", () => {
     );
   });
 
+  it("stores the organ that supervises an SPZOZ", async () => {
+    // KRS 0000079907: the register's dzial2.organNadzoru is a "RADA SPOŁECZNA",
+    // and rejestr.io reports its members under the same connection type as any
+    // board, so the edges say "Rada Nadzorcza". The node is what tells the site
+    // otherwise - see `data/pipelines/src/entities/company_bodies.py`.
+    mockReadBody.mockResolvedValue({
+      krs: "0000079907",
+      name: "SP ZOZ Szpital Specjalistyczny nr I w Bytomiu",
+      categories: ["szpitale"],
+      supervisory_body: "rada-spoleczna",
+    });
+    mockGet.mockResolvedValue({ empty: true, docs: [] });
+
+    await handler({} as any);
+
+    expect(createRevisionTransaction).toHaveBeenNthCalledWith(
+      1,
+      mockDb,
+      expect.anything(),
+      { uid: "test-user-id" },
+      expect.anything(),
+      expect.objectContaining({ supervisoryBody: "rada-spoleczna" }),
+      expect.objectContaining({ automatic: true }),
+    );
+  });
+
+  it("clears the organ when the payload says the form has none worth naming", async () => {
+    // The empty string is the pipelines saying they read `formaPrawna` and it
+    // is an ordinary company, which has to be able to undo a value written
+    // before the mapping was corrected.
+    mockReadBody.mockResolvedValue({
+      krs: "0000076705",
+      name: "PKP Szybka Kolej Miejska w Trójmieście",
+      supervisory_body: "",
+    });
+    const existingRef = { id: "existing-id" };
+    mockGet.mockResolvedValue({
+      empty: false,
+      docs: [
+        {
+          ref: existingRef,
+          data: () => ({ supervisoryBody: "rada-spoleczna", published: true }),
+        },
+      ],
+    });
+
+    await handler({} as any);
+
+    const revisionData = vi.mocked(createRevisionTransaction).mock.calls[0]![4];
+    expect(revisionData).not.toHaveProperty("supervisoryBody");
+  });
+
+  it("leaves the stored organ alone when the payload states none", async () => {
+    // A company created because somebody works there arrives from a pipeline
+    // that never read its legal form; silence is not "it has no organ".
+    mockReadBody.mockResolvedValue({
+      krs: "0000079907",
+      name: "SP ZOZ Szpital Specjalistyczny nr I w Bytomiu",
+    });
+    const existingRef = { id: "existing-id" };
+    mockGet.mockResolvedValue({
+      empty: false,
+      docs: [
+        {
+          ref: existingRef,
+          data: () => ({ supervisoryBody: "rada-spoleczna", published: true }),
+        },
+      ],
+    });
+
+    await handler({} as any);
+
+    expect(createRevisionTransaction).toHaveBeenNthCalledWith(
+      1,
+      mockDb,
+      expect.anything(),
+      { uid: "test-user-id" },
+      existingRef,
+      expect.objectContaining({ supervisoryBody: "rada-spoleczna" }),
+      expect.objectContaining({ automatic: true }),
+    );
+  });
+
   it("leaves the stored categories alone when the payload states none", async () => {
     // A payload from a pipeline that does not compute categories at all - the
     // person uploader creating a missing employer, say - must not be read as

@@ -10,6 +10,7 @@ import requests
 from analysis.interesting import Companies
 from conductor import setup_context
 from entities.company import display_name
+from entities.company_bodies import supervisory_body
 from entities.company_categories import categories_for
 from entities.composite import PersonScore
 from entities.person import is_pipeline_uid
@@ -267,14 +268,17 @@ class CompanyUploader(Uploader):
         # paths cannot disagree about what a company is - and so an empty list
         # from the payload producer stays empty rather than being taken for a
         # missing value.
+        form = payload.get("form")
+        form = form if isinstance(form, str) and form.strip() else None
         if "categories" not in payload:
             activity = payload.get("activity")
-            form = payload.get("form")
             payload["categories"] = categories_for(
                 payload.get("krs"),
                 list(activity) if isinstance(activity, (list, np.ndarray)) else [],
-                form if isinstance(form, str) and form.strip() else None,
+                form,
             )
+        if "supervisory_body" not in payload:
+            payload["supervisory_body"] = supervisory_body(form)
         # A company created because a person works there comes straight from
         # the Companies pipeline rather than through CompaniesPayloads, so it
         # needs the same disambiguation.

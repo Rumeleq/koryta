@@ -2,6 +2,7 @@ import { getFirestore, FieldPath } from "firebase-admin/firestore";
 import { getApp } from "firebase-admin/app";
 import { editorFreshCachedEventHandler } from "~~/server/utils/handlers";
 import { pageIsPublic } from "~~/shared/model";
+import { displayRole } from "~~/shared/companyBodies";
 import type { Company, Edge, Person } from "~~/shared/model";
 import type { H3Event } from "h3";
 import { z } from "zod";
@@ -26,7 +27,9 @@ export type RecentEmployment = {
    * flags mean nothing on their own - see `publicSectorKnown`. */
   companyIsPublic?: boolean;
   companyIsPublicSource?: "manual";
-  /** The role, as the edge names it. Null where nobody recorded one. */
+  /** The role, as the edge names it - except that a supervisory seat is named
+   * after the organ the company actually has, which the edge cannot be: see
+   * `displayRole`. Null where nobody recorded one. */
   role: string | null;
   start_date: string;
   end_date: string | null;
@@ -161,7 +164,10 @@ async function recentEmployments(event: H3Event): Promise<RecentEmployments> {
         companyName: company.name,
         companyIsPublic: (company as Company).isPublic,
         companyIsPublicSource: (company as Company).isPublicSource,
-        role: typeof edge.name === "string" && edge.name ? edge.name : null,
+        role:
+          typeof edge.name === "string"
+            ? (displayRole(edge.name, company as Company) ?? null)
+            : null,
         start_date: edge.start_date,
         end_date: edge.end_date ?? null,
       });
