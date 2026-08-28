@@ -79,6 +79,21 @@ describe("getLocalGraph", () => {
     edge("r1", "c2", "owns"),
   ];
 
+  it("drops a removed relation even for a reader asking for drafts", async () => {
+    // Removal is a different axis from approval: `showUnapproved` is the editor
+    // asking to see what nobody has reviewed yet, not what somebody reviewed
+    // and struck out. Without this an admin who removed a wrongly merged
+    // employment still saw it on the page they removed it from.
+    world(NODES, [
+      ...EDGES,
+      { ...edge("p1", "c2", "employed"), deleted: true } as FakeEdge,
+    ]);
+
+    const layout = await getLocalGraph("p1", true, 1, []);
+
+    expect(layout.edges.map((e) => e.id)).not.toContain("p1-c2");
+  });
+
   it("asks once and stops, at one hop", async () => {
     world(NODES, EDGES);
 
