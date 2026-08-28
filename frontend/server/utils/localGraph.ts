@@ -178,6 +178,13 @@ export async function getLocalGraph(
 
   const edgesFiltered = edgesFromDBRaw.filter(
     (e: Edge) =>
+      // Removal is not the same axis as approval, so `showUnapproved` does not
+      // reach it. A relation somebody took off the graph is gone for everyone -
+      // an editor asking for `latest` wants to see what has not been reviewed
+      // yet, not what has been reviewed and struck out. Without this the admin
+      // who removed a wrongly merged employment still saw it on the page, and
+      // could only tell it had worked by logging out.
+      e.deleted !== true &&
       (showUnapproved ? true : e.visibility) &&
       validNodeIds.has(e.source) &&
       validNodeIds.has(e.target),
