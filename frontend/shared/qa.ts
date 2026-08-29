@@ -116,6 +116,62 @@ export const QA_ITEMS: QaItem[] = [
     area: "public",
   },
   {
+    id: "tabela-osoba-i-historia",
+    title: "Tabela: osoba i jej historia w dwóch kolumnach",
+    description:
+      "W tabeli „Eksploruj” imię i partie są teraz jedną kolumną „Osoba”, a " +
+      "firmy, data ostatniego zatrudnienia i wybory drugą - „Historia”. Na " +
+      "telefonie zostają dwie szerokie kolumny zamiast czterech wąskich, " +
+      "więc plakietka partii nie jest już ucięta po sześciu literach ani " +
+      "nazwa firmy po ośmiu. Sortowanie po dacie ostatniego zatrudnienia " +
+      "siedzi od teraz na nagłówku „Historia” i jest wreszcie dostępne z " +
+      "telefonu, a stare linki z ?sortBy=latestEmploymentStart działają " +
+      "dokładnie jak dotąd.",
+    steps: [
+      "Wejdź na /eksploruj/tabela - w nagłówku mają być „Osoba” i „Historia” zamiast „Imię i nazwisko”, „Partie”, „Firmy” i „Wybory”.",
+      "Sprawdź kolumnę „Osoba”: plakietki partii mają stać obok nazwiska albo pod nim, a nie w osobnej kolumnie.",
+      "Sprawdź kolumnę „Historia”: mają w niej być plakietki firm, pod nimi „Ostatnie zatrudnienie: ” z datą, a obok (na komputerze) plakietki wyborów z rokiem i okręgiem.",
+      "Najedź na plakietkę firmy i na plakietkę wyborów - dymki z pełną nazwą firmy oraz z okręgiem, województwem i komitetem mają działać jak wcześniej.",
+      "Zwęź okno poniżej 960 px albo wejdź z telefonu - kolumny mają być dwie, nazwa partii ma się mieścić w całości albo być ucięta dopiero na szerokości kolumny, a tabeli nie da się przewinąć w bok.",
+      "Nadal na wąskim ekranie: pod firmami ma być sama data, bez podpisu „Ostatnie zatrudnienie”.",
+      "Kliknij nagłówek „Historia” - tabela ma się posortować, a w adresie ma się pojawić sortBy=latestEmploymentStart.",
+      "Zalogowany wejdź na /eksploruj/tabela?sortBy=latestEmploymentStart&sortDesc=true - lista ma się załadować (nie może być pusta), a strzałka sortowania ma stać przy „Historii”.",
+      "Kliknij nazwisko - w szufladzie mają być te same partie, firmy i wybory, w pełnej postaci.",
+      "Rozszerz okno powyżej 960 px - obok tych dwóch kolumn mają wrócić „Lata pracy”, „Notatki”, „Głosy łącznie”, „Twój głos” i „Eksploruj”.",
+    ],
+    link: "/eksploruj/tabela",
+    area: "public",
+  },
+  {
+    id: "eksploruj-nowe-tabela-w-karcie",
+    title: "„Eksploruj nowe”: tabela mieści się w karcie",
+    description:
+      "Tabela z osobą wystawała poza prawą krawędź swojej karty - na szerokim " +
+      "ekranie widać ją było wiszącą na tle strony, a na laptopie 1280 px " +
+      "ostatnie kolumny („Twój głos”, „Widoczność”, „Eksploruj”) były po " +
+      "prostu ucięte i nie dało się do nich dojechać żadnym suwakiem. Teraz " +
+      "tabela nigdy nie wychodzi poza kartę: jeśli zabraknie miejsca, " +
+      "przewija się w środku. Przy okazji zostało pięć kolumn zamiast " +
+      "jedenastu - „Osoba”, „Historia”, „Lata pracy”, „Twój głos” i " +
+      "„Eksploruj”. Zniknęły „Notatki” (wszystkie notatki są w całości niżej " +
+      "na tej samej stronie), „Widoczność” (w tej kolejce zawsze „Szkic”) " +
+      "oraz „Głosy łącznie”, której liczba przeniosła się pod nazwisko jako " +
+      "„Suma ocen”. Kolejka, sortowanie i głosowanie działają dokładnie tak " +
+      "samo; /eksploruj/tabela zostaje z kompletem kolumn.",
+    steps: [
+      "Wejdź zalogowany na /eksploruj/nowe. Tabela nad kartą osoby ma się kończyć równo z krawędzią białej karty - nic nie ma wystawać poza nią na tło strony.",
+      "Ustaw okno na około 1280 px szerokości i sprawdź prawą stronę wiersza: ikona „Eksploruj” i strzałki „Twój głos” mają być widoczne bez przewijania w bok. To są kroki 1 i 3 z paska nad tabelą, więc wcześniej nie dało się ich kliknąć na takim ekranie.",
+      "Policz kolumny - mają być dokładnie: „Osoba”, „Historia”, „Lata pracy”, „Twój głos”, „Eksploruj”. Kolumn „Notatki”, „Głosy łącznie” i „Widoczność” już nie ma.",
+      "Pod nazwiskiem osoby ma być drobny podpis „Suma ocen: N” - ta sama liczba, która wcześniej stała w kolumnie „Głosy łącznie”.",
+      "Przełącz kolejność na „Najwyżej oceniane” i klikaj „Następna osoba”: „Suma ocen” pod nazwiskiem ma maleć albo zostawać taka sama, nigdy rosnąć. To potwierdza, że liczba pod nazwiskiem jest tą, po której sortuje się kolejka.",
+      "Przewiń w dół do sekcji „Notatki”: są tam notatki tej osoby, także cudze, w całości - dlatego licznik notatek nie jest już potrzebny w tabeli.",
+      "Wejdź na /eksploruj/tabela: tam „Notatki”, „Głosy łącznie” i „Widoczność” zostają, a pod nazwiskiem nie ma żadnej „Sumy ocen”.",
+      "Zwęź okno do szerokości telefonu i wróć na /eksploruj/nowe: jeśli tabela się nie mieści, ma się przewijać w poziomie wewnątrz karty, a sama strona nie ma jechać w bok.",
+    ],
+    link: "/eksploruj/nowe",
+    area: "contributor",
+  },
+  {
     id: "spolki-skarbu-panstwa-maja-wlasciciela",
     title: "Spółki Skarbu Państwa mają wreszcie wpisanego właściciela",
     description:
