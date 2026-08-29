@@ -14,7 +14,13 @@ const mockDoc = vi.fn();
 const mockCollection = vi.fn();
 const mockBatch = vi.fn();
 const mockCommit = vi.fn();
-const mockRef = { id: "doc-ref-id" };
+// A real DocumentReference knows which collection it is in, and the ingest
+// asks: `revisionChangesNothing` compares a node against counters an edge
+// does not carry. The mock collection is one object whatever it is asked
+// for, so every ref out of it says "nodes" - the only ones that are read are
+// the person's.
+const nodesParent = { id: "nodes" };
+const mockRef = { id: "doc-ref-id", parent: nodesParent };
 
 const mockDb = {
   collection: mockCollection,
@@ -36,6 +42,7 @@ mockLimit.mockImplementation(() => queryMock);
 
 mockDoc.mockReturnValue({
   id: "new-doc-id",
+  parent: nodesParent,
   ref: mockRef,
 });
 mockBatch.mockReturnValue({
@@ -150,7 +157,11 @@ describe("api/ingest/person", () => {
 
     // Person query: Empty (creating new person)
     mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
-    mockDoc.mockReturnValueOnce({ id: "person-id", ref: mockRef });
+    mockDoc.mockReturnValueOnce({
+      id: "person-id",
+      parent: nodesParent,
+      ref: mockRef,
+    });
 
     // Region 1 (02) query: Found
     const regionRef1 = { id: "region-id-02" };
@@ -220,10 +231,18 @@ describe("api/ingest/person", () => {
     // clearAllMocks does not drain that queue.
     mockGet.mockReset();
     mockDoc.mockReset();
-    mockDoc.mockReturnValue({ id: "new-doc-id", ref: mockRef });
+    mockDoc.mockReturnValue({
+      id: "new-doc-id",
+      parent: nodesParent,
+      ref: mockRef,
+    });
 
     mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
-    mockDoc.mockReturnValueOnce({ id: "person-id", ref: mockRef });
+    mockDoc.mockReturnValueOnce({
+      id: "person-id",
+      parent: nodesParent,
+      ref: mockRef,
+    });
     mockGet.mockResolvedValueOnce({
       empty: false,
       docs: [{ ref: { id: "teryt1465" }, id: "teryt1465" }],
@@ -270,6 +289,7 @@ describe("api/ingest/person", () => {
       mockDoc.mockReset();
       mockDoc.mockImplementation((id?: string) => ({
         id: id ?? "new-doc-id",
+        parent: nodesParent,
         ref: mockRef,
       }));
       mockGet.mockResolvedValueOnce({
@@ -322,7 +342,7 @@ describe("api/ingest/person", () => {
       // than proposed - through the same path any approved revision takes.
       expect(createRevisionTransaction).toHaveBeenCalledTimes(1);
       const call = vi.mocked(createRevisionTransaction).mock.calls[0]!;
-      expect(call[3]).toEqual({ id: "stored-0", ref: mockRef });
+      expect(call[3]).toMatchObject({ id: "stored-0" });
       expect(call[4]).toEqual({
         ...storedCandidacy,
         committee: "Komitet Wyborczy Prawo i Sprawiedliwość",
@@ -579,7 +599,11 @@ describe("api/ingest/person", () => {
     function personExists(stored: Record<string, unknown>, published = false) {
       mockGet.mockReset();
       mockDoc.mockReset();
-      mockDoc.mockReturnValue({ id: "person-id", ref: mockRef });
+      mockDoc.mockReturnValue({
+        id: "person-id",
+        parent: nodesParent,
+        ref: mockRef,
+      });
       mockGet.mockResolvedValueOnce({
         empty: false,
         docs: [
@@ -747,9 +771,26 @@ describe("api/ingest/person", () => {
         elections: [],
       });
 
-      await handler({} as any);
+      const result = await handler({} as any);
 
       expect(createRevisionTransaction).not.toHaveBeenCalled();
+      // And says so, so a caller submitting a region can tell a run that
+      // changed nothing from one that did.
+      expect(result).toMatchObject({ person: "unchanged" });
+    });
+
+    it("reports the person as updated when it did write one", async () => {
+      personExists({ name: "Test Person", type: "person", parties: [] });
+      mockReadBody.mockResolvedValue({
+        name: "Test Person",
+        parties: ["PiS"],
+        companies: [],
+        elections: [],
+      });
+
+      const result = await handler({} as any);
+
+      expect(result).toMatchObject({ person: "updated" });
     });
   });
 });

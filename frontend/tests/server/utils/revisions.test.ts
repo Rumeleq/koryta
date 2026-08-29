@@ -6,6 +6,8 @@ import {
   INTERNAL_FIELDS,
   proposalId,
   proposeRevisionTransaction,
+  revisionChangesNothing,
+  sameStoredValue,
   sanitizeFirestoreData,
   withoutInternalFields,
 } from "../../../server/utils/revisions";
@@ -690,5 +692,235 @@ describe("the update_automatic invariant", () => {
     for (const field of INTERNAL_FIELDS) {
       expect(skippedChangeFields.has(field), `${field} is diffed`).toBe(true);
     }
+  });
+});
+
+describe("sameStoredValue", () => {
+  it("does not mind what order the keys are in", () => {
+    // The one thing a stringify comparison gets wrong. A revision is built by
+    // spreading a payload over the stored document, which moves every field the
+    // payload restates to the end of the object.
+    expect(sameStoredValue({ a: 1, b: 2 }, { b: 2, a: 1 })).toBe(true);
+  });
+
+  it("does mind what order an array is in", () => {
+    // `activity` is a list of PKD codes and `parties` a list of parties, and
+    // the order they are stored in is what the page shows.
+    expect(sameStoredValue(["a", "b"], ["b", "a"])).toBe(false);
+  });
+
+  it("tells an absent field from one set to undefined", () => {
+    expect(sameStoredValue({ a: 1 }, { a: 1, b: undefined })).toBe(false);
+  });
+
+  it("compares nested maps and arrays by value", () => {
+    expect(
+      sameStoredValue(
+        { stats: { nodeGroupSize: 2 }, categories: ["koleje"] },
+        { stats: { nodeGroupSize: 2 }, categories: ["koleje"] },
+      ),
+    ).toBe(true);
+    expect(
+      sameStoredValue(
+        { stats: { nodeGroupSize: 2 } },
+        { stats: { nodeGroupSize: 3 } },
+      ),
+    ).toBe(false);
+  });
+
+  it("asks a Firestore value how it compares", () => {
+    // A Timestamp or a DocumentReference is a class instance, so identity would
+    // say two readings of the same document differ. Both carry `isEqual`.
+    const stamp = (millis: number) => ({
+      millis,
+      isEqual(other: { millis: number }) {
+        return other.millis === millis;
+      },
+    });
+    expect(sameStoredValue(stamp(1), stamp(1))).toBe(true);
+    expect(sameStoredValue(stamp(1), stamp(2))).toBe(false);
+    // And a plain map is not one of them, whichever side it is on.
+    expect(sameStoredValue(stamp(1), { millis: 1 })).toBe(false);
+  });
+});
+
+describe("revisionChangesNothing", () => {
+  /** A company as the ingest finds it: live, approved, counted. */
+  const storedCompany = () => ({
+    name: "PKP Szybka Kolej Miejska w Trójmieście",
+    type: "place",
+    krsNumber: "0000076705",
+    activity: ["49.12.Z", "49.31.Z"],
+    categories: ["koleje"],
+    isPublic: true,
+    published: true,
+    revision_id: { id: "rev-1" },
+    stats: { nodeGroupSize: 4, isApproved: true },
+  });
+
+  const approvedOptions = (stored: Record<string, unknown>) => ({
+    automatic: true,
+    approve: true,
+    stored,
+    published: true,
+  });
+
+  it("recognises a payload that restates what the node already says", () => {
+    const stored = storedCompany();
+    expect(
+      revisionChangesNothing(
+        nodeRef("node-1"),
+        withoutInternalFields(stored),
+        approvedOptions(stored),
+      ),
+    ).toBe(true);
+  });
+
+  it("agrees with the write it is standing in for", () => {
+    // The point of the two sharing `revisionTargetData`: where this says
+    // nothing would change, the write it skipped really would have set the
+    // document back to exactly what it holds - bar the pointer to the new
+    // revision, which is the one field a skip leaves as it was.
+    vi.clearAllMocks();
+    vi.mocked(mockCollection().doc).mockReturnValue({
+      id: "new-rev-id",
+    } as unknown as DocumentReference);
+    const stored = storedCompany();
+    const data = withoutInternalFields(stored);
+    const targetRef = nodeRef("node-1");
+
+    expect(
+      revisionChangesNothing(targetRef, data, approvedOptions(stored)),
+    ).toBe(true);
+
+    createRevisionTransaction(
+      mockDb,
+      mockBatch,
+      { uid: "pipeline" },
+      targetRef,
+      data,
+      approvedOptions(stored),
+    );
+    const written = {
+      ...(vi.mocked(mockBatch.set).mock.calls[1]![1] as object),
+    };
+    delete (written as { revision_id?: unknown }).revision_id;
+    expect(written).toEqual({ ...stored, revision_id: undefined });
+  });
+
+  it("does not mind the payload putting the fields in another order", () => {
+    const stored = storedCompany();
+    const reordered = {
+      krsNumber: stored.krsNumber,
+      categories: stored.categories,
+      isPublic: stored.isPublic,
+      activity: stored.activity,
+      type: stored.type,
+      name: stored.name,
+    };
+    expect(
+      revisionChangesNothing(
+        nodeRef("node-1"),
+        reordered,
+        approvedOptions(stored),
+      ),
+    ).toBe(true);
+  });
+
+  it("sees a field the payload has learned", () => {
+    const stored = storedCompany();
+    expect(
+      revisionChangesNothing(
+        nodeRef("node-1"),
+        {
+          ...withoutInternalFields(stored),
+          categories: ["koleje", "szpitale"],
+        },
+        approvedOptions(stored),
+      ),
+    ).toBe(false);
+  });
+
+  it("sees a field the write would delete", () => {
+    // The write is a `set`, so a revision that says less than the document does
+    // is not a no-op: it drops the difference.
+    const stored = storedCompany();
+    const { isPublic: _dropped, ...without } = withoutInternalFields(stored);
+    expect(
+      revisionChangesNothing(
+        nodeRef("node-1"),
+        without,
+        approvedOptions(stored),
+      ),
+    ).toBe(false);
+  });
+
+  it("never skips creating a document", () => {
+    expect(
+      revisionChangesNothing(
+        nodeRef("node-1"),
+        { name: "Nowa", type: "place" },
+        {
+          automatic: true,
+          approve: true,
+          published: true,
+        },
+      ),
+    ).toBe(false);
+  });
+
+  it("writes a company that has no approved revision to point at", () => {
+    // Approving is what gives the node its `revision_id`, so a node without one
+    // needs the write even where it already says the right thing.
+    const { revision_id: _none, ...stored } = storedCompany();
+    expect(
+      revisionChangesNothing(
+        nodeRef("node-1"),
+        withoutInternalFields(stored),
+        approvedOptions(stored),
+      ),
+    ).toBe(false);
+  });
+
+  it("writes a company whose counters nothing has filled in", () => {
+    // `withSeededNodeStats` would add them, and `/api/nodes` filters every
+    // listing on `stats.isApproved` - a node missing it is on the site and in
+    // no list that leads there, so the write is a repair.
+    const { stats: _none, ...stored } = storedCompany();
+    expect(
+      revisionChangesNothing(
+        nodeRef("node-1"),
+        withoutInternalFields(stored),
+        approvedOptions(stored),
+      ),
+    ).toBe(false);
+  });
+
+  it("writes when the caller is changing what the public can see", () => {
+    const stored = storedCompany();
+    expect(
+      revisionChangesNothing(nodeRef("node-1"), withoutInternalFields(stored), {
+        ...approvedOptions(stored),
+        published: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("does not ask an edge for the counters only a node carries", () => {
+    const stored = {
+      source: "node-1",
+      target: "node-2",
+      type: "employed",
+      name: "Prezes",
+      published: true,
+      revision_id: { id: "rev-1" },
+    };
+    expect(
+      revisionChangesNothing(
+        targetRefIn("edges", "edge-1"),
+        withoutInternalFields(stored),
+        approvedOptions(stored),
+      ),
+    ).toBe(true);
   });
 });
