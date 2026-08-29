@@ -16,15 +16,24 @@ test("filters the table to an institution with no KRS number", async ({
   });
   await expect(page.locator(".v-main")).toBeVisible();
 
-  // Selected in the filter, so it can be seen and cleared like any other
+  // Named on the query bar, so it can be seen and cleared like any other
+  // filter. It used to be a chip inside the always-open „Instytucje”
+  // autocomplete; that control is behind the „Filtry” button now and is not in
+  // the dom until the panel is opened, and the rail is what stands in for it.
+  // Scoped to the rail because the table's own „Firmy” column draws a chip
+  // with this same name on every matching row.
   await expect(
-    page
-      .locator(".v-autocomplete", { hasText: "Instytucje" })
-      .locator(".v-chip__content"),
-  ).toContainText("Firma Testowa", { timeout: 30_000 });
+    page.locator(".tabela-query-bar__rail .v-chip", {
+      hasText: "Firma Testowa",
+    }),
+  ).toBeVisible({ timeout: 30_000 });
 
-  // ...and given the summary card that is a place's page on this site
-  const card = page.locator(".v-card", { hasText: "Firma Testowa" }).first();
+  // ...and given the summary card that is a place's page on this site. Located
+  // by the REGON rather than by the name: the card sits below the table now,
+  // and the table's own card carries the company's name on every row, so
+  // `.first()` on the name would answer with the table.
+  const card = page.locator(".v-card", { hasText: "REGON: 123456785" }).first();
+  await expect(card).toContainText("Firma Testowa");
   await expect(card).toBeVisible();
   // Named by the registers it *is* in. KRS has no entry for a ministry, an
   // urząd or a wojewódzki fundusz, so REGON and NIP are all a reader has to

@@ -12,20 +12,80 @@
       @removed="refreshFocusedEdges()"
     />
     <div class="pa-4">
-      <!-- Three lines of text-h4 is a fifth of a phone screen spent on a
-           title the reader just clicked their way to. -->
-      <h1 class="text-h6 text-md-h4 mb-2 mb-md-4">
-        Eksploruj powiązania dla
-        {{ entityName }}
-      </h1>
+      <!-- The whole chrome of this page, in one 44px bar (plus a 32px work row
+           for a reader who is signed in). It carries the h1, the filters, a
+           chip per filter that is narrowing the table, the row count, the sort
+           and the share link. What used to be here - a three line title, six
+           always open dropdowns, a progress card - put the first row of data
+           697px down a 1440px desktop and 588px down a 390px phone.
 
-      <ExploreSelectedCompanies :companies="selectedCompaniesData" />
+           The row count goes up only when the reader has changed it:
+           `shareUrl` drops `page=1` by itself but has no default row count to
+           compare against, so the share card would offer „Dołącz stronę i
+           liczbę wierszy” on an untouched first page and ticking it would add
+           `itemsPerPage=10`, which is what the recipient gets anyway. -->
+      <FormEksplorujTabelaFilters
+        v-model:visibility="filterVisibility"
+        v-model:party="filterParty"
+        v-model:teryt="filterTeryt"
+        v-model:company-teryt="filterCompanyTeryt"
+        v-model:place="filterPlace"
+        v-model:category="filterCategory"
+        v-model:hide-voted="filterHideVoted"
+        v-model:currently-employed="filterCurrentlyEmployed"
+        v-model:min-employment-date="filterMinEmploymentDate"
+        v-model:min-votes="filterMinVotes"
+        v-model:sort-by="sortBy"
+        :available-parties="availableParties"
+        :available-regions="availableRegions"
+        :available-companies="availableCompanies"
+        :show-visibility="!!user"
+        :total-items="totalItems"
+        :page="page"
+        :items-per-page="
+          itemsPerPage === DEFAULT_ITEMS_PER_PAGE ? undefined : itemsPerPage
+        "
+        :progress-query="apiQuery"
+        :show-progress="!!user"
+        show-share
+        @clear="clearFilters"
+      />
+
+      <v-card class="table-card">
+        <ExploreTable
+          v-model:items-per-page="itemsPerPage"
+          v-model:page="page"
+          v-model:sort-by="sortBy"
+          :headers="headers"
+          :items="tableItems"
+          :total-items="totalItems"
+          :pending="pending"
+          :region="region"
+          :company="company"
+          search-with-name
+          score-on-phone
+          @focus="focusPerson"
+        />
+      </v-card>
+
+      <!-- Below the table on purpose, all three of them. None answers the
+           question the reader came with - which people are in here - and above
+           the table they were answering it last: the banner and the alert are
+           addressed to somebody who has already looked, and the list of
+           selected companies repeats what the „Firmy” chips on the bar now
+           say. A reader who has read a screenful of rows is exactly the one
+           who might log in or donate. -->
+      <ExploreLoginBanner
+        v-if="!user"
+        :hidden-count="hiddenCount"
+        class="mt-6"
+      />
 
       <v-alert
         v-if="region && !company"
         type="warning"
         variant="tonal"
-        class="mb-4"
+        class="mt-4"
         :icon="mdiCash"
       >
         <div class="d-flex align-center w-100">
@@ -52,47 +112,10 @@
         </div>
       </v-alert>
 
-      <ExploreLoginBanner v-if="!user" :hidden-count="hiddenCount" />
-
-      <FormEksplorujTabelaFilters
-        v-model:visibility="filterVisibility"
-        v-model:party="filterParty"
-        v-model:teryt="filterTeryt"
-        v-model:company-teryt="filterCompanyTeryt"
-        v-model:place="filterPlace"
-        v-model:category="filterCategory"
-        v-model:hide-voted="filterHideVoted"
-        v-model:currently-employed="filterCurrentlyEmployed"
-        v-model:min-employment-date="filterMinEmploymentDate"
-        v-model:min-votes="filterMinVotes"
-        :available-parties="availableParties"
-        :available-regions="availableRegions"
-        :available-companies="availableCompanies"
-        :show-visibility="!!user"
+      <ExploreSelectedCompanies
+        :companies="selectedCompaniesData"
+        class="mt-4"
       />
-
-      <!-- How much of the base has been checked, and a link to go and check
-           some of it, is a progress report to the people doing the checking.
-           A reader who is not logged in cannot act on either, and on a phone
-           the bar and its legend cost most of the space above the first row -
-           the thing they came for. `/eksploruj/nowe` carries the same bar for
-           the people it is written for, behind the auth middleware. -->
-      <ExploreProgressBar v-if="user" :query="apiQuery" class="mb-4" />
-
-      <v-card class="table-card">
-        <ExploreTable
-          v-model:items-per-page="itemsPerPage"
-          v-model:page="page"
-          v-model:sort-by="sortBy"
-          :headers="headers"
-          :items="tableItems"
-          :total-items="totalItems"
-          :pending="pending"
-          :region="region"
-          :company="company"
-          @focus="focusPerson"
-        />
-      </v-card>
     </div>
   </ClientOnly>
 </template>
@@ -166,18 +189,19 @@ const sortBy = computed<SortEntry[]>({
 const user = useCurrentUser();
 
 // What is left of the table below 960px: two columns, who the person is and
-// what they have done. Everything marked with this - notes, votes, the vote
-// control, visibility, the explore buttons - is there to steer exploration
-// rather than to read a row, and all of it is in the drawer the name opens.
-// The whole set on a phone meant scrolling sideways past them to reach
-// anything, at the same boundary the drawer and the sticky header already
-// switch on.
+// what they have done. Everything marked with this - elections, votes, the
+// vote control, visibility - is there to steer exploration rather than to read
+// a row, and all of it is in the drawer the name opens. The whole set on a
+// phone meant scrolling sideways past them to reach anything, at the same
+// boundary the drawer and the sticky header already switch on.
 //
-// It was four columns until the reporter pointed out that they were four
+// It was eight columns until the reporter pointed out that most of them were
 // truncated ones: a party ellipsised after six letters and a company after
-// eight, in 60 and 72 pixels each. Name+partie and firmy+wybory are one
-// reading apiece, so they are one cell apiece now (explore/Table.vue), and
-// the two that are left get 120 and 185 pixels of the same 343.
+// eight. Name+partie is one reading and so is firmy+data, so they are one cell
+// apiece now (explore/Table.vue); „Lata pracy” and „Notatki” stopped being
+// columns altogether, because seven days of api logs put them at under 4% of
+// sorted queries between them and they are still reachable from the sort menus
+// on the two columns that absorbed them.
 //
 // A stylesheet rather than `useDisplay().smAndDown` and a shorter array:
 // under SSR Vuetify builds its display state from a placeholder width of
@@ -193,32 +217,34 @@ const PHONE_HIDDEN = {
 
 const headers = computed(() => {
   const baseHeaders = [
+    // The pink „otwórz wyszukiwarki” button rides in this cell on a desktop
+    // (`search-with-name`); the „Eksploruj” column it came from is gone. Its
+    // other half, the magnifier, only opened the drawer - which is what
+    // clicking the name has always done.
     { title: "Osoba", key: "name", sortable: true },
-    // Keyed on `latestEmploymentStart`, which is what the merged cell in
-    // explore/Table.vue renders and what this column still sorts on. The key
-    // is emitted verbatim as `?sortBy=` and handed to a Firestore `orderBy`
-    // with no allow-list in between, so a prettier `history` would empty the
+    // Keyed on `latestEmploymentStart` rather than on a `firmy` matching the
+    // title. The key is emitted verbatim as `?sortBy=` and handed to a
+    // Firestore `orderBy` with no allow-list in between
+    // (`server/api/nodes/index.get.ts:145`), so a prettier key would empty the
     // table rather than reorder it - and would strand the
     // `?sortBy=latestEmploymentStart` links that /eksploruj/nowe and the QA
-    // list already carry. Not phone-hidden: the sort is now reachable down
-    // there, where the date column never was.
-    { title: "Historia", key: "latestEmploymentStart", sortable: true },
+    // list already carry. „Lata pracy” is in this column's sort menu. Not
+    // phone-hidden: the employers are half of what a row says.
+    { title: "Firmy", key: "latestEmploymentStart", sortable: true },
+    // `sortable: false` and it has to stay that way: `elections` is not a key
+    // the api maps onto a Firestore path, so a click would put it into
+    // `orderBy` verbatim and answer with an empty table rather than an error.
+    // Below 960px explore/Table.vue folds these chips back into the „Firmy”
+    // cell, where they cost no column of their own.
+    { title: "Wybory", key: "elections", sortable: false, ...PHONE_HIDDEN },
+    // `stats.votes.interesting`, spelled the way the api spells it; the old
+    // `votes.interesting` matched no slot at all. „Notatki” is in this
+    // column's sort menu. Hidden on a phone, where the number comes back as a
+    // line under the name (`score-on-phone`) - at 390px this header sits at
+    // x=363 on a 358px viewport, so neither the count nor the sort behind it
+    // can be reached.
     {
-      title: "Lata pracy",
-      key: "experience",
-      sortable: true,
-      align: "center" as const,
-      ...PHONE_HIDDEN,
-    },
-    {
-      title: "Notatki",
-      key: "notesCount",
-      sortable: true,
-      align: "center" as const,
-      ...PHONE_HIDDEN,
-    },
-    {
-      title: "Głosy łącznie",
+      title: "Oceny",
       key: "stats.votes.interesting",
       sortable: true,
       align: "center" as const,
@@ -240,12 +266,6 @@ const headers = computed(() => {
       ...PHONE_HIDDEN,
     });
   }
-  baseHeaders.push({
-    title: "Eksploruj",
-    key: "explore",
-    sortable: false,
-    ...PHONE_HIDDEN,
-  });
   return baseHeaders;
 });
 
@@ -309,12 +329,6 @@ const selectedCompaniesData = computed(() => {
   return selected;
 });
 
-const entityName = computed(() => {
-  if (filterPlace.value) return "wybranych firm";
-  if (region.value) return region.value[1];
-  return "aktualnego wyszukiwania";
-});
-
 const filterVisibility = choiceFilter<"all" | "public" | "private">(
   "visibility",
   "all",
@@ -338,6 +352,34 @@ const filterHideVoted = choiceFilter<"all" | "no_votes" | "has_votes">(
 );
 const filterMinEmploymentDate = stringFilter("minEmploymentDate");
 const filterMinVotes = numberFilter("minVotes");
+
+/** Every filter dropped in one write, which is why the bar asks the page to do
+ * it rather than doing it itself: each filter above is a writable computed
+ * over `route.query`, and each write builds a `router.push` from the query as
+ * it is now. `route.query` only changes once the navigation is confirmed, so
+ * twelve writes in one tick would all start from the same still-filtered url
+ * and the last one would win - eleven filters left standing after a button
+ * that promised none. It is also one history entry rather than twelve.
+ *
+ * `parties` and `krs` are in the list without a control of their own: they are
+ * the spellings older links use for `party` and `place`, and a „Wyczyść” that
+ * left them behind would clear the chips and none of the filtering. */
+const clearFilters = () =>
+  void setQuery({
+    category: undefined,
+    teryt: undefined,
+    companyTeryt: undefined,
+    party: undefined,
+    parties: undefined,
+    place: undefined,
+    krs: undefined,
+    currentlyEmployed: undefined,
+    visibility: undefined,
+    hideVoted: undefined,
+    minEmploymentDate: undefined,
+    minVotes: undefined,
+    page: undefined,
+  });
 
 const availableRegions = computed(() =>
   regionFilterOptions(Object.values(regions.value ?? {})),

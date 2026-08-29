@@ -48,6 +48,47 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
  * before the list could be read at all. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "tabela-pasek-zapytania",
+    title: "Tabela eksploracji: jeden pasek zamiast ekranu filtrów",
+    description:
+      "Na /eksploruj/tabela pierwszy wiersz danych zaczynał się 697 pikseli " +
+      "od góry na komputerze i 588 na telefonie - wcześniej były tam trzy " +
+      "linijki tytułu, sześć zawsze otwartych list filtrów i karta z " +
+      "postępem. Teraz jest jeden pasek: tytuł, przycisk „Filtry” z liczbą " +
+      "aktywnych filtrów, żeton dla każdego filtru, który zawęża tabelę, " +
+      "liczba osób, sortowanie i przycisk udostępniania. Zalogowany dostaje " +
+      "pod nim drugą linijkę z postępem sprawdzania, swoim wkładem i " +
+      "skrótami do czterech najczęściej używanych filtrów weryfikacji. " +
+      "Kolumny są scalone: „Firmy” niosą datę ostatniego zatrudnienia i " +
+      "staż („od 2021-03-01 · 11 lat pracy”), „Oceny” liczbę notatek, a " +
+      "„Lata pracy” i „Notatki” przeniosły się do menu sortowania w " +
+      "nagłówkach tych kolumn - obie liczby są więc nadal w wierszu, po " +
+      "którym się sortuje. Kolumna „Eksploruj” " +
+      "zniknęła - lupa robiła to samo co kliknięcie w nazwisko, a różowy " +
+      "przycisk wyszukiwarek stoi teraz obok nazwiska. Baner logowania, " +
+      "apel o zrzutkę i lista wybranych firm są pod tabelą.",
+    steps: [
+      "Wejdź na /eksploruj/tabela wylogowany: nad tabelą ma być tylko jeden pasek z nagłówkiem „Powiązania osób i spółek publicznych”, a pierwsze nazwisko widoczne bez przewijania.",
+      "Kliknij „Filtry”, wybierz kategorię i zamknij panel - na pasku ma przybyć żeton z nazwą kategorii, a licznik przy przycisku ma pokazać „Filtry (1)”.",
+      "Kliknij x na tym żetonie: filtr znika z paska i z adresu strony, a liczba osób obok się zmienia.",
+      "Ustaw kilka filtrów naraz i sprawdź, że żetony zawijają się do drugiej linijki zamiast chować się poza ekranem; potem kliknij „Wyczyść” - mają zniknąć wszystkie za jednym razem.",
+      "Kliknij nagłówek kolumny „Firmy”, a potem otwórz jego menu i wybierz sortowanie po latach pracy - tabela ma się przeładować i nie może być pusta, a pod firmami ma stać podpis „Ostatnie zatrudnienie: <data> · N lat pracy”, czyli liczba, po której właśnie posortowałeś.",
+      "To samo w kolumnie „Oceny”: menu ma dawać sortowanie po sumie ocen i po liczbie notatek, a pod sumą ocen ma być podpis „N notatek”. Wiersz bez notatek ma zostać jednolinijkowy.",
+      "Sprawdź przycisk sortowania na pasku: na świeżo otwartej tabeli ma pisać „Sortowanie” bez strzałki, a po wybraniu sortowania skróconą nazwę („Zatrudnienie”, „Oceny”, „Notatki”) i strzałkę kierunku.",
+      "Otwórz ręcznie stary link /eksploruj/tabela?sortBy=latestEmploymentStart&sortDesc=true - tabela ma się wypełnić danymi, a nie pokazać „Brak danych”.",
+      "Kliknij przycisk udostępniania po prawej stronie paska i sprawdź, że skopiowany adres po wklejeniu w nowej karcie odtwarza ten sam zestaw filtrów.",
+      "Przejdź na drugą stronę wyników i otwórz udostępnianie ponownie: ma się pojawić pole „Dołącz stronę i liczbę wierszy”. Odznaczone - link prowadzi na pierwszą stronę; zaznaczone - adres dostaje page=2. Na pierwszej stronie i przy domyślnej liczbie wierszy tego pola nie ma, bo nie miałoby czego dodać.",
+      "Zaloguj się: pod paskiem ma się pojawić druga linijka z paskiem postępu i zdaniem „sprawdzono X z Y osób”, „Twój wkład” w tej samej linijce i czterema skrótami: „+ Widoczność”, „+ Bez ocenionych”, „+ Od kiedy”, „+ Min. głosy”.",
+      "Kliknij „+ Bez ocenionych”: lista, która się otworzy, ma mieć pozycję o dokładnie tej samej nazwie („Bez ocenionych”), a po jej wybraniu na wierszu ma zostać żeton „bez ocenionych”. Tak samo „+ Widoczność” i jej „Tylko szkice”.",
+      "Kliknij „+ Min. głosy”, ustaw 5 - ma powstać żeton „min. 5 głosów”; kliknij w jego środek, żeby zmienić wartość na 10 bez czyszczenia filtru.",
+      "Zwęź okno do szerokości telefonu (390px): mają zostać dwie kolumny - „Osoba” i „Firmy” - liczba osób ma nadal być widoczna na pasku, suma ocen ma się pokazać jako podpis pod nazwiskiem, i nie może być poziomego przewijania.",
+      "Nadal na telefonie: przycisk sortowania ma mieć widoczną nazwę - to jedyne miejsce, z którego można tam sortować, bo nagłówki „Oceny” i „Wybory” są schowane - a plakietki wyborów mają wrócić do komórki „Firmy”, gdzie na komputerze jest ich osobna kolumna.",
+      "Przewiń na sam dół strony: baner logowania (dla wylogowanego), apel o zrzutkę i lista wybranych firm mają być pod tabelą, w tej kolejności.",
+    ],
+    link: "/eksploruj/tabela",
+    area: "public",
+  },
+  {
     id: "szpitale-swieze-liczby-dla-zalogowanych",
     title:
       "Rady nadzorcze szpitali: zalogowany widzi to, co dopiero opublikował",
@@ -128,16 +169,16 @@ export const QA_ITEMS: QaItem[] = [
       "telefonu, a stare linki z ?sortBy=latestEmploymentStart działają " +
       "dokładnie jak dotąd.",
     steps: [
-      "Wejdź na /eksploruj/tabela - w nagłówku mają być „Osoba” i „Historia” zamiast „Imię i nazwisko”, „Partie”, „Firmy” i „Wybory”.",
+      "Wejdź na /eksploruj/tabela - w nagłówku mają być „Osoba” i „Firmy” zamiast „Imię i nazwisko”, „Partie” i osobnej kolumny z datą (kolumna scalona nazywała się „Historia” do czasu paska zapytania).",
       "Sprawdź kolumnę „Osoba”: plakietki partii mają stać obok nazwiska albo pod nim, a nie w osobnej kolumnie.",
-      "Sprawdź kolumnę „Historia”: mają w niej być plakietki firm, pod nimi „Ostatnie zatrudnienie: ” z datą, a obok (na komputerze) plakietki wyborów z rokiem i okręgiem.",
+      "Sprawdź kolumnę „Firmy”: mają w niej być plakietki firm, a pod nimi data ostatniego zatrudnienia. Plakietki wyborów stoją na komputerze w osobnej kolumnie „Wybory”, a poniżej 960 px wracają do tej samej komórki.",
       "Najedź na plakietkę firmy i na plakietkę wyborów - dymki z pełną nazwą firmy oraz z okręgiem, województwem i komitetem mają działać jak wcześniej.",
       "Zwęź okno poniżej 960 px albo wejdź z telefonu - kolumny mają być dwie, nazwa partii ma się mieścić w całości albo być ucięta dopiero na szerokości kolumny, a tabeli nie da się przewinąć w bok.",
-      "Nadal na wąskim ekranie: pod firmami ma być sama data, bez podpisu „Ostatnie zatrudnienie”.",
-      "Kliknij nagłówek „Historia” - tabela ma się posortować, a w adresie ma się pojawić sortBy=latestEmploymentStart.",
-      "Zalogowany wejdź na /eksploruj/tabela?sortBy=latestEmploymentStart&sortDesc=true - lista ma się załadować (nie może być pusta), a strzałka sortowania ma stać przy „Historii”.",
+      "Nadal na wąskim ekranie: pod firmami ma być „od <data> · N lat pracy”, bez pełnego podpisu „Ostatnie zatrudnienie” - na te lata nie ma tu osobnej kolumny.",
+      "Kliknij nagłówek „Firmy” - tabela ma się posortować, a w adresie ma się pojawić sortBy=latestEmploymentStart.",
+      "Zalogowany wejdź na /eksploruj/tabela?sortBy=latestEmploymentStart&sortDesc=true - lista ma się załadować (nie może być pusta), a strzałka sortowania ma stać przy „Firmach”.",
       "Kliknij nazwisko - w szufladzie mają być te same partie, firmy i wybory, w pełnej postaci.",
-      "Rozszerz okno powyżej 960 px - obok tych dwóch kolumn mają wrócić „Lata pracy”, „Notatki”, „Głosy łącznie”, „Twój głos” i „Eksploruj”.",
+      "Rozszerz okno powyżej 960 px - obok tych dwóch kolumn mają wrócić „Wybory”, „Oceny” i „Twój głos”. „Lata pracy” i „Notatki” są od czasu paska zapytania pozycjami w menu sortowania nagłówków „Firmy” i „Oceny”, a nie kolumnami; kolumny „Eksploruj” nie ma wcale.",
     ],
     link: "/eksploruj/tabela",
     area: "public",
@@ -157,7 +198,8 @@ export const QA_ITEMS: QaItem[] = [
       "na tej samej stronie), „Widoczność” (w tej kolejce zawsze „Szkic”) " +
       "oraz „Głosy łącznie”, której liczba przeniosła się pod nazwisko jako " +
       "„Suma ocen”. Kolejka, sortowanie i głosowanie działają dokładnie tak " +
-      "samo; /eksploruj/tabela zostaje z kompletem kolumn.",
+      "samo. (Od czasu paska zapytania /eksploruj/tabela ma własny, krótszy " +
+      "zestaw kolumn - to /eksploruj/nowe zostało z tym opisanym tutaj.)",
     steps: [
       "Wejdź zalogowany na /eksploruj/nowe. Tabela nad kartą osoby ma się kończyć równo z krawędzią białej karty - nic nie ma wystawać poza nią na tło strony.",
       "Ustaw okno na około 1280 px szerokości i sprawdź prawą stronę wiersza: ikona „Eksploruj” i strzałki „Twój głos” mają być widoczne bez przewijania w bok. To są kroki 1 i 3 z paska nad tabelą, więc wcześniej nie dało się ich kliknąć na takim ekranie.",
@@ -165,7 +207,7 @@ export const QA_ITEMS: QaItem[] = [
       "Pod nazwiskiem osoby ma być drobny podpis „Suma ocen: N” - ta sama liczba, która wcześniej stała w kolumnie „Głosy łącznie”.",
       "Przełącz kolejność na „Najwyżej oceniane” i klikaj „Następna osoba”: „Suma ocen” pod nazwiskiem ma maleć albo zostawać taka sama, nigdy rosnąć. To potwierdza, że liczba pod nazwiskiem jest tą, po której sortuje się kolejka.",
       "Przewiń w dół do sekcji „Notatki”: są tam notatki tej osoby, także cudze, w całości - dlatego licznik notatek nie jest już potrzebny w tabeli.",
-      "Wejdź na /eksploruj/tabela: tam „Notatki”, „Głosy łącznie” i „Widoczność” zostają, a pod nazwiskiem nie ma żadnej „Sumy ocen”.",
+      "Wejdź na /eksploruj/tabela: kolumna „Widoczność” jest tam nadal (dla zalogowanego), a na szerokim ekranie pod nazwiskiem nie ma „Sumy ocen”. Po pasku zapytania nie ma tam już kolumn „Notatki” ani „Głosy łącznie” - liczba ocen stoi w kolumnie „Oceny”, a na telefonie wraca jako podpis pod nazwiskiem.",
       "Zwęź okno do szerokości telefonu i wróć na /eksploruj/nowe: jeśli tabela się nie mieści, ma się przewijać w poziomie wewnątrz karty, a sama strona nie ma jechać w bok.",
     ],
     link: "/eksploruj/nowe",
@@ -210,7 +252,7 @@ export const QA_ITEMS: QaItem[] = [
     steps: [
       "Wejdź na stronę spółki i sprawdź, w jakim regionie ma siedzibę.",
       "Usuń powiązanie „siedziba” przyciskiem usuwania powiązania (jako admin), podając powód.",
-      "Wejdź na /eksploruj/tabela?latest=true, ustaw filtr „Siedziba spółki” na ten region i sprawdź, że pracownicy tej spółki już się nie pokazują.",
+      "Wejdź na /eksploruj/tabela?latest=true, otwórz „Filtry”, rozwiń „Więcej filtrów”, ustaw „Siedziba spółki” na ten region i sprawdź, że pracownicy tej spółki już się nie pokazują.",
       "Sprawdź, że powiązanie nadal jest widoczne w historii rewizji tej krawędzi razem z powodem usunięcia - usuwanie nie kasuje historii.",
     ],
     link: "/eksploruj/tabela",
@@ -273,7 +315,7 @@ export const QA_ITEMS: QaItem[] = [
       "Wejdź na stronę PKP SKM w Trójmieście. Ma mieć trzech właścicieli: PKP S.A., Gminę Miasta Gdańsk i Województwo Pomorskie - a jako siedzibę nadal Gdynię.",
       "Sprawdź Sądeckie Wodociągi: cztery różne gminy jako właściciele, nie jedna.",
       "Na /eksploruj/tabela sprawdź kolumnę z regionem - ma pokazywać siedzibę, a nie gminę, która ma udziały.",
-      "Użyj filtra „Siedziba spółki” dla dowolnego powiatu i sprawdź, że lista się nie zmieniła w stosunku do tego, co było wcześniej.",
+      "Użyj filtra „Siedziba spółki” (przycisk „Filtry”, sekcja „Więcej filtrów”) dla dowolnego powiatu i sprawdź, że lista się nie zmieniła w stosunku do tego, co było wcześniej.",
       "Wejdź na stronę gminy (np. Gdańsk) - ma listować i spółki z siedzibą, i te, w których ma udziały.",
       "Na grafie spółki z właścicielem-gminą sprawdź, że linia do siedziby jest podpisana „siedziba”, a do właściciela „właściciel”.",
     ],
@@ -299,7 +341,7 @@ export const QA_ITEMS: QaItem[] = [
       "kategorii. Spółka może być w dwóch kategoriach naraz i to nie jest " +
       "błąd: zakład gospodarki komunalnej dostarcza wodę i ciepło.",
     steps: [
-      "Wejdź na Eksploruj → Tabela i rozwiń filtr „Kategoria”. Ma mieć dziewięć pozycji, nie trzy.",
+      "Wejdź na Eksploruj → Tabela, kliknij „Filtry” i rozwiń listę „Typ podmiotu” (tak nazywa się filtr kategorii). Ma mieć dziewięć pozycji, nie trzy.",
       "Wybierz „Ciepłownictwo”. Mają się pokazać przedsiębiorstwa energetyki cieplnej (MPEC, PEC, Ciepłownia), a nie wodociągi.",
       "Wybierz „Wodociągi i kanalizacja”. Nie powinno tam być ciepłowni ani zakładów chemicznych - sprawdź, że nie ma Grupy Azoty Puławy ani PCC Rokita.",
       "Wybierz „Szpitale” i poszukaj samodzielnego publicznego zakładu opieki zdrowotnej, np. SPZOZ w Sanoku. Wcześniej nie było go w żadnej kategorii.",
@@ -550,10 +592,10 @@ export const QA_ITEMS: QaItem[] = [
       "rzeczy, których niezalogowany czytelnik i tak nie zrobi. Na telefonie " +
       "zabierał przy tym większość miejsca nad pierwszym wierszem tabeli.",
     steps: [
-      "Wyloguj się i wejdź na /eksploruj/tabela. Nad tabelą nie ma paska „Postęp weryfikacji” - po filtrach od razu idzie tabela.",
+      "Wyloguj się i wejdź na /eksploruj/tabela. Nad tabelą nie ma postępu weryfikacji - po pasku zapytania od razu idzie tabela. (Od czasu paska zapytania postęp jest drugą linijką tego paska, a nie osobną kartą.)",
       "To samo na wąskim ekranie: pierwszy wiersz tabeli ma być widoczny bez przewijania.",
-      "Zaloguj się i odśwież. Pasek ma wrócić, razem z przyciskiem „Pomóż sprawdzać”.",
-      "Wejdź na /eksploruj/nowe (tylko dla zalogowanych). Pasek ma tam być jak wcześniej.",
+      "Zaloguj się i odśwież. Postęp ma wrócić jako druga linijka paska zapytania, razem z „Twój wkład” i przyciskiem „Pomóż sprawdzać” - na każdej szerokości, także na telefonie.",
+      "Wejdź na /eksploruj/nowe (tylko dla zalogowanych). Tam pasek zostaje pełną kartą z legendą, jak wcześniej.",
     ],
     link: "/eksploruj/tabela",
     area: "public",
@@ -609,15 +651,15 @@ export const QA_ITEMS: QaItem[] = [
     id: "karta-firmy-prowadzi-na-strone-spolki",
     title: "Karta firmy na Eksploruj prowadzi na stronę spółki",
     description:
-      "Na /eksploruj/tabela zawężonej do firmy nazwa w karcie u góry jest " +
+      "Na /eksploruj/tabela zawężonej do firmy nazwa w karcie z jej danymi jest " +
       "teraz linkiem na stronę tej spółki. Gdy wybranych firm jest kilka i " +
       "karty się zwijają, ten sam link mają chipy z nazwami. Wcześniej z " +
       "tabeli nie dało się przejść na stronę spółki - trzeba było znaleźć ją " +
       "wyszukiwarką.",
     steps: [
-      "Wejdź na /eksploruj/tabela?place=ZBcdQ9tUxVyv0o1mnpLH - u góry ma być karta z nazwą spółki.",
+      "Wejdź na /eksploruj/tabela?place=ZBcdQ9tUxVyv0o1mnpLH i przewiń pod tabelę - ma tam być karta z nazwą spółki (od czasu paska zapytania karta stoi pod tabelą, a nie nad nią).",
       "Kliknij nazwę w karcie: ma otworzyć /instytucja/… tej spółki.",
-      "Wróć i w filtrach wybierz trzy firmy albo więcej - karty mają się zwinąć do chipów z nazwami. Kliknięcie chipa ma prowadzić na stronę tej spółki.",
+      "Wróć i wybierz trzy firmy albo więcej („Filtry” → „Więcej filtrów” → „Instytucje”) - karty mają się zwinąć do chipów z nazwami. Kliknięcie chipa ma prowadzić na stronę tej spółki.",
       "Rozwiń („Pokaż szczegóły”) - nazwa na każdej karcie ma być linkiem tak samo jak przy jednej firmie.",
       "Wejdź na samą stronę spółki (/instytucja/…): tam ta sama karta jest nagłówkiem strony, więc nazwa ma zostać zwykłym tekstem, bez linku do samej siebie.",
     ],

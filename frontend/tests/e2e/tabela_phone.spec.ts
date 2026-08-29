@@ -50,7 +50,12 @@ test.describe("the table on a phone", () => {
    * company after eight. Name+partie and firmy+wybory are one cell apiece now,
    * so the phone gets two columns with 120px and 185px to spend rather than
    * four with 100/60/72/72. The no-sideways-scroll assertion above is the
-   * guard on that arithmetic. */
+   * guard on that arithmetic.
+   *
+   * „Wybory” is a column of its own above 960px, which is why the second
+   * header reads „Firmy” rather than „Historia” now - down here the election
+   * chips fold back into that cell, and the column that would have held them
+   * is one of the four the page hides. */
   test("shows one column for the person and one for their history", async ({
     page,
   }) => {
@@ -70,7 +75,7 @@ test.describe("the table on a phone", () => {
     const headers = page.locator("thead th:visible");
     await expect(headers).toHaveCount(2);
     await expect(headers.nth(0)).toHaveText(/Osoba/);
-    await expect(headers.nth(1)).toHaveText(/Historia/);
+    await expect(headers.nth(1)).toHaveText(/Firmy/);
 
     await expect(
       page
@@ -85,13 +90,27 @@ test.describe("the table on a phone", () => {
     test.setTimeout(120000);
     await page.goto("/eksploruj/tabela?party=PiS", { waitUntil: "load" });
 
-    // The count is the point: a folded panel that is quietly narrowing the
-    // table would leave the reader with a short list and no reason for it.
+    // The count is the point: a filter set behind a button that says nothing
+    // about it would leave the reader with a short list and no reason for it.
+    //
+    // Two buttons say „Filtry” - the md-and-up menu activator and the phone's
+    // fullscreen-dialog one - and only a display class tells them apart, so
+    // this is not strict-mode safe by luck: `getByRole` reads the
+    // accessibility tree, which a `display: none` element is not in. At 375px
+    // that leaves exactly the dialog's.
     const toggle = page.getByRole("button", { name: /^Filtry/ });
     await expect(toggle).toBeVisible({ timeout: 60000 });
     await expect(toggle).toHaveText(/Filtry \(1\)/);
 
-    // Folded to begin with, and the filters are there once it is tapped.
+    // Not in the dom at all to begin with (`toBeHidden` covers both), and one
+    // tap away. „Partia” is not at the top of the panel any more - it sits
+    // under „Więcej filtrów”, whose text renders lazily - so this passes only
+    // because EksplorujTabelaFilterPanel opens that section for itself when the
+    // query it was handed already sets one of the filters inside it, which
+    // `?party=PiS` does. Change that and this test needs a click on „Więcej
+    // filtrów”, not a weaker assertion: „one tap away” is the report it exists
+    // for.
+    //
     // Exact: the autocomplete also renders a "Clear Partia" icon button, and
     // a loose match picks up both.
     const party = page.getByLabel("Partia", { exact: true });
