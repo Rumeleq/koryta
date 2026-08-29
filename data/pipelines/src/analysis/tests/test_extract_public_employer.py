@@ -33,6 +33,9 @@ class Args:
     election_after: str | None = None
     public_employer: bool = False
     min_score: int | None = None
+    employed_roles: list[str] | None = None
+    company_category: str | None = None
+    paid_supervision: bool = False
 
 
 def counting(companies=COMPANIES, **flags):
