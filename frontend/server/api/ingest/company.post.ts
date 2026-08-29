@@ -3,6 +3,7 @@ import { getApp } from "firebase-admin/app";
 import { getUser } from "~~/server/utils/auth";
 import {
   createRevisionTransaction,
+  revisionChangesNothing,
   withoutInternalFields,
 } from "~~/server/utils/revisions";
 import {
@@ -123,12 +124,24 @@ export default defineEventHandler(async (event) => {
   }
 
   const batch = db.batch();
-  createRevisionTransaction(db, batch, user, nodeRef, revisionData, {
+  // `CompaniesPayloads` re-submits every company the site already has, and most
+  // runs learn nothing about most of them - the register has not moved, and the
+  // categories are worked out from codes that have not moved either. Layered
+  // over what is stored, such a payload produces a revision word for word the
+  // same as the one the node already carries, and writing it cost a revision
+  // document and a rewrite of the node per company per run. See
+  // `revisionChangesNothing`, which also refuses to skip where the write would
+  // repair something.
+  const options = {
     automatic: true,
     approve: publish,
     stored,
     published: publish,
-  });
+  };
+  const changed = !revisionChangesNothing(nodeRef, revisionData, options);
+  if (changed) {
+    createRevisionTransaction(db, batch, user, nodeRef, revisionData, options);
+  }
 
   const dbb = { db, batch, user, added: new Set<string>() };
 
@@ -255,6 +268,12 @@ export default defineEventHandler(async (event) => {
 
   await batch.commit();
 
+  // What the request did to the company itself, so a caller submitting a few
+  // thousand of them can tell a run that changed nothing from one that did -
+  // the edges are reported separately, and a company can be left alone while a
+  // location edge is added beside it.
+  const company = !stored ? "created" : changed ? "updated" : "unchanged";
+
   // `unknownOwners` is reported rather than merely counted: a run in which it
   // jumps is a run where the register started naming shareholders the site does
   // not track, and the per-owner warnings above are one line each in a log of
@@ -263,6 +282,7 @@ export default defineEventHandler(async (event) => {
     id: nodeRef.id,
     code: 200,
     region,
+    company,
     ...(unknownOwners > 0 ? { unknownOwners } : {}),
   };
 });

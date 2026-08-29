@@ -12,7 +12,10 @@ const mockDoc = vi.fn();
 const mockCollection = vi.fn();
 const mockBatch = vi.fn();
 const mockCommit = vi.fn();
-const mockRef = { id: "doc-ref-id" };
+// A real DocumentReference knows which collection it is in, and
+// `revisionChangesNothing` asks - a node carries counters an edge does not.
+const nodesParent = { id: "nodes" };
+const mockRef = { id: "doc-ref-id", parent: nodesParent };
 
 const mockDb = {
   collection: mockCollection,
@@ -34,6 +37,7 @@ mockLimit.mockImplementation(() => queryMock);
 
 mockDoc.mockReturnValue({
   id: "new-doc-id",
+  parent: nodesParent,
   ref: mockRef,
 });
 mockBatch.mockReturnValue({
@@ -120,7 +124,7 @@ describe("api/ingest/company", () => {
       { automatic: true, approve: true, published: true },
     );
     // ref.id is accessed in handler return statement
-    expect(result).toEqual({ id: "doc-ref-id", code: 200 });
+    expect(result).toEqual({ id: "doc-ref-id", code: 200, company: "created" });
   });
 
   it("should re-approve an already-public existing company", async () => {
@@ -129,7 +133,7 @@ describe("api/ingest/company", () => {
       name: "Updated Company",
     });
 
-    const existingRef = { id: "existing-id" };
+    const existingRef = { id: "existing-id", parent: nodesParent };
     const existingDoc = {
       ref: existingRef,
       // published => the company is currently live, and a re-ingest keeps it so
@@ -168,7 +172,11 @@ describe("api/ingest/company", () => {
         stored: expect.objectContaining({ published: true }),
       },
     );
-    expect(result).toEqual({ id: "existing-id", code: 200 });
+    expect(result).toEqual({
+      id: "existing-id",
+      code: 200,
+      company: "updated",
+    });
   });
 
   it("should keep a pending existing company pending", async () => {
@@ -177,7 +185,7 @@ describe("api/ingest/company", () => {
       name: "Updated Company",
     });
 
-    const existingRef = { id: "existing-id" };
+    const existingRef = { id: "existing-id", parent: nodesParent };
     const existingDoc = {
       ref: existingRef,
       // no revision_id => the company is still pending / unapproved
@@ -209,7 +217,11 @@ describe("api/ingest/company", () => {
         stored: expect.objectContaining({ content: "Old Content" }),
       },
     );
-    expect(result).toEqual({ id: "existing-id", code: 200 });
+    expect(result).toEqual({
+      id: "existing-id",
+      code: 200,
+      company: "updated",
+    });
   });
 
   it("should keep an approved-but-unpublished company hidden", async () => {
@@ -218,7 +230,7 @@ describe("api/ingest/company", () => {
       name: "Updated Company",
     });
 
-    const existingRef = { id: "existing-id" };
+    const existingRef = { id: "existing-id", parent: nodesParent };
     const existingDoc = {
       ref: existingRef,
       // approved revision exists, but the node was explicitly unpublished
@@ -287,7 +299,7 @@ describe("api/ingest/company", () => {
       name: "Public Company",
       is_public: false,
     });
-    const existingRef = { id: "existing-id" };
+    const existingRef = { id: "existing-id", parent: nodesParent };
     mockGet.mockResolvedValue({
       empty: false,
       docs: [
@@ -363,7 +375,7 @@ describe("api/ingest/company", () => {
       activity: ["72.19.Z", "42.12.Z"],
       categories: [],
     });
-    const existingRef = { id: "existing-id" };
+    const existingRef = { id: "existing-id", parent: nodesParent };
     mockGet.mockResolvedValue({
       empty: false,
       docs: [
@@ -479,7 +491,7 @@ describe("api/ingest/company", () => {
       name: "PKP Szybka Kolej Miejska w Trójmieście",
       activity: ["49.12.Z"],
     });
-    const existingRef = { id: "existing-id" };
+    const existingRef = { id: "existing-id", parent: nodesParent };
     mockGet.mockResolvedValue({
       empty: false,
       docs: [
@@ -513,7 +525,7 @@ describe("api/ingest/company", () => {
       activity: ["08.11.Z", "49.20.Z"],
       categories: ["koleje"],
     });
-    const existingRef = { id: "existing-id" };
+    const existingRef = { id: "existing-id", parent: nodesParent };
     mockGet.mockResolvedValue({
       empty: false,
       docs: [
@@ -1145,5 +1157,117 @@ describe("api/ingest/company", () => {
     expect(result).toMatchObject({ region: "existing" });
     // Node revision only; no second link.
     expect(createRevisionTransaction).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("api/ingest/company, re-run over a company nothing has changed", () => {
+  /** The node as a previous run of the same payload left it. */
+  const storedCompany = {
+    name: "PKP Szybka Kolej Miejska w Trójmieście",
+    type: "place",
+    krsNumber: "0000076705",
+    activity: ["49.12.Z", "49.31.Z"],
+    categories: ["koleje"],
+    isPublic: true,
+    published: true,
+    revision_id: "rev-1",
+    stats: { nodeGroupSize: 4, isApproved: true },
+  };
+
+  const payload = {
+    krs: "0000076705",
+    name: "PKP Szybka Kolej Miejska w Trójmieście",
+    activity: ["49.12.Z", "49.31.Z"],
+    categories: ["koleje"],
+    is_public: true,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockWhere.mockReturnValue(queryMock);
+    queryMock.where.mockReturnValue(queryMock);
+    queryMock.limit.mockReturnValue(queryMock);
+  });
+
+  function storedAs(data: Record<string, unknown>) {
+    mockGet.mockResolvedValue({
+      empty: false,
+      docs: [
+        { ref: { id: "existing-id", parent: nodesParent }, data: () => data },
+      ],
+    });
+  }
+
+  it("writes no revision at all", async () => {
+    // `CompaniesPayloads` re-submits every company the site holds on every run.
+    // Before this the register standing still still cost each of them a
+    // revision document and a rewrite of the node.
+    mockReadBody.mockResolvedValue(payload);
+    storedAs(storedCompany);
+
+    const result = await handler({} as any);
+
+    expect(createRevisionTransaction).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      id: "existing-id",
+      code: 200,
+      company: "unchanged",
+    });
+  });
+
+  it("writes as soon as the payload has learned one thing", async () => {
+    mockReadBody.mockResolvedValue({
+      ...payload,
+      categories: ["koleje", "szpitale"],
+    });
+    storedAs(storedCompany);
+
+    const result = await handler({} as any);
+
+    expect(createRevisionTransaction).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ company: "updated" });
+  });
+
+  it("still writes a company whose counters nothing has filled in", async () => {
+    // The write seeds them, and `/api/nodes` filters every listing on
+    // `stats.isApproved` - so skipping here would leave the company on the site
+    // and out of every list that leads to it.
+    const { stats: _none, ...withoutStats } = storedCompany;
+    mockReadBody.mockResolvedValue(payload);
+    storedAs(withoutStats);
+
+    await handler({} as any);
+
+    expect(createRevisionTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("still writes a live company with no approved revision to point at", async () => {
+    // Live but never approved: the write is what would give the node its
+    // `revision_id`, so it has to happen even though the data matches.
+    const { revision_id: _none, ...noPointer } = storedCompany;
+    mockReadBody.mockResolvedValue(payload);
+    storedAs(noPointer);
+
+    await handler({} as any);
+
+    expect(createRevisionTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not restate a pending company to its reviewer either", async () => {
+    // A company awaiting review gets a `pending` revision rather than an
+    // approved one, and there is nothing for it to point at - but a second
+    // revision saying what the first one says is one more thing in the queue
+    // and no more information in it.
+    const { revision_id: _none, ...pending } = storedCompany;
+    mockReadBody.mockResolvedValue(payload);
+    storedAs({
+      ...pending,
+      published: false,
+      stats: { nodeGroupSize: 4, isApproved: false },
+    });
+
+    await handler({} as any);
+
+    expect(createRevisionTransaction).not.toHaveBeenCalled();
   });
 });
