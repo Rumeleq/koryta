@@ -265,7 +265,7 @@
       :node-id="nodeId"
       :node-name="nodeName"
       @published="onPublished"
-      @failed="report"
+      @failed="onPublishFailed"
     />
 
     <v-snackbar v-model="errorShown" color="error" :timeout="6000">
@@ -378,6 +378,23 @@ async function setPublished(value: boolean) {
     report(err);
   } finally {
     publishPending.value = false;
+  }
+}
+
+/** A refusal from the relations half leaves the page live and the toggle above
+ * still reading "draft", so this reloads as well as reports: the reviewer is
+ * being told the page was published, and the screen has to agree with that. */
+async function onPublishFailed({
+  error: err,
+  nodePublished,
+}: {
+  error: unknown;
+  nodePublished: boolean;
+}) {
+  report(err);
+  if (nodePublished) {
+    error.value = `Strona została opublikowana, ale powiązania nie: ${error.value}`;
+    await load();
   }
 }
 

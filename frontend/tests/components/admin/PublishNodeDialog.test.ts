@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { defineComponent, h } from "vue";
 import { mount, flushPromises } from "@vue/test-utils";
 import { createVuetify } from "vuetify";
 import * as components from "vuetify/components";
@@ -14,6 +15,16 @@ vi.mock("~/composables/auth", () => ({
 }));
 
 const vuetify = createVuetify({ components, directives });
+
+/** Nuxt's auto-imported components are not registered outside a Nuxt env, and
+ * an unresolved one renders nothing an assertion can reach. Same stub the other
+ * component specs use - see tests/components/revision/TargetCell.test.ts. */
+const NuxtLinkStub = defineComponent({
+  props: { to: { type: [String, Object], default: "" } },
+  setup(props, { slots }) {
+    return () => h("a", { href: String(props.to) }, slots.default?.());
+  },
+});
 
 // Vuetify's overlay measures the viewport as it opens, and jsdom has neither of
 // these. Without them the dialog throws before it ever renders a row.
@@ -71,7 +82,7 @@ function mountDialog() {
       nodeId: "jan-kowalski",
       nodeName: "Jan Kowalski",
     },
-    global: { plugins: [vuetify] },
+    global: { plugins: [vuetify], stubs: { NuxtLink: NuxtLinkStub } },
   });
 }
 
@@ -285,6 +296,152 @@ describe("PublishNodeDialog.vue", () => {
     });
   });
 
+  it("sends every relation the reviewer ticked, and none it did not", async () => {
+    serveRelations([
+      relation({ id: "ready-a" }),
+      relation({ id: "ready-b" }),
+      relation({ id: "ready-c" }),
+      relation({ id: "left-alone" }),
+    ]);
+    wrapper = mountDialog();
+    await open(wrapper);
+
+    await click(checkbox("ready-a"));
+    await click(checkbox("ready-b"));
+    await click(checkbox("ready-c"));
+
+    await click(confirmButton());
+
+    // The whole point of the dialog is that the reviewer decides relation by
+    // relation, so the request has to carry exactly the ticks - a set that
+    // silently widened would publish a claim nobody looked at, and one that
+    // narrowed would leave the page live with relations missing from it.
+    const [url, options] = mockAuthRequest.mock.calls.at(-1) as [
+      string,
+      { body: { edge_ids: string[]; published: boolean } },
+    ];
+    expect(url).toBe("/api/edges/publish");
+    expect(options.body.published).toBe(true);
+    expect([...options.body.edge_ids].sort()).toEqual([
+      "ready-a",
+      "ready-b",
+      "ready-c",
+    ]);
+  });
+
+  it("does not claim the relations went live when the API refused them", async () => {
+    serveRelations([relation({ id: "ready-a" }), relation({ id: "ready-b" })]);
+    wrapper = mountDialog();
+    await open(wrapper);
+    await click(el("publish-select-all"));
+
+    // /api/edges/publish refuses the batch as a whole - one blocked relation
+    // takes the rest down with it - and by then the page itself is already
+    // live. That asymmetry is the state worth pinning: whatever the reviewer
+    // is told, it must not be "the relations are published", because they are
+    // not, and the dialog is the last place that knows.
+    const refusal = Object.assign(new Error("Nie można opublikować"), {
+      statusCode: 400,
+    });
+    mockAuthRequest.mockImplementation(
+      async (url: string, opts: { method?: string } = {}) => {
+        if (opts.method === "GET")
+          return { relations: [], nodePublished: false };
+        if (url === "/api/edges/publish") throw refusal;
+        return { ok: true, url };
+      },
+    );
+
+    await click(confirmButton());
+
+    expect(requestedUrls()).toEqual([
+      "/api/edges/byNode",
+      "/api/nodes/publish",
+      "/api/edges/publish",
+    ]);
+    expect(wrapper.emitted("failed")).toEqual([
+      [{ error: refusal, nodePublished: true }],
+    ]);
+    expect(wrapper.emitted("published")).toBeUndefined();
+    // Still open, with the ticks intact, because retrying is the only way out:
+    // the page is published now, so reopening the dialog would offer to hide
+    // it rather than to publish the relations again.
+    expect(wrapper.emitted("update:modelValue")).toBeUndefined();
+    expect(checkbox("ready-a")?.checked).toBe(true);
+    expect(checkbox("ready-b")?.checked).toBe(true);
+  });
+
+  it("says the page went live without its relations when they are refused", async () => {
+    serveRelations([relation({ id: "ready-a" }), relation({ id: "ready-b" })]);
+    wrapper = mountDialog();
+    await open(wrapper);
+    await click(el("publish-select-all"));
+
+    // ofetch parks the parsed body on `data`, which is where the endpoint's
+    // own Polish explanation of the refusal arrives.
+    mockAuthRequest.mockImplementation(
+      async (url: string, opts: { method?: string } = {}) => {
+        if (opts.method === "GET")
+          return { relations: [], nodePublished: false };
+        if (url === "/api/edges/publish")
+          throw Object.assign(new Error("400"), {
+            data: {
+              message:
+                "Nie można opublikować powiązania, którego druga strona nie jest opublikowana: Szpital.",
+            },
+          });
+        return { ok: true, url };
+      },
+    );
+
+    await click(confirmButton());
+
+    const alert = el("publish-relations-failed") as HTMLElement;
+    expect(alert).not.toBeNull();
+    // The half that did happen is the part the reviewer cannot see, since the
+    // dialog is still covering the page whose toggle it just flipped.
+    expect(alert.textContent).toContain(
+      "Strona została opublikowana, ale powiązania nie",
+    );
+    // Verbatim, because "which page is holding it back" is the only thing that
+    // tells them what to do next.
+    expect(alert.textContent).toContain(
+      "druga strona nie jest opublikowana: Szpital.",
+    );
+    // Publishing the page is what puts this dialog out of reach, so the way
+    // back to those relations has to be on screen.
+    expect(alert.querySelector("a")?.getAttribute("href")).toBe(
+      "/admin/krawedzie",
+    );
+  });
+
+  it("clears the half-published warning when the dialog is reopened", async () => {
+    serveRelations([relation({ id: "ready-a" })]);
+    wrapper = mountDialog();
+    await open(wrapper);
+    await click(checkbox("ready-a"));
+    mockAuthRequest.mockImplementation(
+      async (url: string, opts: { method?: string } = {}) => {
+        if (opts.method === "GET")
+          return {
+            relations: [relation({ id: "ready-a" })],
+            nodePublished: true,
+          };
+        if (url === "/api/edges/publish") throw new Error("400");
+        return { ok: true, url };
+      },
+    );
+    await click(confirmButton());
+    expect(el("publish-relations-failed")).not.toBeNull();
+
+    await wrapper.setProps({ modelValue: false });
+    await open(wrapper);
+
+    // A stale warning on a fresh look would describe an attempt that is no
+    // longer the one on screen.
+    expect(el("publish-relations-failed")).toBeNull();
+  });
+
   it("reports how many relations went live and closes", async () => {
     serveRelations([relation({ id: "ready-a" }), relation({ id: "ready-b" })]);
     wrapper = mountDialog();
@@ -307,12 +464,16 @@ describe("PublishNodeDialog.vue", () => {
 
     await click(confirmButton());
 
-    expect(wrapper.emitted("failed")).toEqual([[failure]]);
+    expect(wrapper.emitted("failed")).toEqual([
+      [{ error: failure, nodePublished: false }],
+    ]);
     expect(wrapper.emitted("published")).toBeUndefined();
     // The admin has to be able to read the message and retry, so the dialog
     // must not ask its parent to close.
     expect(wrapper.emitted("update:modelValue")).toBeUndefined();
     expect(confirmButton()).not.toBeNull();
+    // Nothing went live at all, so the half-published warning would be a lie.
+    expect(el("publish-relations-failed")).toBeNull();
   });
 
   it("still publishes the page when the relations could not be loaded", async () => {
