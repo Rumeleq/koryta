@@ -7,10 +7,12 @@ import pandas as pd
 from analysis.people import PeopleEnriched
 from analysis.utils import as_sequence, drop_duplicates, empty_list_if_nan
 from analysis.utils.elections import candidacy_teryt
+from entities.company_bodies import RADA_SPOLECZNA, supervisory_body
+from entities.company_categories import CATEGORY_VALUES, categories_for
 from scrapers.article.hardcoded.listawstydupo import hardcoded as listawstydu
 from scrapers.article.hardcoded.tlustekotypisu import hardcoded as tlustekoty
 from scrapers.krs.graph import CompanyGraph
-from scrapers.krs.list import CompaniesKRS
+from scrapers.krs.list import KRS_RELATION_ROLES, CompaniesKRS
 from scrapers.map.teryt import Teryt
 from scrapers.stores import Context, Pipeline
 
@@ -83,6 +85,16 @@ def is_public(flags: pd.Series) -> pd.Series:
     ).astype(bool)
 
 
+#: What every supervisory seat is called by the time it reaches here.
+#:
+#: rejestr.io reports all of them as one connection type and
+#: `KRS_RELATION_ROLES` gives that type a single label for the whole register,
+#: so this string is on a rada spoleczna seat exactly as much as on a rada
+#: nadzorcza one. Taken from the mapping rather than written out again, because
+#: the two disagreeing would silently stop `--paid-supervision` matching.
+SUPERVISORY_ROLE = KRS_RELATION_ROLES["KRS_SUPERVISION"]
+
+
 def krs_ids(ids: pd.Series) -> pd.Series:
     """KRS ids as the zero-padded ten-character strings everything else uses.
 
@@ -107,6 +119,7 @@ class Extract(Pipeline):
     teryt: Teryt
     _relevant_companies: set[str] | None = None
     _public_companies: set[str] | None = None
+    _unpaid_supervision_companies: set[str] | None = None
 
     MATCHED_ODDS = 100000  # 1/odds is the probability the person is an accidental match
     EXPECTED_SCORE = 10.5  # Expected score calculated by analysis.people script
@@ -165,6 +178,45 @@ class Extract(Pipeline):
             action=argparse.BooleanOptionalAction,
         )
         parser.add_argument(
+            "--employed-role",
+            dest="employed_roles",
+            nargs="*",
+            action="extend",
+            help="Count only posts whose role is one of these, spelled as "
+            '`scrapers.krs.list.KRS_RELATION_ROLES` spells it - "Rada '
+            'Nadzorcza", "Zarzad", "Prokurent". Every supervisory seat '
+            "in the register carries the one label, so this cannot tell a paid "
+            "rada nadzorcza from an unpaid rada spoleczna; pair it with "
+            "--company-category, or with --krs, to say which companies count.",
+            default=None,
+            required=False,
+        )
+        parser.add_argument(
+            "--company-category",
+            help="Count only posts at companies in this category, as "
+            "`entities.company_categories.categories_for` decides it - the same "
+            "rule that puts `categories` on a place node, so a run scoped this "
+            "way selects the people behind what the site already shows under "
+            f"that filter. One of: {', '.join(CATEGORY_VALUES)}.",
+            default=None,
+            required=False,
+        )
+        parser.add_argument(
+            "--paid-supervision",
+            help="Drop a supervisory post at a company whose legal form gives "
+            "it an unpaid organ - an SPZOZ has a rada spoleczna, not a rada "
+            "nadzorcza, and its members are paid neither wynagrodzenie nor "
+            "dieta. The register cannot say this on the post: every "
+            'supervisory seat is labelled "Rada Nadzorcza" whatever the '
+            "organ is really called, so --employed-role alone cannot tell them "
+            "apart. This is the same rule the site excludes such a seat from "
+            "its employment counters by - see `entities.company_bodies` and "
+            "`publicEmployment` in frontend/shared/stats.ts.",
+            default=False,
+            required=False,
+            action=argparse.BooleanOptionalAction,
+        )
+        parser.add_argument(
             "--ignore-elections",
             help="Ignore elections information, listing people without them",
             default=False,
@@ -199,10 +251,34 @@ class Extract(Pipeline):
             and not args.approved
             and not args.all
             and not args.rejestrio_id
+            and not args.company_category
         ):
             raise ValueError(
                 "Needed one of following flags to 'koryta' command: --region, --krs, \
---approved, --all, --rejestrio-id. See pipeline Extract for more details."
+--approved, --all, --rejestrio-id, --company-category. See pipeline Extract for more \
+details."
+            )
+        if args.company_category and args.all:
+            # `use_all` below stops --all re-adding everybody wholesale, but it
+            # cannot stop `krs in relevant_companies or self.all` in
+            # `works_in_relevant`, which lets a post at any company through. So
+            # the combination does not narrow to the category at all. Refused
+            # rather than quietly resolved, because until --company-category
+            # existed the guard above forced every run to name one of --region,
+            # --krs, --approved, --all or --rejestrio-id, and --all is the one
+            # people reach for as the placeholder.
+            raise ValueError(
+                "--all and --company-category contradict each other: --all "
+                "counts a post at every company, so the category would select "
+                "nothing further. Drop --all - --company-category is a scope "
+                "in its own right."
+            )
+        if args.company_category and args.company_category not in CATEGORY_VALUES:
+            # Caught here rather than by `choices=`, so the message can say what
+            # the categories are at the moment rather than at parser-build time.
+            raise ValueError(
+                f"Unknown --company-category {args.company_category!r}. "
+                f"One of: {', '.join(CATEGORY_VALUES)}."
             )
 
         return args
@@ -240,6 +316,18 @@ class Extract(Pipeline):
         return self.args.public_employer
 
     @property
+    def paid_supervision(self) -> bool:
+        return self.args.paid_supervision
+
+    @property
+    def employed_roles(self) -> list[str] | None:
+        return self.args.employed_roles
+
+    @property
+    def company_category(self) -> str | None:
+        return self.args.company_category
+
+    @property
     def ignore_elections(self) -> bool:
         return self.args.ignore_elections
 
@@ -269,6 +357,38 @@ class Extract(Pipeline):
             for company in self.companies.read_or_process(ctx).itertuples():
                 assert isinstance(company.teryt_code, str)
                 if company.teryt_code.startswith(self.region):
+                    result.add(company.krs)
+
+        if self.company_category:
+            companies_df = self.companies.read_or_process(ctx)
+            if "form" not in companies_df:
+                # Not fatal - a category still places every company that has a
+                # PKD code. But it silently changes what the flag *means*: with
+                # no form, "szpitale" is the 216 hospitals run as spolki and
+                # none of the 1,192 SPZOZ, which have no PKD code at all. Said
+                # out loud, because the same command against a rebuilt artefact
+                # selects three times as many people.
+                print(
+                    "WARNING: the company data read here has no form column, so "
+                    "--company-category places only companies with a PKD code. "
+                    "Every SPZOZ is in the associations register and has none, "
+                    "so none of them will be selected. Rebuild with --refresh "
+                    "CompaniesKRS to include them."
+                )
+            # The same rule the ingest payload carries, so a run scoped this way
+            # selects the people behind exactly what the site files under that
+            # category - see `analysis.payloads.company`, which calls the same
+            # function. Not `all_descendants` like --krs above: a category is a
+            # statement about a company, and a subsidiary of a hospital is not
+            # thereby a hospital.
+            for company in companies_df.itertuples():
+                form = getattr(company, "form", None)
+                if not isinstance(form, str):
+                    form = None
+                activity = empty_list_if_nan(getattr(company, "activity", None))
+                if self.company_category in categories_for(
+                    str(company.krs), list(activity), form
+                ):
                     result.add(company.krs)
 
         self._relevant_companies = result
@@ -307,9 +427,48 @@ class Extract(Pipeline):
         print(f"{len(self._public_companies)} of {len(companies)} companies are public")
         return self._public_companies
 
+    def unpaid_supervision_companies(self, ctx) -> set[str]:
+        """KRS ids whose supervisory organ nobody is paid to sit on.
+
+        Read off `formaPrawna`, because that is what settles it: a samodzielny
+        publiczny zaklad opieki zdrowotnej has a rada spoleczna and cannot have
+        a rada nadzorcza - it is not a company and has no shareholders to
+        appoint one. The register agrees on every one of the 238 hospitals on
+        the site that carry a supervisory seat, but the form is the rule and it
+        is the one thing that is total: 719 of the 1,192 SPZOZ in the crawl
+        file no organ at all, so `supervisory_organ` would call them "brak" and
+        let their seats through.
+        """
+        if self._unpaid_supervision_companies is not None:
+            return self._unpaid_supervision_companies
+
+        companies = self.companies.read_or_process(ctx)
+        if "form" not in companies:
+            raise ValueError(
+                "--paid-supervision needs the form column CompaniesKRS writes, "
+                "and the company data read here has none. Rebuild it with "
+                "--refresh CompaniesKRS. Without it every SPZOZ looks like an "
+                "ordinary spolka and its unpaid seats would be counted."
+            )
+
+        forms = companies["form"].where(companies["form"].notna(), None)
+        unpaid_mask = forms.apply(
+            lambda form: (
+                supervisory_body(form if isinstance(form, str) else None)
+                == RADA_SPOLECZNA
+            )
+        )
+        unpaid = set(krs_ids(companies.loc[unpaid_mask, "krs"]))
+        self._unpaid_supervision_companies = unpaid
+        print(f"{len(unpaid)} of {len(companies)} companies have an unpaid organ")
+        return unpaid
+
     def relevant_employment(self, ctx):
         relevant_companies = self.relevant_companies(ctx)
         public_companies = self.public_companies(ctx) if self.public_employer else None
+        unpaid_supervision = (
+            self.unpaid_supervision_companies(ctx) if self.paid_supervision else None
+        )
 
         def works_in_relevant(employment_list) -> int:
             result = 0
@@ -320,6 +479,27 @@ class Extract(Pipeline):
                 # leave out the private sector, and a company the register was
                 # never asked about is a company we cannot say that of.
                 if public_companies is not None and krs not in public_companies:
+                    continue
+                # Every supervisory seat in the register reaches here as the one
+                # label - `KRS_RELATION_ROLES` maps KRS_SUPERVISION to "Rada
+                # Nadzorcza" for the whole register - so this says which *kind*
+                # of post counts and never whether it is paid. Which companies
+                # count is the other half, and it is what separates a paid rada
+                # nadzorcza from an unpaid rada spoleczna.
+                if (
+                    self.employed_roles
+                    and emp.get("employed_role") not in self.employed_roles
+                ):
+                    continue
+                # Both halves are needed, the way `publicEmployment` needs both:
+                # the company's organ has to be the unpaid one AND the post has
+                # to be a seat on it. A Zarzad post at the same SPZOZ is its
+                # kierownik, a salaried director, and must keep counting.
+                if (
+                    unpaid_supervision is not None
+                    and krs in unpaid_supervision
+                    and emp.get("employed_role") == SUPERVISORY_ROLE
+                ):
                     continue
                 if krs in relevant_companies or self.all:
                     if self.employed_after:
@@ -395,6 +575,9 @@ class Extract(Pipeline):
                 and not self.election_after
                 and not self.public_employer
                 and not self.currently_employed
+                and not self.employed_roles
+                and not self.company_category
+                and not self.paid_supervision
             )
             else 0
         )

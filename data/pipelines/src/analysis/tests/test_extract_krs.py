@@ -213,6 +213,9 @@ def test_extract_by_krs():
         rejestrio_id = None
         public_employer = False
         min_score = None
+        employed_roles = None
+        company_category = None
+        paid_supervision = False
 
     extract.args = MockArgs()
 
