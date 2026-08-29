@@ -83,6 +83,7 @@ export const revisionFieldLabels: Record<string, string> = {
   content: "opis",
   parties: "partie",
   birthDate: "data urodzenia",
+  education: "wykształcenie",
   wikipedia: "Wikipedia",
   rejestrIo: "rejestr.io",
   ktomaco: "ktomaco",

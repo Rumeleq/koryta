@@ -72,6 +72,13 @@
                 class="mb-2"
               />
               <v-text-field
+                v-model="editData.education"
+                label="Wykształcenie"
+                hint="Tak, jak się je opisuje: np. magister inżynierii środowiska, duchowny prawosławny"
+                persistent-hint
+                class="mb-2"
+              />
+              <v-text-field
                 v-model="editData.wikipedia"
                 label="Link do Wikipedii"
                 hint="Pełny link do artykułu"
@@ -285,6 +292,7 @@ const editData = reactive({
   content: "",
   parties: [] as string[],
   birthDate: "",
+  education: "",
   wikipedia: "",
   rejestrIo: "",
   krsNumber: "",
@@ -322,6 +330,7 @@ watch(dialog, (val) => {
   editData.content = entity.content || "";
   editData.parties = Array.isArray(entity.parties) ? [...entity.parties] : [];
   editData.birthDate = entity.birthDate || "";
+  editData.education = entity.education || "";
   editData.wikipedia = entity.wikipedia || "";
   editData.rejestrIo = entity.rejestrIo || "";
   editData.krsNumber = entity.krsNumber || "";
@@ -368,6 +377,7 @@ async function submit() {
     if (type.value === "person") {
       body.parties = editData.parties;
       body.birthDate = editData.birthDate;
+      body.education = editData.education;
       body.wikipedia = editData.wikipedia;
       body.rejestrIo = editData.rejestrIo;
       body.ktomaco = editData.ktomaco;

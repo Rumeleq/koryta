@@ -18,6 +18,7 @@ export function anyNode(node: Partial<EditableNode>): EditableNode {
     name: node.name || "",
     type: node.type,
     birthDate: node.birthDate || "",
+    education: node.education || "",
     krsNumber: node.krsNumber || "",
     regonNumber: node.regonNumber || "",
     nipNumber: node.nipNumber || "",
