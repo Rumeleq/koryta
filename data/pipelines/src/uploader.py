@@ -6,6 +6,7 @@ import typing
 
 import numpy as np
 import requests
+from tqdm import tqdm
 
 from analysis.interesting import Companies
 from conductor import setup_context
@@ -47,7 +48,7 @@ def parse_args() -> Args:
     parser.add_argument("--submit", action="store_true", help="Submit data to the API")
     parser.add_argument(
         "--type",
-        choices=["person", "company", "region", "score", "extraction"],
+        choices=["person", "company", "region", "score", "extraction", "computeNodes"],
         help="Entity type to query",
     )
     parser.add_argument(
@@ -114,6 +115,8 @@ class Uploader:
             return ExtractionUploader(args)
         if args.type == "score":
             return ScoreUploader(args)
+        if args.type == "computeNodes":
+            return ComputeNodesUploader(args)
         return Uploader(args)
 
     def submit_entity(self, payload) -> requests.Response:
@@ -157,7 +160,7 @@ class Uploader:
     def submit_results(self, entities):
         self.success_count = 0
         self.total = 0
-        for idx, payload in enumerate(entities):
+        for idx, payload in tqdm(enumerate(entities), total=len(entities)):
             if self.args.limit is not None and idx >= self.args.limit:
                 print(f"Reached limit {self.args.limit}")
                 break
@@ -432,6 +435,34 @@ class ExtractionUploader(Uploader):
 
         print(
             f"\nUpload complete. Articles: {len(articles)}, Facts: {fact_count}",
+            file=sys.stderr,
+        )
+
+
+class ComputeNodesUploader(Uploader):
+    """Uploads compute nodes POST request to the API."""
+
+    @typing.override
+    def submit_results(self, _entities):
+        url = f"{self.args.endpoint}/api/stats/computeNodes"
+
+        print(
+            f"Calling compute nodes to {url}...",
+            end=" ",
+            file=sys.stderr,
+        )
+        resp = requests.post(
+            url,
+            headers=self.headers,
+        )
+        if resp.status_code in [200, 201]:
+            print("  OK", file=sys.stderr)
+        else:
+            print(f"FAILED ({resp.status_code}): {resp.text}", file=sys.stderr)
+            raise Exception(f"API error: {resp.status_code} - {resp.text}")
+
+        print(
+            "\nFinished",
             file=sys.stderr,
         )
 
