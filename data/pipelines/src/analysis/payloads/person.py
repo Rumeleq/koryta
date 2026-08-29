@@ -10,7 +10,7 @@ import pandas as pd
 
 from analysis.extract import Extract, check_auto_approved
 from analysis.payloads.election import get_election_type
-from analysis.payloads.site import SiteSnapshot
+from analysis.payloads.site import INFORMATIONAL_REASONS, SiteSnapshot
 from analysis.utils.elections import candidacy_teryt
 from entities.composite import Company, Election, Person
 from scrapers.koryta.download import KorytaPeople
@@ -106,18 +106,29 @@ class PeoplePayloads(Pipeline[Person]):
         reasons: typing.Counter[str] = collections.Counter()
         for person in people:
             person_reasons = snapshot.changes(asdict(person))
-            if not person_reasons:
+            reasons.update(person_reasons)
+            # Counted above whatever happens, so a run says what it is leaving
+            # behind; only a reason that is a *write* keeps the payload.
+            if not set(person_reasons) - INFORMATIONAL_REASONS:
                 continue
             changed.append(person)
-            reasons.update(person_reasons)
 
         print(
             f"{len(changed)} of {len(people)} payloads differ from koryta.pl; "
             f"dropping {len(people) - len(changed)} that would write nothing. "
             f"What the rest would write:"
         )
+        # Listed with the rest, and marked, because it is the one line here
+        # that is not about this run: a candidacy the site cannot place is a
+        # region node missing or a constituency PKW never published, and no
+        # number of uploads will fix either.
         for reason, count in reasons.most_common():
-            print(f"  {count:6d}  {reason}")
+            note = (
+                " (dropped by the ingest, not written)"
+                if reason in INFORMATIONAL_REASONS
+                else ""
+            )
+            print(f"  {count:6d}  {reason}{note}")
         return changed
 
     def only_on_koryta(self, ctx: Context, payloads: list[Person]) -> list[Person]:
