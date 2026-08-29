@@ -40,20 +40,27 @@ test.describe("Postęp weryfikacji", () => {
     test.setTimeout(120_000);
     await logIn(page, USERS.normal, "/eksploruj/tabela");
 
-    const bar = await readyBar(page);
+    await readyBar(page);
+
+    // The whole work row, not the bar alone. Since the query-bar redesign the
+    // bar is a band inside that row rather than a card of its own, and it is
+    // mounted there with `hide-cta`: „Pomóż sprawdzać” is a sibling at the end
+    // of the row, along with the four verification filters. A shot of the band
+    // by itself would leave out everything this picture is taken for.
+    const row = page.getByTestId("tabela-work-row");
+    await expect(row).toBeVisible();
 
     // Clipped to the viewport rather than shot as an element.
     //
-    // The bar is a block in a page the table makes wider than the screen - ten
-    // columns at 1280px come to 1456 - so it stretches to the table's scroll
-    // width. An element shot of it is both cut off at the right, losing the
-    // "Pomóż sprawdzać" button this variant exists to show, and pinned to a
-    // width that any change to a table column would move, failing this
-    // screenshot for a reason that has nothing to do with the bar.
+    // The row is a block in a page the table makes wider than the screen - the
+    // columns at 1280px come to more than the viewport - so it stretches to the
+    // table's scroll width. An element shot of it is both cut off at the right
+    // and pinned to a width that any change to a table column would move,
+    // failing this screenshot for a reason that has nothing to do with the bar.
     //
-    // What the clip captures is what a reader sees: the bar from its left edge
+    // What the clip captures is what a reader sees: the row from its left edge
     // out to the right edge of the window.
-    const box = (await bar.boundingBox())!;
+    const box = (await row.boundingBox())!;
     const view = page.viewportSize()!;
     await expect(page).toHaveScreenshot("postep-weryfikacji.png", {
       clip: {

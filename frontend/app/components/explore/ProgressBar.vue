@@ -1,6 +1,6 @@
 <template>
   <v-card
-    v-if="!stats || stats.total > 0"
+    v-if="visible && !compact"
     variant="outlined"
     class="pa-4"
     data-testid="explore-progress"
@@ -8,8 +8,8 @@
     <div class="d-flex align-center flex-wrap ga-2">
       <span class="text-subtitle-1 font-weight-bold">Postęp weryfikacji</span>
       <span v-if="stats" class="text-body-2 text-medium-emphasis">
-        sprawdzono {{ checkedCount }} z
-        {{ polishCounting(stats.total, "osoba", "osoby", "osób") }} ({{
+        sprawdzono {{ polishNumber(checkedCount) }} z
+        {{ polishCountingGenitive(stats.total, "osoby", "osób") }} ({{
           checkedPercent
         }}%)
       </span>
@@ -121,6 +121,131 @@
       </div>
     </template>
   </v-card>
+
+  <!-- The same three figures as one band, for the query bar on
+       /eksploruj/tabela. A plain div and not a v-card because there it renders
+       inside the bar's own bordered v-sheet, and an outlined card inside an
+       outlined sheet reads as two panels rather than one. The card variant is
+       still what /eksploruj/nowe gets, which is why this is a second branch
+       and not a set of classes on the first. -->
+  <div v-else-if="visible" class="px-0 py-1" data-testid="explore-progress">
+    <v-skeleton-loader v-if="!stats" type="text" />
+    <template v-else>
+      <div class="d-flex align-center flex-wrap gc-3 gr-1 text-body-2">
+        <!-- 8px rather than the 20px track: at this height a segment cannot
+             carry its own number, so the figures live in the tooltip and in
+             the legend below and the bar is only the proportion. -->
+        <div
+          class="stack-bar stack-bar--slim stack-bar--inline"
+          role="img"
+          :aria-label="`Opublikowane: ${stats.approved}, sprawdzone: ${stats.reviewed}, do sprawdzenia: ${stats.toCheck}`"
+        >
+          <v-tooltip
+            v-for="segment in segments"
+            :key="segment.key"
+            :text="`${segment.label}: ${segment.value}`"
+            location="bottom"
+          >
+            <template #activator="{ props: tooltipProps }">
+              <div
+                v-bind="tooltipProps"
+                class="stack-bar-segment"
+                :style="{
+                  width: (segment.value / stats.total) * 100 + '%',
+                  backgroundColor: segment.color,
+                }"
+              />
+            </template>
+          </v-tooltip>
+        </div>
+
+        <span class="text-medium-emphasis">
+          sprawdzono {{ polishNumber(checkedCount) }} z
+          {{ polishCountingGenitive(stats.total, "osoby", "osób") }} ({{
+            checkedPercent
+          }}%)
+        </span>
+
+        <!-- No d-none/d-sm-inline on the contribution: flex-wrap drops it onto
+             its own line below md instead of hiding it, because on a phone
+             "what have I done so far" is the whole reason a signed-in reader
+             looks at this band.
+
+             One inline run and not a d-flex row: as a flex container every
+             word between the <strong>s becomes an item of its own, and at
+             390px that broke the sentence into a ragged grid with the "·"
+             separators alone on their lines. The icon is inline-flex, so it
+             sits in the text without needing one. -->
+        <span v-if="user">
+          <v-icon
+            :icon="mdiHandHeartOutline"
+            size="small"
+            color="medium-emphasis"
+            class="mr-1"
+          />
+          Twój wkład:
+          <strong>{{ votesCount }}</strong>
+          {{ pluralPl(votesCount, "głos", "głosy", "głosów") }} ·
+          <strong>{{ notesCount }}</strong>
+          {{ pluralPl(notesCount, "notatka", "notatki", "notatek") }} ·
+          <strong>{{ revisionsCount }}</strong>
+          {{
+            pluralPl(revisionsCount, "propozycja", "propozycje", "propozycji")
+          }}
+          zmian
+        </span>
+        <span v-else class="text-medium-emphasis">
+          <v-icon
+            :icon="mdiHandHeartOutline"
+            size="small"
+            color="medium-emphasis"
+            class="mr-1"
+          />
+          <NuxtLink to="/login" class="text-primary">Zaloguj się</NuxtLink>, aby
+          pomóc w sprawdzaniu osób i śledzić swój wkład.
+        </span>
+
+        <v-spacer />
+        <!-- Tonal, not the mock's text button, even though the mock reads
+             lighter: this is the same call to action the card variant renders,
+             and one action that looks like two different controls depending on
+             which page it is on is worse than either. The theme's primary is
+             #a8c79f, so the label is pale in both variants - at least the
+             tonal underlay gives the button a surface to aim at. -->
+        <v-btn
+          v-if="!hideCta"
+          to="/eksploruj/nowe"
+          color="primary"
+          variant="tonal"
+          size="small"
+          class="flex-shrink-0"
+          :append-icon="mdiArrowRight"
+        >
+          Pomóż sprawdzać
+        </v-btn>
+      </div>
+
+      <!-- The legend is the only line here that is reference rather than news,
+           and it is the one that wraps to three rows on a 390px phone - which
+           is the height this band exists to give back. Hidden by class and not
+           by useDisplay(), because under SSR Vuetify's display state starts at
+           a placeholder 1280px and a v-if on it would render the desktop
+           branch into the phone's HTML. -->
+      <div class="d-none d-md-flex flex-wrap align-center gc-3 mt-1">
+        <span
+          v-for="segment in segments"
+          :key="segment.key"
+          class="text-caption text-medium-emphasis d-flex align-center"
+        >
+          <span
+            class="legend-dot legend-dot--sm mr-1"
+            :style="{ background: segment.color }"
+          />
+          {{ segment.label }}: {{ segment.value }}
+        </span>
+      </div>
+    </template>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -129,7 +254,7 @@ import { computed } from "vue";
 import type { Query } from "~~/server/api/nodes/index.get";
 import type { ProgressStats } from "~~/server/api/stats/progress.get";
 import { useMyContributions } from "~/composables/stats/useMyContributions";
-import { polishCounting } from "~/composables/polish";
+import { polishCountingGenitive, polishNumber } from "~/composables/polish";
 
 const props = defineProps<{
   /** The table query; only its structural filters are used, the breakdown by
@@ -137,6 +262,10 @@ const props = defineProps<{
   query: Query;
   /** Hide the call-to-action button (e.g. when already on /eksploruj/nowe). */
   hideCta?: boolean;
+  /** Render as a band inside the table page's query bar instead of as a card:
+   * one line at md and up, no card border, no padding of its own. Off keeps
+   * the five-band card /eksploruj/nowe is built around. */
+  compact?: boolean;
 }>();
 
 const progressQuery = computed(() => ({
@@ -164,6 +293,10 @@ const { data: stats } = await useAsyncData(
 );
 
 const { user, votesCount, notesCount, revisionsCount } = useMyContributions();
+
+// Shared by both roots: an empty filtered set has no progress to report, and
+// the table underneath already says there is nothing there.
+const visible = computed(() => !stats.value || stats.value.total > 0);
 
 const checkedCount = computed(() =>
   stats.value ? stats.value.approved + stats.value.reviewed : 0,
@@ -245,5 +378,23 @@ function pluralPl(n: number, one: string, few: string, many: string) {
   width: 10px;
   height: 10px;
   border-radius: 50%;
+}
+
+/* Compact only. A fixed 160px basis rather than a share of the row: the row
+   wraps, and a flexible bar would be a different width on every filter change
+   and would collapse to nothing once the contribution line joins it. */
+.stack-bar--slim {
+  height: 8px;
+  border-radius: 4px;
+}
+
+.stack-bar--inline {
+  flex: 0 0 160px;
+  width: 160px;
+}
+
+.legend-dot--sm {
+  width: 8px;
+  height: 8px;
 }
 </style>
