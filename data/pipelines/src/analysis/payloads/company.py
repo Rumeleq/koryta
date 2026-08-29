@@ -1,10 +1,12 @@
 import argparse
+from collections import Counter
 from functools import cached_property
 
 import numpy as np
 import pandas as pd
 
 from analysis.interesting import Companies
+from analysis.payloads.site import SiteSnapshot
 from entities.company import display_name
 from entities.company_bodies import supervisory_body
 from entities.company_categories import categories_for
@@ -88,10 +90,57 @@ class CompaniesPayloads(Pipeline):
         parser.add_argument(
             "--koryta-date",
             help="Date (YYYY-MM-DD) of the koryta.pl export listing already "
-            "submitted companies. Defaults to the latest available export.",
+            "submitted companies, and holding what they say for "
+            "--only-changed. Defaults to the latest available export.",
             default=None,
         )
+        parser.add_argument(
+            "--only-changed",
+            help="Emit only the companies whose payload would write something "
+            "koryta.pl does not already hold. Every company here is one the "
+            "site already has, so on a quiet day that is most of them.",
+            default=False,
+            required=False,
+            action=argparse.BooleanOptionalAction,
+        )
         return parser.parse_known_args()[0]
+
+    def only_changed(self, ctx: Context, payloads: list[dict]) -> list[dict]:
+        """The payloads that would write something, and a note of what.
+
+        Every company here is one the site already holds, and most runs learn
+        nothing about most of them: the register has not moved and the
+        categories are worked out from codes that have not moved either. The
+        ingest declines to write those - see `revisionChangesNothing` in
+        `frontend/server/utils/revisions.ts` - but declining still costs a
+        request and a lookup each, and the uploader sleeps 0.3s between them.
+
+        Deciding it here rather than in the uploader is what makes the saving
+        real: a payload dropped here is never sent. `SiteSnapshot` replays the
+        ingest's own rules against the nightly export, and errs towards keeping
+        a payload wherever the two could disagree - the server-side guard is
+        what makes that cheap, because a payload sent needlessly now costs a
+        request and no write.
+        """
+        snapshot = SiteSnapshot.read(ctx, self.args.koryta_date)
+
+        changed = []
+        reasons: Counter[str] = Counter()
+        for payload in payloads:
+            payload_reasons = snapshot.company_changes(payload)
+            if not payload_reasons:
+                continue
+            changed.append(payload)
+            reasons.update(payload_reasons)
+
+        print(
+            f"{len(changed)} of {len(payloads)} payloads differ from "
+            f"koryta.pl; dropping {len(payloads) - len(changed)} that would "
+            f"write nothing. What the rest would write:"
+        )
+        for reason, count in reasons.most_common():
+            print(f"  {count:6d}  {reason}")
+        return changed
 
     def process(self, ctx: Context):
         # TODO this should be a field and dependency
@@ -104,7 +153,6 @@ class CompaniesPayloads(Pipeline):
         companies_df = self.companies.read_or_process(ctx)
 
         payloads = []
-        with_teryt = 0
         for row in companies_df.to_dict(orient="records"):
             krs = row.get("krs")
             if krs is None or (isinstance(krs, float) and np.isnan(krs)):
@@ -170,15 +218,19 @@ class CompaniesPayloads(Pipeline):
             teryt_code = row.get("teryt_code")
             if isinstance(teryt_code, str) and teryt_code.strip():
                 payload["teryt_code"] = teryt_code.strip()
-                with_teryt += 1
 
             payloads.append(payload)
+
+        if self.args.only_changed:
+            payloads = self.only_changed(ctx, payloads)
 
         # Counted and printed because the failure mode here is silence: when
         # `Companies` dropped `parents`, every payload came out with two empty
         # lists and the run reported nothing wrong. A zero on either of these is
         # worth noticing - the register names a company owner for 837 of the
-        # companies on the site and a JST owner for 1,354.
+        # companies on the site and a JST owner for 1,354. Counted over what is
+        # left after `--only-changed`, so the line describes what is emitted.
+        with_teryt = sum(1 for p in payloads if p.get("teryt_code"))
         with_owners = sum(1 for p in payloads if p["owners"])
         with_jst = sum(1 for p in payloads if p["owner_teryts"])
         with_skarb = sum(1 for p in payloads if p["owner_skarb_panstwa"])

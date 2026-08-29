@@ -109,12 +109,28 @@ What the rest would write:
      ...  employment not stored
 ```
 
+`CompaniesPayloads` takes the same flag, and needs it more: every company it
+emits is one the site already has, so a quiet day is almost all no-ops.
+
+```bash
+uv run koryta CompaniesPayloads --only-changed |
+  uv run koryta_uploader --type company --submit
+```
+
 The comparison is a transcription of `frontend/server/utils/edges.ts` and the
-matching helpers in `frontend/server/api/ingest/person.post.ts`, and it is only
-worth as much as it stays one -- `analysis/payloads/site.py` says which reading
-each rule comes from. Where the two might disagree it keeps the payload: one
-sent needlessly costs a request, one dropped wrongly loses a fact and leaves
-nothing to notice it by.
+matching helpers in `frontend/server/api/ingest/person.post.ts` and
+`company.post.ts`, and it is only worth as much as it stays one --
+`analysis/payloads/site.py` says which reading each rule comes from. Where the
+two might disagree it keeps the payload: one sent needlessly costs a request,
+one dropped wrongly loses a fact and leaves nothing to notice it by.
+
+That last trade is cheaper than it used to be. The ingest itself now compares
+what it is about to write against what the node already says and declines to
+write a revision that would change nothing (`revisionChangesNothing` in
+`frontend/server/utils/revisions.ts`), so a payload this filter keeps by mistake
+costs a request and a lookup rather than a revision on every company in the run.
+The filter is what saves the request; the endpoint is what guarantees the
+database is not touched.
 
 ## The compressed mirror
 
