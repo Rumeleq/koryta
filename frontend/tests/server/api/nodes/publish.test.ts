@@ -64,14 +64,16 @@ vi.mock("../../../../server/utils/auth", () => ({
   requireAdmin: vi.fn().mockResolvedValue({ uid: "admin-uid", admin: true }),
 }));
 
-const { mockReadValidatedBody } = vi.hoisted(() => {
+const { mockReadValidatedBody, mockCacheClear } = vi.hoisted(() => {
   const mockReadValidatedBody = vi.fn();
+  const mockCacheClear = vi.fn();
   globalThis.readValidatedBody = mockReadValidatedBody;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   globalThis.createError = (err: any) => err;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   globalThis.defineEventHandler = (fn: any) => fn;
-  return { mockReadValidatedBody };
+  globalThis.useStorage = () => ({ clear: mockCacheClear });
+  return { mockReadValidatedBody, mockCacheClear };
 });
 
 /** Makes the next request ask for `published` on node-1. */
@@ -86,6 +88,32 @@ describe("api/nodes/publish", () => {
     vi.clearAllMocks();
     stored = {};
     requestPublished(true);
+  });
+
+  it("drops the cached pages that were rendered without this one", async () => {
+    stored["nodes/node-1"] = {
+      name: "X",
+      revision_id: { path: "revisions/r" },
+    };
+
+    await handler({} as never);
+
+    // Every cached handler counts published nodes, so until this runs the
+    // explore and stats endpoints answer from before the page existed. The
+    // relations and revisions endpoints have always cleared; this one is the
+    // path taken when the reviewer ticks no relations at all, and it used to
+    // leave the site six hours behind with nothing able to nudge it.
+    expect(mockCacheClear).toHaveBeenCalledWith("nitro:handlers");
+  });
+
+  it("drops them when hiding a page too", async () => {
+    stored["nodes/node-1"] = { name: "X", published: true };
+    requestPublished(false);
+
+    await handler({} as never);
+
+    // A page taken down has to leave the cached lists as surely as one put up.
+    expect(mockCacheClear).toHaveBeenCalledWith("nitro:handlers");
   });
 
   it("publishes a node that has an approved revision", async () => {

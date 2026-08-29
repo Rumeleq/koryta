@@ -66,6 +66,16 @@ export default defineEventHandler(async (event) => {
   );
   await batch.commit();
 
+  // Every cached page that counts this node - the explore endpoints, the stats
+  // ones - answers from before it was visible until its own maxAge runs out.
+  // /api/edges/publish and /api/revisions/approve have always done this; this
+  // endpoint never did, so publishing a page with no relations ticked left the
+  // whole site six hours behind with nothing to nudge it. Only reaches this
+  // container's copy: anything Cloud CDN is holding is governed by the
+  // `s-maxage` the cached handler sent, which is why the endpoints a reviewer
+  // needs fresh are `editorFresh` as well.
+  await useStorage("cache").clear("nitro:handlers");
+
   return {
     id: body.node_id,
     published: body.published,
