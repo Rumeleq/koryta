@@ -48,6 +48,61 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
  * before the list could be read at all. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "kategorie-spolek-przeliczone",
+    title: "Kategorie spółek policzone od nowa - koleje bez drogowców",
+    description:
+      "Etykiety kategorii na spółkach pochodziły jeszcze ze starej reguły, " +
+      "która patrzyła wyłącznie na kody PKD, więc pod „Kolejami” siedziały " +
+      "kopalnie i firmy drogowe z własną bocznicą, a nie było tam samego " +
+      "PKP. Reguła zmieniła się w potokach danych wcześniej, ale nie miała " +
+      "jak trafić na stronę: jedyne źródło danych do przeliczenia wymagało " +
+      "pełnego przeczesania KRS. Teraz kategorie da się policzyć z nocnego " +
+      "zrzutu bazy, więc cała baza dostała etykiety zgodne z regułą: doszło " +
+      "30 spółek kolejowych (m.in. Polskie Koleje Państwowe, PKP " +
+      "Informatyka, Polregio, Koleje Dolnośląskie, a także Windykacja " +
+      "Kolejowa i Fundacja Grupy PKP), a 21 firm spoza branży wypadło.",
+    steps: [
+      "Wejdź na /eksploruj/tabela?category=koleje - filtr „Kategoria” ma się sam ustawić na „Koleje”.",
+      "Sprawdź, że w tabeli są ludzie z Polskich Kolei Państwowych, PKP Informatyki, PKP Cargotabor, PKP Energetyki i PKP Intercity Remtrak - żadna z tych spółek nie ma kolejowego PKD, więc wcześniej ich tu nie było.",
+      "Sprawdź przewoźników, którzy zdążyli przejść na PKD 2025: Koleje Dolnośląskie, Koleje Wielkopolskie, Łódzka Kolej Aglomeracyjna, Polregio.",
+      "Sprawdź, że zniknęli drogowcy, kopalnie i huty: Chemobudowa-Kraków, Kopalnia Wapienia „Czatkowice”, DTŚ, Orlen Aviation, Enea Bioenergia. Kod kolejowy mają tylko dlatego, że mają bocznicę - jest ich mniej niż wcześniej i tak ma być.",
+      "Sprawdź, że nie ma Polskich Kolei Linowych - to koleje linowe, nie szynowe, i mają być poza tą kategorią.",
+      "Wejdź na stronę spółki Windykacja Kolejowa oraz Fundacja Grupy PKP - przy nazwie ma być chip „Koleje”, a kliknięcie w niego ma wrócić do przefiltrowanej tabeli.",
+      "Otwórz PKP Szybką Kolej Miejską w Trójmieście - kategoria ustawiona wcześniej ręcznie na stronie ma zostać nietknięta.",
+      "Sprawdź kolejowe przychodnie i szpitale (np. Szpital Kolejowy w Wilkowicach) - mimo nazwy nie mają być w „Kolejach”.",
+      "To samo sprawdź na /eksploruj/nowe - ta sama lista kategorii i ta sama zawartość po wybraniu „Koleje”.",
+      "Jeśli widzisz jeszcze starą zawartość, dopisz do adresu &latest=true - lista spółek jest trzymana w cache przez godzinę.",
+    ],
+    link: "/eksploruj/tabela?category=koleje",
+    area: "public",
+  },
+  {
+    id: "wybory-nie-gina-przy-nieznanym-okregu",
+    title: "Kandydatury nie giną przez jeden nieznany okręg",
+    description:
+      "Wgrywanie osoby przerywało się na pierwszej kandydaturze z okręgiem, " +
+      "którego nie ma na stronie - a wybory samorządowe z 1994 i 1998 roku " +
+      "są opisane starym, 49-województwowym kodem TERYT, który dziś nie " +
+      "oznacza żadnego regionu. Osoba zostawała wtedy z partią i firmami, " +
+      "ale bez ani jednej kandydatury, i tak samo przepadały wszystkie " +
+      "kolejne pozycje z jej listy - w danych to co piąta kandydatura. " +
+      "Teraz nierozpoznany okręg kosztuje jedną kandydaturę, a nie całą " +
+      "historię wyborczą, a import zamiast błędu zwraca listę pominiętych " +
+      "pozycji. Same potoki danych przestały też podawać przedreformowe " +
+      "kody jako TERYT. Kolumna „Wybory” w tabeli wypełnia się po ponownym " +
+      "wgraniu danych osób.",
+    steps: [
+      "Wejdź na /eksploruj/tabela i posortuj po „Ostatnie zatrudnienie” malejąco. W kolumnie „Wybory” część osób z partią ma teraz swoje kandydatury zamiast pustej komórki.",
+      "Wybierz osobę, która wcześniej miała partię i pustą kolumnę „Wybory” - np. Andrzej Grzyb, Czesław Siekierski, Adam Struzik - i sprawdź, czy w jej wierszu są chipy z rokiem i nazwą okręgu.",
+      "Najedź na chip: dymek ma pokazać okręg, województwo i komitet, z którego ramienia osoba startowała.",
+      "Kliknij nazwisko, żeby otworzyć szufladę z boku - te same kandydatury mają być na liście powiązań.",
+      "Wejdź na stronę tej osoby: kandydatury mają być w historii powiązań i w grafie na dole. Uwaga: świeżo wgrane kandydatury czekają na zatwierdzenie, więc niezalogowany czytelnik zobaczy je w tabeli, ale na grafie osoby dopiero po zatwierdzeniu.",
+      "Sprawdź kontrolnie kogoś, kto kandydatury miał już wcześniej - np. Krzysztof Kłak - żeby upewnić się, że nic mu nie ubyło ani się nie zdublowało.",
+    ],
+    link: "/eksploruj/tabela?sortBy=latestEmploymentStart&sortDesc=true",
+    area: "public",
+  },
+  {
     id: "reviewer-queue-one-kind-of-button",
     title: "Kolejka rewizji: w ostatniej kolumnie zawsze ten sam przycisk",
     description:
