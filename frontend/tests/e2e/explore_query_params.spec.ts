@@ -33,8 +33,10 @@ test.describe("Explore query parameters", () => {
   /** The linked sort, end to end. `server/api/nodes/index.get.ts` maps this key
    * onto `stats.edges.*.latestEmploymentStart` and hands everything else it is
    * given straight to a Firestore `orderBy`, which silently drops every
-   * document without the field - so renaming the merged "Historia" column's key
-   * would answer this url with an empty table rather than with an error.
+   * document without the field - so renaming the merged column's key would
+   * answer this url with an empty table rather than with an error. Its title
+   * has been through "Historia" and is now "Firmy"; the key under it has not
+   * moved and must not.
    *
    * Signed in on purpose: the one seeded person carrying a
    * `latestEmploymentStart` is an unapproved draft, so the signed-out query
@@ -55,7 +57,7 @@ test.describe("Explore query parameters", () => {
     // is still the url they are on.
     const sorted = page.locator("th.v-data-table__th--sorted");
     await expect(sorted).toHaveCount(1);
-    await expect(sorted).toContainText("Historia");
+    await expect(sorted).toContainText("Firmy");
     expect(new URL(page.url()).searchParams.get("sortBy")).toBe(
       "latestEmploymentStart",
     );
@@ -70,8 +72,15 @@ test.describe("Explore query parameters", () => {
 
     expect(new URL(page.url()).searchParams.get("teryt")).toBe(TERYT);
 
+    // The clear used to be the „Region osoby” autocomplete's own x. That
+    // control now lives behind the „Filtry” button and is not in the dom until
+    // the panel is opened; the chip on the query bar is what stands in for it,
+    // and its x is the one affordance that has to work without opening
+    // anything. `Usuń filtr:` is the `close-label` the bar sets on every chip -
+    // the region's own name is whatever the seeded teryt resolves to, so this
+    // matches on the prefix.
     await page
-      .getByRole("button", { name: "Clear Region osoby" })
+      .getByRole("button", { name: /^Usuń filtr: Region:/ })
       .click({ timeout: 15000 });
 
     await expect

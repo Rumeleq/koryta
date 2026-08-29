@@ -60,14 +60,17 @@ const pages: {
     // Rendered entirely client side, so none of it exists until two separate
     // responses have arrived: the place list the card is drawn from, and the
     // people the table is filtered to. Capturing before both leaves a card
-    // with no identifiers and a table still spinning.
+    // with no identifiers and a table still spinning. The card is below the
+    // table since the query-bar redesign, which is why this is a fullPage shot
+    // and not a viewport one.
     settled: [/REGON:\s*123456785/, "Osoba Testowa"],
-    // Desktop only, and no longer because of the table: the phone view is two
-    // merged columns now and fits. What is left is the closed end-drawer, which
-    // sits off the right edge of the document rather than being taken out of
-    // it, so a fullPage shot comes out wider than the phone and spends most of
-    // itself on empty canvas with the card and its identifiers squeezed into
-    // the left of the frame. It captures the drawer, not this page.
+    // Desktop only, and not because of the table: the phone view is two merged
+    // columns and fits, and everything above the first row is one 44px bar. What
+    // is left is the closed end-drawer, which sits off the right edge of the
+    // document rather than being taken out of it, so a fullPage shot comes out
+    // wider than the phone and spends most of itself on empty canvas with the
+    // card and its identifiers squeezed into the left of the frame. It captures
+    // the drawer, not this page.
     viewports: ["visual-desktop"],
   },
   {

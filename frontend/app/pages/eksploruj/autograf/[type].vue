@@ -45,12 +45,17 @@
         v-model:teryt="filterTeryt"
         v-model:company-teryt="filterCompanyTeryt"
         v-model:place="filterPlace"
+        v-model:category="filterCategory"
         v-model:hide-voted="filterHideVoted"
         v-model:currently-employed="filterCurrentlyEmployed"
+        v-model:min-employment-date="filterMinEmploymentDate"
+        v-model:min-votes="filterMinVotes"
         :available-parties="availableParties"
         :available-regions="availableRegions"
         :available-companies="availableCompanies"
         :show-visibility="!!user"
+        :heading="null"
+        @clear="clearFilters"
       />
 
       <div class="d-flex align-center mb-4 mt-6">
@@ -116,7 +121,8 @@ const route = useRoute();
 const router = useRouter();
 
 const DATA_LIMIT = 200;
-const { setQuery, stringFilter, arrayFilter, choiceFilter } = useQueryFilters();
+const { setQuery, stringFilter, arrayFilter, choiceFilter, numberFilter } =
+  useQueryFilters();
 
 const activeVisualisation = computed({
   get: () => route.params.type as string,
@@ -155,6 +161,12 @@ const filterVisibility = choiceFilter<"all" | "public" | "private">(
 const filterParty = arrayFilter("party");
 const filterTeryt = stringFilter("teryt");
 const filterCompanyTeryt = stringFilter("companyTeryt");
+/** The panel draws „Typ podmiotu”, „Zatrudnieni od” and „Min. głosy łącznie”
+ * whatever this page binds, and `/api/nodes` honours all three here exactly as
+ * it does on the table. Unbound they fell back to the bar's own `defineModel`
+ * state, so picking „Szpitale” made the button read „Filtry (1)” while the
+ * chart under it was still drawn from an unfiltered query. */
+const filterCategory = stringFilter("category");
 const { filterPlace, legacyKrs, availableCompanies } = usePlaceFilter(
   places,
   arrayFilter,
@@ -168,6 +180,34 @@ const filterHideVoted = choiceFilter<"all" | "no_votes" | "has_votes">(
   "hideVoted",
   "all",
 );
+const filterMinEmploymentDate = stringFilter("minEmploymentDate");
+const filterMinVotes = numberFilter("minVotes");
+
+/** The bar's „Wyczyść” asks the page to do this rather than doing it itself:
+ * each filter above is a writable computed over `route.query` and each write
+ * starts from the query as it is now, so clearing them one by one would end
+ * with the last write reinstating everything the others had just removed.
+ *
+ * `parties` and `krs` have no control of their own but are in the list all the
+ * same: they are the spellings an older link uses for `party` and `place`, and
+ * leaving them behind would clear the chips and none of the filtering. Paging
+ * is absent because this page has none - it always asks for the first
+ * DATA_LIMIT rows. */
+const clearFilters = () =>
+  void setQuery({
+    category: undefined,
+    teryt: undefined,
+    companyTeryt: undefined,
+    party: undefined,
+    parties: undefined,
+    place: undefined,
+    krs: undefined,
+    currentlyEmployed: undefined,
+    visibility: undefined,
+    hideVoted: undefined,
+    minEmploymentDate: undefined,
+    minVotes: undefined,
+  });
 
 const allowedCompanyNames = computed(() => {
   if (!filterPlace.value || filterPlace.value.length === 0) return null;
@@ -228,6 +268,9 @@ const apiQuery = computed(
       krs: legacyKrs.value ?? undefined,
       teryt: filterTeryt.value || undefined,
       companyTeryt: filterCompanyTeryt.value || undefined,
+      category: filterCategory.value || undefined,
+      minEmploymentDate: filterMinEmploymentDate.value || undefined,
+      minVotes: filterMinVotes.value ?? undefined,
       hideVoted:
         filterHideVoted.value !== "all" ? filterHideVoted.value : undefined,
       currentlyEmployed:

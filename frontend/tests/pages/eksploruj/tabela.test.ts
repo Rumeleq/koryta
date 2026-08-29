@@ -147,18 +147,38 @@ describe("/eksploruj/tabela's columns", () => {
     vi.clearAllMocks();
   });
 
-  it("asks for a person and their history in two columns", async () => {
+  it("asks for a person, their employers and their elections", async () => {
     const wrapper = await mountPage();
 
+    // „Lata pracy” and „Notatki” are not here and are not meant to be: seven
+    // days of api logs put them at under 4% of sorted queries between them, so
+    // they live in the sort menus of the two columns that absorbed them.
+    // „Eksploruj” is gone with them - the magnifier in it only opened the
+    // drawer, which is what clicking the name does.
     expect(headerTitles(wrapper)).toEqual([
       "Osoba",
-      "Historia",
-      "Lata pracy",
-      "Notatki",
-      "Głosy łącznie",
+      "Firmy",
+      "Wybory",
+      "Oceny",
       "Twój głos",
-      "Eksploruj",
     ]);
+  });
+
+  /** The other half of the sort-key hazard, and the one no header title makes
+   * visible: `elections` and `userVote` are not keys the api maps onto a
+   * Firestore path, so one click on a sortable „Wybory” would send
+   * `?sortBy=elections` into an `orderBy` verbatim, drop every document that
+   * carries no such field and answer with an empty table and no error. A whole
+   * list rather than two negatives, so a column that quietly loses its sort
+   * shows up here too. */
+  it("only lets a reader sort on keys the api maps", async () => {
+    const wrapper = await mountPage();
+
+    const sortable = wrapper
+      .findAll("thead th")
+      .filter((cell) => cell.classes().includes("v-data-table__th--sortable"))
+      .map((cell) => cell.text().trim());
+    expect(sortable).toEqual(["Osoba", "Firmy", "Oceny"]);
   });
 
   /** The regression that matters. The merged history column has to keep the
@@ -166,8 +186,8 @@ describe("/eksploruj/tabela's columns", () => {
    * no allow-list and hands an unrecognised `sortBy` straight to a Firestore
    * `orderBy`, which drops every document that does not carry the field. A
    * prettier key would answer an existing `?sortBy=latestEmploymentStart` link
-   * with an empty table. */
-  it("still sorts on latestEmploymentStart, and marks the Historia header", async () => {
+   * with an empty table. Renaming the column to „Firmy” does not touch it. */
+  it("still sorts on latestEmploymentStart, and marks the Firmy header", async () => {
     const wrapper = await mountPage({
       sortBy: "latestEmploymentStart",
       sortDesc: "true",
@@ -180,10 +200,33 @@ describe("/eksploruj/tabela's columns", () => {
 
     const sorted = wrapper.findAll("th.v-data-table__th--sorted");
     expect(sorted).toHaveLength(1);
-    expect(sorted[0]!.text()).toContain("Historia");
+    expect(sorted[0]!.text()).toContain("Firmy");
     // ExploreTableColumnHeader hides the arrow with `opacity-0` on every
     // column that is not the sorted one.
     expect(sorted[0]!.find(".opacity-0").exists()).toBe(false);
+  });
+
+  /** The share card offers „Dołącz stronę i liczbę wierszy” only where ticking
+   * it would change the address, and it can only see what the bar hands it: the
+   * bar's own `query` carries no paging, so with nothing passed here the
+   * checkbox compared a link against itself and never appeared at all.
+   *
+   * The row count goes up only once the reader has changed it. `shareUrl` drops
+   * `page=1` by itself but has no default to compare a row count against, so
+   * the untouched first page would otherwise offer to add `itemsPerPage=10` -
+   * which is what the recipient gets anyway. */
+  it("tells the bar where in the results the reader is standing", async () => {
+    const paged = await mountPage({ page: "3", itemsPerPage: "100" });
+
+    // The stub flattens every prop name to lower case.
+    const bar = paged.find("form-eksploruj-tabela-filters-stub");
+    expect(bar.attributes("page")).toBe("3");
+    expect(bar.attributes("itemsperpage")).toBe("100");
+
+    const fresh = await mountPage();
+    const freshBar = fresh.find("form-eksploruj-tabela-filters-stub");
+    expect(freshBar.attributes("page")).toBe("1");
+    expect(freshBar.attributes("itemsperpage")).toBeUndefined();
   });
 
   it("keeps Widoczność behind being signed in", async () => {

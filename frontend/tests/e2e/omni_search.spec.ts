@@ -20,12 +20,17 @@ test.describe("OmniSearch", () => {
     await poItem.click();
     await expect(page).toHaveURL(/.*\/eksploruj\/tabela\?.*party=PO/);
 
-    // Verify filter is set
+    // Verify the filter is set, and says so. The „Partia” autocomplete that
+    // used to carry this chip is behind the „Filtry” button now and is not in
+    // the dom until the panel is opened; the query bar's rail is what names a
+    // filter the reader can no longer see, and its count is the second half of
+    // the same statement.
     await expect(
-      page
-        .locator(".v-autocomplete", { hasText: "Partia" })
-        .locator(".v-chip__content"),
-    ).toHaveText("PO");
+      page.locator(".tabela-query-bar__rail .v-chip", { hasText: "PO" }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Filtry/ })).toHaveText(
+      /Filtry \(1\)/,
+    );
   });
 
   test("allows searching for regions", async ({ page }) => {
@@ -39,9 +44,14 @@ test.describe("OmniSearch", () => {
     await opoleItem.click();
     await expect(page).toHaveURL(/.*\/eksploruj\/tabela\?.*teryt=1661/);
 
+    // Same as above: the region is named by its chip on the query bar, not by
+    // the „Region osoby” control, which is one click in. `shared/queryUrl`
+    // spells this chip „Region: <nazwa>”.
     await expect(
-      page.locator(".v-input", { hasText: "Region osoby" }),
-    ).toContainText("Opole");
+      page.locator(".tabela-query-bar__rail .v-chip", {
+        hasText: "Region: Opole",
+      }),
+    ).toBeVisible();
   });
 
   test("should dedup companies", async ({ page }) => {

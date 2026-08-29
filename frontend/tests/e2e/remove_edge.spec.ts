@@ -280,7 +280,8 @@ test.describe("Removing a relation", () => {
     await row.click();
 
     // The bin, not the company's name: the name is also on the "Wybrane firmy"
-    // card at the top of this page, so it would pass without a drawer at all.
+    // card, which the query-bar redesign moved below the table but did not
+    // remove, so a name assertion would pass without a drawer at all.
     const bin = page.getByTestId(`edge-remove-${edges.job}`);
     await expect(bin).toBeVisible({ timeout: 30_000 });
     await bin.click();
