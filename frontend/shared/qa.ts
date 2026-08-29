@@ -48,6 +48,32 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
  * before the list could be read at all. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "qa-zgloszenie-rozwiazane",
+    title: "Na liście QA widać, że zgłoszony problem został załatwiony",
+    description:
+      "Wpis, przy którym zgłosiłeś problem, świecił się na czerwono nawet " +
+      "wtedy, gdy zgłoszenie było już w panelu odhaczone jako załatwione - " +
+      "lista czytała tylko Twoją własną ocenę i nic nie wiedziała o tym, co " +
+      "zrobił z nim admin. Teraz taki wpis mówi wprost, że sprawę uznaliśmy " +
+      "za zamkniętą, i pyta, czy się z tym zgadzasz: „Przyjmuję” zdejmuje go " +
+      "z zakładki „Problemy” i odsyła do ponownego sprawdzenia, a „Nadal nie " +
+      "działa” wysyła świeże zgłoszenie do zespołu - tym razem także wtedy, " +
+      "gdy nie zmieniasz w uwadze ani słowa.",
+    steps: [
+      "Zaloguj się i wejdź na /qa, zakładka „Problemy”. Wybierz wpis, przy którym masz zgłoszony problem (jeśli nie masz żadnego, rozwiń dowolny wpis, wpisz uwagę i kliknij „Coś nie działa”).",
+      "W drugiej przeglądarce (albo po wylogowaniu i zalogowaniu jako admin) wejdź na /admin/opinie, znajdź to zgłoszenie po treści uwagi i ustaw mu status „Załatwione”.",
+      "Wróć na /qa i odśwież stronę. Przy tym wpisie ma być niebieski znacznik „Admin: Załatwione” i ramka z informacją, że problem uznaliśmy za załatwiony, a w niej przyciski „Przyjmuję” i „Nadal nie działa”.",
+      "Sprawdź, że wpisy, których admin nie ruszał, wyglądają jak dotąd - bez żadnej dodatkowej ramki i bez znacznika.",
+      "Kliknij „Przyjmuję”. Wpis ma zniknąć z zakładki „Problemy”, licznik przy niej zmniejszyć się o jeden, a sam wpis pojawić się w „Do sprawdzenia” z dopiskiem, że czeka na Twoje ponowne sprawdzenie.",
+      "Odśwież stronę - wpis ma zostać tam, gdzie był, a nie wrócić do „Problemów”.",
+      "Przy innym zamkniętym zgłoszeniu kliknij zamiast tego „Nadal nie działa”, nie zmieniając wpisanej wcześniej uwagi. Na dole ma pojawić się „Zgłoszone - problem trafił do zespołu”, ramka ma zniknąć, a w /admin/opinie ma czekać nowe zgłoszenie z tą samą treścią i statusem „Nowe”.",
+      "Ustaw jakiemuś zgłoszeniu status „Nie robimy” - na /qa ma być napisane właśnie to, a nie że jest załatwione.",
+      "Wyloguj się i zaloguj na inne konto: cudze zgłoszenia i cudze rozstrzygnięcia nie mają się pokazywać - widzisz tylko to, co sam zgłosiłeś.",
+    ],
+    link: "/qa",
+    area: "contributor",
+  },
+  {
     id: "notatki-ten-sam-kafel",
     title: "Notatki są takimi samymi kafelkami jak reszta strony",
     description:
@@ -842,13 +868,13 @@ export const QA_ITEMS: QaItem[] = [
     description:
       "Na wąskim ekranie nad wyszukiwarką jest jedno zdanie o tym, co ta " +
       "strona robi - zabrakło go, kiedy logo i nagłówek zeszły z pierwszego " +
-      "ekranu. Przycisk âDziałaj z namiâ znika z telefonów, żeby mapa " +
+      "ekranu. Przycisk „Działaj z nami” znika z telefonów, żeby mapa " +
       "koryciarstwa była pierwszą rzeczą pod wyszukiwarką; ten sam " +
       "odnośnik jest teraz w stopce, więc dalej można do niego trafić.",
     steps: [
       "Na telefonie (albo zwęż okno poniżej 960 px) wejdź na stronę główną - nad wyszukiwarką ma być jedno zdanie o tym, co robimy.",
-      "Sprawdź, że pod wyszukiwarką nie ma już przycisku âDziałaj z namiâ i że zaraz pod nią zaczyna się mapa.",
-      "Przewiń na sam dół - w stopce, w âO projekcieâ, ma być âDziałaj z namiâ, prowadzące na /pomoc.",
+      "Sprawdź, że pod wyszukiwarką nie ma już przycisku „Działaj z nami” i że zaraz pod nią zaczyna się mapa.",
+      "Przewiń na sam dół - w stopce, w „O projekcie”, ma być „Działaj z nami”, prowadzące na /pomoc.",
       "Rozszerz okno powyżej 960 px - wraca logo, nagłówek i przycisk obok wyszukiwarki, a zdanie znika (mówi to samo, co nagłówek).",
     ],
     link: "/",
@@ -865,9 +891,9 @@ export const QA_ITEMS: QaItem[] = [
       "staremu, filtry są rozwinięte.",
     steps: [
       "Na telefonie (albo zwęż okno poniżej 960 px) wejdź na /eksploruj/tabela - tabela ma być widoczna bez przewijania albo po jednym machnięciu.",
-      "Kliknij przycisk âFiltry i wyszukiwanieâ - filtry mają się rozwinąć i zwinąć ponownie.",
-      "Ustaw jakiś filtr, na przykład partię, i zwiń panel - na przycisku ma być âFiltry (1)â, żeby nie filtrował po cichu.",
-      "Wyloguj się i sprawdź niebieski banerek: przycisk âZaloguj sięâ ma być pod tekstem, w całości na ekranie.",
+      "Kliknij przycisk „Filtry i wyszukiwanie” - filtry mają się rozwinąć i zwinąć ponownie.",
+      "Ustaw jakiś filtr, na przykład partię, i zwiń panel - na przycisku ma być „Filtry (1)”, żeby nie filtrował po cichu.",
+      "Wyloguj się i sprawdź niebieski banerek: przycisk „Zaloguj się” ma być pod tekstem, w całości na ekranie.",
       "Spróbuj przewinąć stronę w bok - nie ma czego, nic nie wystaje poza ekran.",
       "Rozszerz okno powyżej 960 px - filtry mają być rozwinięte, bez przycisku do zwijania.",
     ],
@@ -878,20 +904,20 @@ export const QA_ITEMS: QaItem[] = [
     id: "reviewer-queue-one-button",
     title: "Kolejka rewizji: jeden przycisk zamiast pięciu",
     description:
-      "Wiersz w kolejce ma teraz jeden przycisk - âRozpatrzâ - który otwiera " +
+      "Wiersz w kolejce ma teraz jeden przycisk - „Rozpatrz” - który otwiera " +
       "porównanie rewizji tego wpisu z tą jedną podświetloną i przewiniętą " +
       "na widok. Decyzje zapadają tam, gdzie widać całą zmianę, a nie w " +
       "najwęższej kolumnie tabeli. Autor i data to jedna kolumna " +
-      "âZgłoszenieâ na początku wiersza, a âCzego dotyczyâ nie rozpycha się " +
+      "„Zgłoszenie” na początku wiersza, a „Czego dotyczy” nie rozpycha się " +
       "już na tytuł artykułu.",
     steps: [
       "Jako admin wejdź na /admin/rewizje/kolejka.",
-      "Sprawdź pierwszą kolumnę âZgłoszenieâ - w jednym miejscu ma być autor, kiedy zgłosił i status.",
+      "Sprawdź pierwszą kolumnę „Zgłoszenie” - w jednym miejscu ma być autor, kiedy zgłosił i status.",
       "Sprawdź ostatnią kolumnę - ma być w niej dokładnie jeden przycisk.",
-      "Kliknij âRozpatrzâ - otwiera się porównanie rewizji tego wpisu, a kolumna z tą rewizją jest podświetlona i widoczna bez przewijania w bok.",
-      "Zatwierdź albo odrzuć ją tam i wróć do kolejki - przycisk przy rozpatrzonej zmienia się na âZobaczâ.",
-      "Ustaw filtr âRodzajâ na âWszystkoâ i znajdź rewizję powiązania - jej przycisk ma prowadzić na /admin/rewizje-krawedzi, bo powiązania recenzuje się tam.",
-      "Znajdź rewizję artykułu o długim tytule - kolumna âCzego dotyczyâ ma być wąska, tytuł ucięty po dwóch liniach, a cały widoczny w dymku po najechaniu.",
+      "Kliknij „Rozpatrz” - otwiera się porównanie rewizji tego wpisu, a kolumna z tą rewizją jest podświetlona i widoczna bez przewijania w bok.",
+      "Zatwierdź albo odrzuć ją tam i wróć do kolejki - przycisk przy rozpatrzonej zmienia się na „Zobacz”.",
+      "Ustaw filtr „Rodzaj” na „Wszystko” i znajdź rewizję powiązania - jej przycisk ma prowadzić na /admin/rewizje-krawedzi, bo powiązania recenzuje się tam.",
+      "Znajdź rewizję artykułu o długim tytule - kolumna „Czego dotyczy” ma być wąska, tytuł ucięty po dwóch liniach, a cały widoczny w dymku po najechaniu.",
     ],
     link: "/admin/rewizje/kolejka",
     area: "admin",
@@ -900,15 +926,15 @@ export const QA_ITEMS: QaItem[] = [
     id: "drawer-admin-revisions-link",
     title: "Skrót do rewizji także w panelu bocznym",
     description:
-      "Przycisk âRewizjeâ, który admin ma na stronie osoby, jest teraz również " +
-      "w panelu bocznym otwieranym z tabeli - w tej samej linii co âZaproponuj " +
-      "zmianęâ i głosy. Nie trzeba już wychodzić z tabeli, żeby dojść do " +
+      "Przycisk „Rewizje”, który admin ma na stronie osoby, jest teraz również " +
+      "w panelu bocznym otwieranym z tabeli - w tej samej linii co „Zaproponuj " +
+      "zmianę” i głosy. Nie trzeba już wychodzić z tabeli, żeby dojść do " +
       "ekranu, na którym stronę się publikuje.",
     steps: [
-      "Jako admin wejdź na /eksploruj/tabela i kliknij nazwisko - w panelu, w linii z głosami, ma być przycisk âRewizjeâ.",
+      "Jako admin wejdź na /eksploruj/tabela i kliknij nazwisko - w panelu, w linii z głosami, ma być przycisk „Rewizje”.",
       "Kliknij go - ma otworzyć listę rewizji tej samej osoby, którą panel pokazywał.",
       "Wróć do tabeli, otwórz inną osobę i sprawdź, że przycisk prowadzi do niej, a nie do poprzedniej.",
-      "Zaloguj się jako zwykły użytkownik i powtórz - âZaproponuj zmianęâ ma być, âRewizjiâ nie.",
+      "Zaloguj się jako zwykły użytkownik i powtórz - „Zaproponuj zmianę” ma być, „Rewizji” nie.",
     ],
     link: "/eksploruj/tabela",
     area: "admin",
@@ -1322,6 +1348,10 @@ export type QaCheck = {
   feedback?: string;
   createdAt?: string;
   updatedAt?: string;
+  /** When this reader accepted an admin's close on their own report of this
+   * entry. Set from /qa, cleared by the next verdict; it is what stops the
+   * entry counting as their problem without claiming they re-checked it. */
+  acceptedResolutionAt?: string | null;
 };
 
 export function qaCheckId(itemId: string, userUid: string): string {
@@ -1346,6 +1376,13 @@ export function qaItemState(
   const mine = checks.find(
     (check) => check.itemId === itemId && check.userUid === userUid,
   );
+  // A reported problem the reader has since accepted as closed goes back to
+  // needing a look, not to "sprawdzone": an admin marking their report
+  // resolved is a claim by the team, and the entry only becomes verified when
+  // this reader says so themselves. The stored verdict is still "issue" - the
+  // acceptance is a separate field on purpose, so nothing has to lie about
+  // what they found. See `acceptedResolutionAt`.
+  if (mine?.status === "issue" && mine.acceptedResolutionAt) return "unchecked";
   return mine?.status ?? "unchecked";
 }
 
@@ -1412,9 +1449,19 @@ export function qaVerdictIsReportable(
   status: QaCheckStatus,
   note: string,
   previous: QaCheck | null,
+  /** Whether the last report this reader filed about the entry has already
+   * been closed by an admin. Defaults to false, which is what every caller
+   * that cannot know - the tests, anything reading a check on its own - should
+   * get. */
+  adminSettled = false,
 ): boolean {
   const text = note.trim();
   if (status === "ok" && !text) return false;
+  // Saying it is still broken after somebody closed the report is news even in
+  // the same words; that is the whole content of the message. Checked before
+  // the de-dup below, which would otherwise read it as the same verdict twice
+  // and leave the reader with no way to argue back.
+  if (adminSettled && status === "issue") return true;
   if (
     previous?.status === status &&
     (previous.feedback ?? "").trim() === text
