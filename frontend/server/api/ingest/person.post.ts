@@ -22,6 +22,7 @@ import {
   type ElectionRequest,
   type EmploymentRequest,
   type PersonRequest,
+  type UnplacedElection,
 } from "#shared/api";
 
 export default defineEventHandler(async (event) => {
@@ -121,6 +122,7 @@ export default defineEventHandler(async (event) => {
     // Track results
     const articlesResult: EntityResult[] = [];
     const electionsResult: EntityResult[] = [];
+    const unplacedElections: UnplacedElection[] = [];
 
     const companiesResult: EntityResult[] = await Promise.all(
       body.companies.map(async (company, index) => {
@@ -147,9 +149,21 @@ export default defineEventHandler(async (event) => {
       articlesResult.push(await createArticle(ctx, personId, article));
     }
     for (const election of assertArray(body.elections, "elections")) {
-      const result = await createElection(ctx, personId, election);
-      if (!result) continue; // TODO handle missing teryt for sejm etc.
-      electionsResult.push(result);
+      // Per candidacy, the way the employments above are handled per company.
+      // A payload is a person, not a transaction: whatever the site cannot
+      // make sense of is one relation, and the rest of the person still goes
+      // in. Everything dropped comes back in `unplacedElections`.
+      const outcome = await createElection(ctx, personId, election).catch(
+        (e) => {
+          console.error("Error creating candidacy", e);
+          return { unplaced: unplaced(election, "rejected", false) };
+        },
+      );
+      if ("placed" in outcome) {
+        electionsResult.push(outcome.placed);
+      } else {
+        unplacedElections.push(outcome.unplaced);
+      }
     }
 
     // Invalidate cache
@@ -161,6 +175,11 @@ export default defineEventHandler(async (event) => {
       companies: companiesResult,
       articles: articlesResult,
       elections: electionsResult,
+      // Omitted when there are none, so the ordinary response is unchanged.
+      // A caller uploading a region wants the total rather than the list, but
+      // the list is what makes a total worth anything: 300 candidacies from
+      // the 1990s is the shape of the data, and 300 from 2024 is a bug.
+      ...(unplacedElections.length > 0 ? { unplacedElections } : {}),
       status: "ok",
     };
   } finally {
@@ -354,8 +373,22 @@ async function createArticle(
   };
 }
 
-// TODO remove it and fix it all the missing codes
-const allowedFailingElections: Partial<ElectionRequest>[] = [
+/** Elections whose candidacies the scrapers cannot place, and never will.
+ *
+ * PKW published no constituency mapping for these that `candidacy_teryt` can
+ * resolve, so a candidacy from one of them arrives without a `teryt` every
+ * time. They are dropped like any other unplaceable candidacy; the list is
+ * what tells a reader which drops are the permanent ones and which are worth
+ * looking into.
+ *
+ * It used to do more than that. A candidacy outside this list threw, and the
+ * throw escaped the handler - so one 2010 samorząd row PKW had filed without a
+ * constituency cost the whole person: their node, their employments and every
+ * candidacy after it in the payload. `--company-category szpitale
+ * --currently-employed` is a run about board seats, and it was failing on
+ * candidacies nobody had asked it for.
+ */
+const expectedMissingRegion: Partial<ElectionRequest>[] = [
   { election_type: "Samorząd", election_year: "1994" },
   { election_type: "Samorząd", election_year: "1998" },
   { election_type: "Sejm", election_year: "1991" },
@@ -370,53 +403,70 @@ const allowedFailingElections: Partial<ElectionRequest>[] = [
   { election_type: "Parlament Europejski" },
 ];
 
-async function lookupRegionId(
-  ctx: Context,
-  election: ElectionRequest,
-): Promise<string | undefined> {
-  if (!election.teryt) {
-    for (const allowed of allowedFailingElections) {
-      if (
-        allowed.election_type === election.election_type &&
-        (!allowed.election_year ||
-          allowed.election_year === election.election_year)
-      ) {
-        console.info(`Skipping missing region for allowed election`);
-        return undefined;
-      }
-    }
-
-    console.error(`Election without teryt: ${JSON.stringify(election)}`);
-    throw new Error(
-      "Election without teryt: " +
-        election.election_type +
-        " " +
-        election.election_year,
-    );
-  }
-  const regionId = await lookupNode(ctx, "teryt", election.teryt);
-  if (!regionId)
-    throw new Error(
-      `Region not found: ${election.teryt} for ${election.election_type} ${election.election_year}`,
-    );
-  return regionId;
+function isExpectedMissingRegion(election: ElectionRequest): boolean {
+  return expectedMissingRegion.some(
+    (allowed) =>
+      allowed.election_type === election.election_type &&
+      (!allowed.election_year ||
+        allowed.election_year === String(election.election_year)),
+  );
 }
+
+/** What to report about a candidacy that is not going to be written. */
+function unplaced(
+  election: ElectionRequest,
+  reason: UnplacedElection["reason"],
+  expected: boolean,
+): UnplacedElection {
+  const record: UnplacedElection = {
+    election_type: election.election_type,
+    reason,
+    expected,
+  };
+  if (election.election_year) record.election_year = election.election_year;
+  if (election.teryt) record.teryt = election.teryt;
+  return record;
+}
+
+/** Either the candidacy that was written, or a note of why none was. */
+type ElectionOutcome =
+  { placed: EntityResult } | { unplaced: UnplacedElection };
 
 async function createElection(
   ctx: Context,
   personId: string,
   election: ElectionRequest,
-): Promise<EntityResult | undefined> {
+): Promise<ElectionOutcome> {
   if (!electionPositions.includes(election.election_type)) {
-    throw badRequest(
-      "Election must have a valid election_type, got: " +
-        election.election_type,
+    // Unreachable through the endpoint as things stand - `election_type` is a
+    // zod enum and `electionPositions` currently lists the same eleven - but
+    // the two are separate declarations and this is the one place that would
+    // notice them drifting. Reported like any other unusable row rather than
+    // failing the person, which is what it used to do.
+    console.warn(
+      `Election type the site does not have: ${election.election_type}`,
     );
+    return { unplaced: unplaced(election, "rejected", false) };
   }
 
-  const regionId = await lookupRegionId(ctx, election);
+  if (!election.teryt) {
+    const expected = isExpectedMissingRegion(election);
+    if (!expected) {
+      console.warn(
+        `Election without teryt: ${election.election_type} ${election.election_year ?? "?"}`,
+      );
+    }
+    return { unplaced: unplaced(election, "no-teryt", expected) };
+  }
+  const regionId = await lookupNode(ctx, "teryt", election.teryt);
   if (!regionId) {
-    return undefined;
+    // 985 gminy have a region node because they own something; a code that
+    // resolves to none is one `RegionPayloads` has not reached yet, and it
+    // will be there on a later run.
+    console.warn(
+      `No region node for TERYT ${election.teryt} (${election.election_type} ${election.election_year ?? "?"})`,
+    );
+    return { unplaced: unplaced(election, "no-region", false) };
   }
 
   const edgeData: Edge = {
@@ -447,11 +497,18 @@ async function createElection(
     edgeData,
     election.party_from_committee ?? false,
   );
-  if (!edgeId) throw new Error("Failed to create edge");
+  if (!edgeId) {
+    console.error(
+      `Failed to place ${election.election_type} ${election.election_year ?? "?"} in ${regionId}`,
+    );
+    return { unplaced: unplaced(election, "rejected", false) };
+  }
   return {
-    nodeId: regionId,
-    edgeId,
-    created: false,
+    placed: {
+      nodeId: regionId,
+      edgeId,
+      created: false,
+    },
   };
 }
 

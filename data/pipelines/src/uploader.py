@@ -1,4 +1,5 @@
 import argparse
+import collections
 import json
 import sys
 import time
@@ -19,6 +20,11 @@ from scrapers.map.jst import SKARB_PANSTWA
 from scrapers.stores import iterate_pipeline_dict
 from stores.auth import authenticate_user
 from util.firestore import Firestore
+
+#: How many kinds of unplaced candidacy to name in the closing report. Enough
+#: to act on, short enough to read - the same trade `UNMAPPED_COMMITTEES_REPORTED`
+#: makes in `analysis/payloads/person.py`.
+UNPLACED_REPORTED = 20
 
 
 class NumpyEncoder(json.JSONEncoder):
@@ -202,6 +208,10 @@ class Uploader:
             f"\nUpload complete. Success: {self.success_count}, Failed: {failures}",
             file=sys.stderr,
         )
+        self.report()
+
+    def report(self) -> None:
+        """Anything the run should say beyond how many requests succeeded."""
 
     def check_success(self, resp):
         self.total += 1
@@ -320,6 +330,15 @@ class PersonUploader(CompanyUploader):
     It inherits CompanyUplader, since it needs to upload companies
     if they are missing."""
 
+    def __init__(self, args: Args):
+        super().__init__(args)
+        #: Candidacies the site accepted the person without. Counted because
+        #: the ingest no longer fails a person over one: a candidacy PKW filed
+        #: without a constituency, or one in a region with no node yet, used to
+        #: 500 the whole request and take the person's employments with it. The
+        #: run has to say what it left behind, or the fix is just silence.
+        self.unplaced: collections.Counter[str] = collections.Counter()
+
     @typing.override
     def submit_entity(self, payload):
         current_target_url = f"{self.args.endpoint}/api/ingest/person"
@@ -335,9 +354,50 @@ class PersonUploader(CompanyUploader):
             for krs in set(resp.json()["data"]):
                 self.submit_company(krs, None)
             # Try submitting again
-            return self.submit_payload(current_target_url, payload, fail=False)
-        else:
-            return resp
+            resp = self.submit_payload(current_target_url, payload, fail=False)
+        self.count_unplaced(resp)
+        return resp
+
+    def count_unplaced(self, resp: requests.Response) -> None:
+        """Tally what the response says it could not place.
+
+        Read defensively: a non-200, a body that is not JSON, or a site
+        deployed before the field existed all mean "nothing to report" rather
+        than an error in the middle of an upload of several thousand people.
+        """
+        if resp.status_code != 200:
+            return
+        try:
+            body = resp.json()
+        except ValueError:
+            return
+        if not isinstance(body, dict):
+            return
+        for entry in body.get("unplacedElections") or []:
+            if not isinstance(entry, dict):
+                continue
+            kind = "expected" if entry.get("expected") else str(entry.get("reason"))
+            year = entry.get("election_year") or "?"
+            self.unplaced[f"{entry.get('election_type')} {year} ({kind})"] += 1
+
+    @typing.override
+    def report(self) -> None:
+        if not self.unplaced:
+            return
+        total = sum(self.unplaced.values())
+        print(
+            f"\n{total} candidacies were not placed. `expected` is an election "
+            "PKW published no constituency mapping for; the rest are worth a "
+            "look - `no-region` means the region node is not there yet.",
+            file=sys.stderr,
+        )
+        for label, count in self.unplaced.most_common(UNPLACED_REPORTED):
+            print(f"  {count:6d}  {label}", file=sys.stderr)
+        if len(self.unplaced) > UNPLACED_REPORTED:
+            print(
+                f"  ... and {len(self.unplaced) - UNPLACED_REPORTED} more kinds",
+                file=sys.stderr,
+            )
 
 
 class ScoreUploader(Uploader):
