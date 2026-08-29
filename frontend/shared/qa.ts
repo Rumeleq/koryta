@@ -48,6 +48,31 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
  * before the list could be read at all. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "reviewer-queue-one-kind-of-button",
+    title: "Kolejka rewizji: w ostatniej kolumnie zawsze ten sam przycisk",
+    description:
+      "W ostatniej kolumnie kolejki każdy wiersz ma teraz identyczny przycisk " +
+      "„Rozpatrz”. Wcześniej propozycja dotycząca powiązania miała własny, dużo " +
+      "szerszy „Rewizje powiązań”, a zmiana już rozpatrzona - „Zobacz”, więc " +
+      "jedna kolumna wyglądała jak trzy różne narzędzia. Czego zmiana dotyczy, " +
+      "mówi chip „Powiązanie” w kolumnie „Czego dotyczy”, a to, czy czeka na " +
+      "decyzję - status w kolumnie „Zgłoszenie”; przycisk nie musi powtarzać " +
+      "żadnej z tych rzeczy. Dokąd prowadzi, mówi dymek po najechaniu, a przy " +
+      "powiązaniu prowadzi teraz na listę rewizji powiązań z tą jedną " +
+      "propozycją podświetloną.",
+    steps: [
+      "Jako admin wejdź na /admin/rewizje/kolejka.",
+      "Przejrzyj ostatnią kolumnę - w każdym wierszu ma być jeden przycisk „Rozpatrz”, tej samej szerokości, niezależnie od tego, czego zmiana dotyczy.",
+      "Najedź na przycisk - dymek ma powiedzieć, co się otworzy: porównanie rewizji wpisu albo lista rewizji powiązań.",
+      "Ustaw filtr „Status” na „Wszystkie” - przy rozpatrzonej już propozycji przycisk ma nadal nazywać się „Rozpatrz”, a o tym, że jest rozpatrzona, ma mówić status w pierwszej kolumnie.",
+      "Ustaw filtr „Rodzaj” na „Wszystko”, znajdź wiersz z chipem „Powiązanie” w kolumnie „Czego dotyczy” i kliknij „Rozpatrz” - otwiera się /admin/rewizje-krawedzi, a ten jeden wiersz jest podświetlony i przewinięty na widok.",
+      "Na liście rewizji powiązań zmień „Typ krawędzi” na inny niż typ podświetlonej propozycji - ma pojawić się informacja, że propozycji z linku nie ma na tej liście, z przyciskiem „Pokaż w kolejce”, który otwiera ją w kolejce.",
+      "Wróć do kolejki i kliknij „Rozpatrz” przy zwykłym wpisie - tak jak dotąd otwiera się porównanie rewizji z tą jedną podświetloną.",
+    ],
+    link: "/admin/rewizje/kolejka",
+    area: "admin",
+  },
+  {
     id: "spolki-skarbu-panstwa-maja-wlasciciela",
     title: "Spółki Skarbu Państwa mają wreszcie wpisanego właściciela",
     description:
