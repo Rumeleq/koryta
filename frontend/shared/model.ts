@@ -238,6 +238,11 @@ export interface Person extends Omit<Node, "type"> {
   type: "person";
   parties?: string[];
   birthDate?: string;
+  /** Education, as a line of prose rather than a code: the useful answer is
+   * sometimes a degree ("magister inżynierii środowiska") and sometimes a
+   * formation no degree scale covers ("duchowny prawosławny"), and no list of
+   * levels holds both. Filled in by hand where somebody knows it. */
+  education?: string;
   wikipedia?: string;
   rejestrIo?: string;
   /** Profile on ktomaco.pl, another public registry of company connections. */

@@ -2,6 +2,7 @@
   <v-row
     v-if="
       person?.birthDate ||
+      person?.education ||
       person?.wikipedia ||
       person?.rejestrIo ||
       person?.ktomaco
@@ -14,6 +15,15 @@
         >Data urodzenia</v-list-subheader
       >
       <div class="text-body-1">{{ person.birthDate }}</div>
+    </v-col>
+
+    <v-col v-if="person?.education" cols="12" sm="4">
+      <v-list-subheader
+        class="px-0 text-uppercase font-weight-bold"
+        style="min-height: 24px"
+        >Wykształcenie</v-list-subheader
+      >
+      <div class="text-body-1">{{ person.education }}</div>
     </v-col>
 
     <v-col v-if="person?.wikipedia" cols="12" sm="4">

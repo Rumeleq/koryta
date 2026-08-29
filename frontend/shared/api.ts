@@ -215,6 +215,7 @@ export const personEditSchema = z.object({
   content: z.string().optional(),
   parties: z.array(z.string()).optional(),
   birthDate: z.string().optional(),
+  education: z.string().optional(),
   wikipedia: z.string().optional(),
   rejestrIo: z.string().optional(),
   ktomaco: z.string().optional(),
@@ -225,6 +226,7 @@ export const personEditSchema = z.object({
     | "content"
     | "parties"
     | "birthDate"
+    | "education"
     | "wikipedia"
     | "rejestrIo"
     | "ktomaco"
