@@ -350,7 +350,29 @@ NODE_FIELDS = [
     "krsNumber",
     "sourceURL",
     "teryt",
+    # What a company payload can write, on the terms `company.post.ts` sets.
+    # The two `...Source` markers are not compared with anything: they say a
+    # person has answered, and the ingest then declines to write the field they
+    # answered, so a payload disagreeing with a manual answer is not a change.
+    "activity",
+    "categories",
+    "categoriesSource",
+    "isPublic",
+    "isPublicSource",
+    "supervisoryBody",
+    "supervisoryOrgan",
+    "legalForm",
+    # Only ever read for whether it is there at all. A node with no approved
+    # revision to point at is written even where it already says the right
+    # thing, so a payload for one is never dropped - see
+    # `revisionChangesNothing` in `frontend/server/utils/revisions.ts`.
+    "revision_id",
 ]
+
+#: The node columns that are not strings. `parties`, `activity` and
+#: `categories` are lists and `isPublic` a boolean, and pinning any of them to
+#: `str` on the way back off disk turns them into `"['PiS']"` and `"True"`.
+NODE_LIST_FIELDS = frozenset({"parties", "activity", "categories", "isPublic"})
 
 #: What an edge has to carry to be compared with one the pipeline is about to
 #: send: the pair and type it is looked up by, and every discriminator any edge
@@ -368,6 +390,10 @@ EDGE_FIELDS = [
     "party",
     "committee",
     "term",
+    # Read only by the seat check: a seat somebody has removed is not a
+    # competing claim, so the ingest writes the correct one over it. Every
+    # other lookup counts a removed edge as present, the way `findEdge` does.
+    "deleted",
 ]
 
 
@@ -413,14 +439,16 @@ class KorytaNodes(KorytaExport):
 
     collection_name = "nodes"
     fields = NODE_FIELDS
-    dtype = {name: str for name in NODE_FIELDS if name != "parties"}
+    dtype = {name: str for name in NODE_FIELDS if name not in NODE_LIST_FIELDS}
 
 
 class KorytaEdges(KorytaExport):
     """Every edge on koryta.pl: who worked where, who stood where, who is named."""
 
     collection_name = "edges"
-    dtype = {name: str for name in EDGE_FIELDS}
+    #: `deleted` is a boolean; pinning it to `str` on the way back off disk
+    #: would make every edge's removal flag the truthy string "False".
+    dtype = {name: str for name in EDGE_FIELDS if name != "deleted"}
     fields = EDGE_FIELDS
 
 

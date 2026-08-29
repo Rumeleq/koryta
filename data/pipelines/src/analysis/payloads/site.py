@@ -122,6 +122,17 @@ MISSING_ARTICLE = "article not on koryta.pl"
 NEW_MENTION = "mention not stored"
 UNRESOLVED_REGION = "candidacy the ingest cannot place"
 
+NEW_COMPANY = "company not on koryta.pl"
+COMPANY_FIELDS = "company node learns a field"
+COMPANY_UNAPPROVED = "company node has no approved revision"
+NEW_OWNER = "owner link not stored"
+NEW_SEAT = "seat not stored"
+
+#: The site's own node for the Skarb Panstwa, which has no KRS and no TERYT of
+#: its own. Hardcoded on both sides of the wire - see `SKARB_PANSTWA_NODE_ID`
+#: in `frontend/server/api/ingest/company.post.ts`, where the comment explains
+#: why a document id cannot travel in a payload.
+SKARB_PANSTWA_NODE_ID = "qMsAXmM5nDGNdUqmQpWR"
 
 Edge = dict[str, typing.Any]
 
@@ -222,13 +233,22 @@ class SiteSnapshot:
     def __init__(self, nodes: pd.DataFrame, edges: pd.DataFrame) -> None:
         self.people: dict[str, dict] = {}
         self.companies: dict[str, str] = {}
+        #: The same companies as `self.companies`, whole rather than by id.
+        #: `CompaniesPayloads` compares fields; the person payload only ever
+        #: needs somewhere to point an employment at.
+        self.company_nodes: dict[str, dict] = {}
         self.regions: dict[str, str] = {}
+        #: Every node id, for the one lookup that goes by id rather than by a
+        #: field: `findRegionByTeryt` tries the document `teryt<code>` before it
+        #: queries anything.
+        self.node_ids: set[str] = set()
         self.articles: dict[str, str] = {}
 
         for node in _records(nodes):
             node_id = str(node.get("id", ""))
             if not node_id:
                 continue
+            self.node_ids.add(node_id)
             node_type = node.get("type")
             if node_type == "person" and "name" in node:
                 # `limit(1)` on an equality query: with two nodes of one name
@@ -237,6 +257,7 @@ class SiteSnapshot:
                 self.people.setdefault(str(node["name"]), node)
             elif node_type == "place" and "krsNumber" in node:
                 self.companies.setdefault(str(node["krsNumber"]), node_id)
+                self.company_nodes.setdefault(str(node["krsNumber"]), node)
             elif node_type == "region" and "teryt" in node:
                 self.regions.setdefault(str(node["teryt"]), node_id)
             elif node_type == "article" and "sourceURL" in node:
@@ -308,6 +329,211 @@ class SiteSnapshot:
                 learned[key] = value
 
         return any(value != data.get(key) for key, value in learned.items())
+
+    def company_changes(self, payload: typing.Mapping[str, typing.Any]) -> list[str]:
+        """What uploading this company payload would write. Empty means no-op.
+
+        A transcription of `frontend/server/api/ingest/company.post.ts`, on the
+        same terms as `changes` is one of the person ingest: where the two could
+        disagree it keeps the payload.
+
+        It is looser than the ingest in exactly one place, and deliberately.
+        A stored `isPublic: false` reaches this module as an absent field -
+        `field` reads `False` as unset, because for every other field on the
+        site that is what an empty one means - so a payload saying
+        `is_public: false` about a node that has never carried the field looks
+        like a no-op, while the ingest would write it. What it would write is a
+        field whose absence already says the same thing, once, and never again;
+        against that stands a revision on each of the ~3,900 companies that have
+        no `isPublic` today.
+
+        Two things it does not see at all, both of them repairs rather than
+        facts: a node whose `stats` nothing has computed, which the write would
+        seed, and one whose arrays are stored as numbered-key maps. The second
+        looks like a difference and keeps the payload, which is the right
+        answer by accident; the first does not, and a company on the site
+        without counters waits for a run that has something else to say.
+        """
+        krs = str(payload.get("krs") or "")
+        stored = self.company_nodes.get(krs)
+        if stored is None:
+            return [NEW_COMPANY]
+
+        reasons: list[str] = []
+        # Approving is also what points the node at a revision, so one with
+        # nothing to point at is written whatever it says. See
+        # `revisionChangesNothing`.
+        if not stored.get("revision_id"):
+            reasons.append(COMPANY_UNAPPROVED)
+        if self._company_learns(stored, payload):
+            reasons.append(COMPANY_FIELDS)
+
+        company_id = str(stored["id"])
+        reasons += self._owner_changes(company_id, payload)
+        reasons += self._seat_changes(company_id, payload)
+        return reasons
+
+    def _company_learns(
+        self, stored: dict, payload: typing.Mapping[str, typing.Any]
+    ) -> bool:
+        """Whether the node itself would gain a revision.
+
+        The `...Source: "manual"` markers are why this cannot be a plain
+        comparison: a person who has set a company's categories or said who
+        owns it has the last word, and the ingest then declines to write the
+        payload's answer at all - so disagreeing with them is not a change.
+        """
+        data = {k: v for k, v in stored.items() if k not in INTERNAL_FIELDS}
+        written: dict[str, typing.Any] = {"name": payload.get("name")}
+
+        # An empty `activity` is a payload that found no codes rather than one
+        # asserting there are none, and the ingest leaves the stored list alone.
+        activity = _as_list(payload.get("activity"))
+        if activity:
+            written["activity"] = activity
+
+        # An empty `categories`, by contrast, is a real answer: this company is
+        # in no sector we track. Absent means the payload did not work them out.
+        categories = payload.get("categories")
+        if categories is not None and data.get("categoriesSource") != "manual":
+            written["categories"] = _as_list(categories)
+
+        is_public = payload.get("is_public")
+        if is_public is not None and data.get("isPublicSource") != "manual":
+            written["isPublic"] = bool(is_public)
+
+        # "" is not a value here but a deletion: an ordinary company has no
+        # supervisory body, and marking 3,900 of them with an empty string
+        # would be a field that means nothing on all but a hundred.
+        body = payload.get("supervisory_body")
+        if body is not None:
+            if body == "":
+                if "supervisoryBody" in data:
+                    return True
+            else:
+                written["supervisoryBody"] = body
+
+        if payload.get("legal_form"):
+            written["legalForm"] = payload["legal_form"]
+        if payload.get("supervisory_organ"):
+            written["supervisoryOrgan"] = payload["supervisory_organ"]
+
+        for key, value in written.items():
+            current = data.get(key)
+            if isinstance(value, list):
+                if _as_list(current) != value:
+                    return True
+            elif isinstance(value, bool):
+                if bool(current) != value:
+                    return True
+            elif current != value:
+                return True
+        return False
+
+    def _owner_changes(
+        self, company_id: str, payload: typing.Mapping[str, typing.Any]
+    ) -> list[str]:
+        """The ownership edges the upload would draw and the site has not.
+
+        An owner the site does not hold a node for is skipped by the ingest
+        rather than created, so it is not a change: the register names 238
+        companies as shareholders that koryta.pl does not track, and a TERYT
+        the region ingest has not reached yet resolves to nothing.
+        """
+        sources: list[str] = []
+        for owner_krs in _as_list(payload.get("owners")):
+            owner_id = self.companies.get(str(owner_krs))
+            if owner_id:
+                sources.append(owner_id)
+        if payload.get("owner_skarb_panstwa") and (
+            SKARB_PANSTWA_NODE_ID in self.node_ids
+        ):
+            sources.append(SKARB_PANSTWA_NODE_ID)
+        for owner_teryt in _as_list(payload.get("owner_teryts")):
+            region_id = self._region_by_teryt(str(owner_teryt))
+            if region_id:
+                sources.append(region_id)
+
+        # `createEdge` keeps its own set of the ids this request has already
+        # added, because nothing is committed until the end and a payload
+        # naming one owner twice would otherwise write the link twice over.
+        drawn: set[str] = set()
+        reasons = []
+        for source in sources:
+            if source in drawn:
+                continue
+            drawn.add(source)
+            if not self._edge_exists(source, company_id, "owns"):
+                reasons.append(NEW_OWNER)
+        return reasons
+
+    def _seat_changes(
+        self, company_id: str, payload: typing.Mapping[str, typing.Any]
+    ) -> list[str]:
+        """Whether the company's registered seat would be drawn.
+
+        Three ways it would not, each one the ingest's: the TERYT resolves to no
+        region node, a seat in a *different* region is already stored - a
+        disagreement the ingest reports and refuses to act on - or the pair
+        already carries an `owns` edge, which is what a seat written before the
+        `owns`/`seat` split looks like until `split-seat-edges.ts` retypes it.
+        """
+        teryt = payload.get("teryt_code")
+        if not teryt:
+            return []
+        region_id = self._region_by_teryt(str(teryt))
+        if region_id is None:
+            return []
+        if self._seat_elsewhere(company_id, region_id):
+            return []
+        if self._edge_exists(region_id, company_id, "seat"):
+            return []
+        if self._edge_exists(region_id, company_id, "owns"):
+            return []
+        return [NEW_SEAT]
+
+    def _edge_exists(self, source: str, target: str, edge_type: str) -> bool:
+        """`findEdge`: any edge asserting this, removed ones included.
+
+        A removed edge still counts, because the ingest looks it up the same
+        way and would not write a second one beside it. The seat check is the
+        one place that reads `deleted`, and it does so itself.
+        """
+        return bool(self.edges.get((source, target, edge_type)))
+
+    def _seat_elsewhere(self, company_id: str, region_id: str) -> str | None:
+        """The region already recorded as this company's seat, if another one.
+
+        See `findSeatFromAnotherRegion`. A seat an admin has removed is not a
+        competing claim - it is one they have already ruled on.
+        """
+        for pair, siblings in self.edges.items():
+            if pair[1] != company_id or pair[2] != "seat":
+                continue
+            for stored in siblings:
+                if stored.get("deleted") is True:
+                    continue
+                source = stored.get("source")
+                if source and source != region_id:
+                    return str(source)
+        return None
+
+    def _region_by_teryt(self, teryt: str) -> str | None:
+        """`findRegionByTeryt`: the exact code, then the powiat above it.
+
+        Each tried as a document id first and as a `teryt` field second, which
+        is what the ingest does - the region pipeline mints `teryt<code>`, but
+        a region node written before it carries the code as a field only.
+        """
+        candidates = [teryt, teryt[:4]] if len(teryt) > 4 else [teryt]
+        for code in candidates:
+            node_id = f"teryt{code}"
+            if node_id in self.node_ids:
+                return node_id
+            found = self.regions.get(code)
+            if found:
+                return found
+        return None
 
     def _employment_changes(
         self,
