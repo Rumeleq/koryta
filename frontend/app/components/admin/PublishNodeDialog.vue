@@ -92,6 +92,27 @@
             </v-list-item>
           </v-list>
         </template>
+
+        <v-alert
+          v-if="relationsFailed"
+          type="error"
+          variant="tonal"
+          class="mt-4"
+          data-testid="publish-relations-failed"
+        >
+          <p class="mb-1">
+            <strong>Strona została opublikowana, ale powiązania nie.</strong>
+            Żadne z zaznaczonych powiązań nie trafiło na stronę - są publikowane
+            razem albo wcale.
+          </p>
+          <p class="mb-1 text-body-2">{{ relationsFailed }}</p>
+          <p class="mb-0 text-body-2">
+            Spróbuj ponownie tutaj albo opublikuj je w
+            <NuxtLink to="/admin/krawedzie">kolejce powiązań</NuxtLink> - strona
+            jest już widoczna publicznie, więc ten dialog więcej się nie
+            otworzy.
+          </p>
+        </v-alert>
       </v-card-text>
 
       <v-card-actions>
@@ -133,7 +154,11 @@ const emit = defineEmits<{
   "update:modelValue": [value: boolean];
   /** The node went live, along with this many relations. */
   published: [payload: { relations: number }];
-  failed: [error: unknown];
+  /** `nodePublished` is the whole reason this carries a payload rather than the
+   * error alone: the two calls are not one transaction, so a refusal on the
+   * second leaves the page live with none of its relations. The page has to be
+   * able to say that, and to reload the toggle it now disagrees with. */
+  failed: [payload: { error: unknown; nodePublished: boolean }];
 }>();
 
 const open = computed({
@@ -146,6 +171,10 @@ const selected = ref<string[]>([]);
 const pending = ref(false);
 const saving = ref(false);
 const loadError = ref(false);
+/** Set when the page went live but its relations were refused - the one
+ * outcome the reviewer cannot see for themselves, because the dialog is still
+ * open in front of the page it already changed. */
+const relationsFailed = ref<string | null>(null);
 
 /** Only what a reviewer could still act on. An already published relation has
  * nothing to decide, and listing it would bury the ones that do. */
@@ -189,6 +218,7 @@ function toggleAll() {
 async function load() {
   pending.value = true;
   loadError.value = false;
+  relationsFailed.value = null;
   selected.value = [];
   try {
     const data = await authRequest<NodeRelations>("/api/edges/byNode", {
@@ -218,11 +248,19 @@ watch(
  * either of its pages is still a draft, and this node is one of them. */
 async function confirm() {
   saving.value = true;
+  relationsFailed.value = null;
+  let nodePublished = false;
   try {
     await authRequest("/api/nodes/publish", {
       body: { node_id: props.nodeId, published: true },
     });
+    nodePublished = true;
     if (selected.value.length > 0) {
+      // /api/edges/publish refuses the batch as a whole, so one relation whose
+      // other end went back to being a draft between the dialog opening and
+      // this click takes every other tick down with it - while the page above
+      // is already live. Saying so is the difference between a reviewer who
+      // retries and one who walks away believing the whole thing landed.
       await authRequest("/api/edges/publish", {
         body: { edge_ids: selected.value, published: true },
       });
@@ -230,9 +268,23 @@ async function confirm() {
     emit("published", { relations: selected.value.length });
     open.value = false;
   } catch (error) {
-    emit("failed", error);
+    if (nodePublished && selected.value.length > 0) {
+      relationsFailed.value = errorMessage(error);
+    }
+    emit("failed", { error, nodePublished });
   } finally {
     saving.value = false;
   }
+}
+
+/** The server's own words where it gave any - ofetch parks the parsed body on
+ * `data`, and that is where the Polish explanation of a refusal lives. */
+function errorMessage(error: unknown): string {
+  const data = (error as { data?: { message?: string } } | null)?.data;
+  return (
+    data?.message ||
+    (error instanceof Error ? error.message : "") ||
+    "Nieznany błąd."
+  );
 }
 </script>
