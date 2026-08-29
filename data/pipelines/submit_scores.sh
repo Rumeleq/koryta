@@ -22,7 +22,14 @@ if [[ $1 == prod ]]; then
 	SUFFIX="--prod --endpoint https://autopush.koryta.pl"
 fi
 
+function run_koryta() {
+	echo "koryta $@ --no-backup --no-mirror"
+	DISABLE_BACKUP=1 uv run koryta "$@" --no-backup --no-mirror
+}
+
 MODELS=${2:-"PeopleScores PeopleScoresPageRank PeopleScoresCoappointment PeopleScoresTurnover PeopleScoresSuccession PeopleScoresCapture"}
+
+run_koryta PeopleEnriched --refresh :ProcessWiki --refresh all
 
 echo "Prerunning the models"
 for MODEL in $MODELS; do
