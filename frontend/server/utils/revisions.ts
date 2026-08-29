@@ -188,6 +188,132 @@ export interface RevisionWriteOptions {
   published?: boolean;
 }
 
+/** Value equality for what a Firestore document holds.
+ *
+ * `JSON.stringify` will not do. Property order there follows insertion, and a
+ * revision is assembled by spreading a payload over the stored document, so a
+ * field the payload merely restates moves to the end and every comparison would
+ * report a change. Firestore's own values - `Timestamp`, `DocumentReference`,
+ * `GeoPoint` - are class instances that compare by identity and carry an
+ * `isEqual` of their own, which is used where both sides have one: a
+ * `Timestamp` stringifies to a shape that happens to work, and a
+ * `DocumentReference` to one deep enough that stringifying it throws.
+ */
+export function sameStoredValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a === null || b === null) return false;
+  if (typeof a !== "object" || typeof b !== "object") return false;
+
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b)) return false;
+    return (
+      a.length === b.length && a.every((item, i) => sameStoredValue(item, b[i]))
+    );
+  }
+
+  const isEqual = (a as { isEqual?: unknown }).isEqual;
+  if (typeof isEqual === "function") {
+    return (
+      typeof (b as { isEqual?: unknown }).isEqual === "function" &&
+      isEqual.call(a, b) === true
+    );
+  }
+
+  const left = a as Record<string, unknown>;
+  const right = b as Record<string, unknown>;
+  const keys = Object.keys(left);
+  if (keys.length !== Object.keys(right).length) return false;
+  return keys.every(
+    (key) =>
+      Object.hasOwn(right, key) && sameStoredValue(left[key], right[key]),
+  );
+}
+
+/** The document a revision write leaves behind, bar the pointer to the revision
+ * itself.
+ *
+ * The target document is fully replaced, so everything it owns and no revision
+ * carries has to be written back with it. Passing `stored` is what does that; a
+ * caller creating a document has nothing to carry, and one updating an existing
+ * document that leaves it out is asking for every counter, vote and flag on
+ * that document to be deleted.
+ *
+ * The document's own state is layered *over* the revision, not under it: it
+ * owns those fields, so a revision that happens to carry one - an old one
+ * written before they were stripped out - does not get to restore a stale count
+ * over the live one. A field absent from `stored` is not overridden, so a
+ * revision that legitimately states one (a removal states `deleted`) still
+ * applies to a document that has none.
+ *
+ * Shared with `revisionChangesNothing`, which decides whether the write is
+ * worth making at all by comparing this against the document already there, so
+ * the two cannot come to different conclusions about what the write would do.
+ *
+ * `data` is expected to be sanitised already - `createRevisionTransaction` has
+ * to sanitise it for the revision anyway, and doing it twice is wasted work.
+ */
+function revisionTargetData(
+  targetRef: DocumentReference,
+  data: Record<string, unknown>,
+  options: RevisionWriteOptions,
+): Record<string, unknown> {
+  const targetData: Record<string, unknown> = {
+    ...data,
+    ...nodeOwnedFields(options.stored ?? {}),
+  };
+  if (options.published !== undefined) {
+    targetData.published = options.published;
+  }
+  return targetRef.parent.id === "edges"
+    ? targetData
+    : withSeededNodeStats(targetData);
+}
+
+/** Whether writing `data` to `targetRef` would leave it exactly as it is.
+ *
+ * A revision is a complete snapshot, and the ingest endpoints build one by
+ * layering whatever the scrapers found over what is stored - so a payload that
+ * has learned nothing since the last run yields a revision identical to the one
+ * the document already carries. Written anyway it costs a revision document, a
+ * rewrite of the node and every trigger that rewrite fires, on every run.
+ * `CompaniesPayloads` re-submits every company already on the site, so that is
+ * a few thousand revisions a run, and the history of an untouched company fills
+ * up with restatements of itself.
+ *
+ * The comparison is against the *document*, not against the approved revision
+ * it was made from: the document is that revision materialised, and it is what
+ * the site actually shows. Where somebody has written a node's fields directly
+ * - a migration script does - its `revision_id` points at a revision that no
+ * longer matches it, and skipping here leaves that pointer stale rather than
+ * refreshing it. The alternative is reading the approved revision of every
+ * company in the payload to find the handful where the two differ.
+ *
+ * False whenever anything at all would change, bookkeeping included: a document
+ * with no `revision_id` for an approval to leave in place, a visibility the
+ * caller is deciding differently, or counters `withSeededNodeStats` would fill
+ * in are each a reason to go ahead and write.
+ */
+export function revisionChangesNothing(
+  targetRef: DocumentReference,
+  data: Record<string, unknown> | Node | Edge,
+  options: RevisionWriteOptions = {},
+): boolean {
+  const { approve = false, stored } = options;
+  // Nothing is stored, so the write is what creates the document.
+  if (!stored) return false;
+  // Approving is also what gives a document an approved revision to point at,
+  // and one that has none needs writing even where it already says the right
+  // thing.
+  if (approve && stored.revision_id === undefined) return false;
+
+  const next = revisionTargetData(
+    targetRef,
+    sanitizeFirestoreData(data) as Record<string, unknown>,
+    options,
+  );
+  return sameStoredValue(next, stored);
+}
+
 export function createRevisionTransaction(
   db: Firestore,
   batch: WriteBatch,
@@ -196,7 +322,7 @@ export function createRevisionTransaction(
   data: Record<string, unknown> | Node | Edge, // TODO unify this
   options: RevisionWriteOptions = {},
 ): BatchResult {
-  const { automatic = false, approve = false, stored, published } = options;
+  const { automatic = false, approve = false } = options;
   const revisionRef = db.collection("revisions").doc();
   const timestamp = Timestamp.now();
 
@@ -230,36 +356,20 @@ export function createRevisionTransaction(
 
   batch.set(revisionRef, revision);
 
-  // The target document is fully replaced, so everything it owns and no
-  // revision carries has to be written back with it. Passing `stored` is what
-  // does that; a caller creating a document has nothing to carry, and one
-  // updating an existing document that leaves it out is asking for every
-  // counter, vote and flag on that document to be deleted.
-  // The document's own state is layered *over* the revision, not under it: it
-  // owns those fields, so a revision that happens to carry one - an old one
-  // written before they were stripped out - does not get to restore a stale
-  // count over the live one. A field absent from `stored` is not overridden, so
-  // a revision that legitimately states one (a removal states `deleted`) still
-  // applies to a document that has none.
-  const targetData = {
-    ...(revision.data as Record<string, unknown>),
-    ...nodeOwnedFields(stored ?? {}),
-  };
+  // See `revisionTargetData`, which is also what `revisionChangesNothing` asks
+  // to find out whether this write is worth making.
+  const targetData = revisionTargetData(
+    targetRef,
+    revision.data as Record<string, unknown>,
+    options,
+  );
   if (approve) {
     console.info(
       `Approving node=${targetRef.id} revision_id=${revisionRef.id}`,
     );
     targetData.revision_id = revisionRef;
   }
-  if (published !== undefined) {
-    targetData.published = published;
-  }
-  batch.set(
-    targetRef,
-    revision.collection === "nodes"
-      ? withSeededNodeStats(targetData)
-      : targetData,
-  );
+  batch.set(targetRef, targetData);
 
   return { revisionRef, targetRef };
 }

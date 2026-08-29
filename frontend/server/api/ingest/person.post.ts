@@ -4,6 +4,7 @@ import { getUser, requireDatascience } from "~~/server/utils/auth";
 import {
   createRevisionTransaction,
   proposeRevisionTransaction,
+  revisionChangesNothing,
   withoutInternalFields,
 } from "~~/server/utils/revisions";
 import {
@@ -32,6 +33,10 @@ export default defineEventHandler(async (event) => {
 
   const batch = db.batch();
   const ctx = new Context(db, user, batch, body.autoapprove ?? false);
+
+  /** What the request did to the person node itself. The edges are reported
+   * per company and per election; this is the node. */
+  let person: "created" | "updated" | "unchanged" = "unchanged";
 
   const { companyIDs, missingKRS } = await lookupCompanyIDs(
     ctx,
@@ -71,6 +76,7 @@ export default defineEventHandler(async (event) => {
           published: ctx.autoapprove,
         },
       );
+      person = "created";
     } else {
       const personRef = db.collection("nodes").doc(personId);
       // The stored document, not just its visibility. A revision is written to
@@ -83,14 +89,32 @@ export default defineEventHandler(async (event) => {
       const published = pageIsPublic(stored);
       const revision = updatedPerson(stored, body);
       if (revision) {
-        createRevisionTransaction(db, batch, user, personRef, revision, {
+        const options = {
           automatic: true,
           // A live page's node is a copy of an approved revision, so an update
           // to one has to be approved with it or the page would show data no
           // reviewer ever accepted.
           approve: ctx.autoapprove || published,
           stored,
-        });
+        };
+        // `updatedPerson` decides what the payload has to teach the node, and
+        // this decides whether saying it would change the document at all - a
+        // narrower question, and the one that governs whether a write is worth
+        // making. Two answers rather than one because they are about different
+        // things: the first is where `parties` become a union and a blank field
+        // in the payload is not a deletion, the second covers the bookkeeping
+        // the node owns and the write would restate.
+        if (!revisionChangesNothing(personRef, revision, options)) {
+          createRevisionTransaction(
+            db,
+            batch,
+            user,
+            personRef,
+            revision,
+            options,
+          );
+          person = "updated";
+        }
       }
     }
 
@@ -133,6 +157,7 @@ export default defineEventHandler(async (event) => {
     console.info(`Uploaded person ${body.name}`);
     return {
       personId,
+      person,
       companies: companiesResult,
       articles: articlesResult,
       elections: electionsResult,
