@@ -1,4 +1,5 @@
 import { computed, ref } from "vue";
+import { useCurrentUser } from "vuefire";
 import type { Ref } from "vue";
 import type {
   HospitalStats,
@@ -229,8 +230,18 @@ export function supervisionSegments(
  * than fetched from the browser.
  */
 export async function useHospitalBoards() {
+  const user = useCurrentUser();
+
+  // Anonymous readers ask for the plain URL, which is the one the six-hour
+  // cache - ours and Cloud CDN's - is holding, and the one that gets indexed.
+  // A signed-in reader is the person who might have just published a board
+  // member, so they ask for `latest`, which the endpoint answers `no-store`.
+  // Reactive rather than read once: vuefire resolves the user after hydration,
+  // so at the time of the server render there is nobody to know about yet, and
+  // `useFetch` refetches when the query changes.
   const { data, pending, error, refresh } = await useFetch<HospitalStats>(
     "/api/stats/hospitals",
+    { query: computed(() => (user.value ? { latest: "true" } : {})) },
   );
 
   /** Which group the breakdown below is showing. Paid by default: it is the

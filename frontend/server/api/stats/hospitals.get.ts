@@ -1,5 +1,5 @@
 import { getFirestore } from "firebase-admin/firestore";
-import { authCachedEventHandler } from "~~/server/utils/handlers";
+import { editorFreshCachedEventHandler } from "~~/server/utils/handlers";
 import {
   buildHospitalStats,
   isPublicHospital,
@@ -56,68 +56,81 @@ function chunked<T>(values: T[], size: number): T[][] {
  *
  * Nothing here depends on who is asking, and behind the six-hour cache the
  * whole thing runs a few dozen times a day at most.
+ *
+ * `editorFresh` rather than the plain cached wrapper, because the six hours are
+ * held in two places and only one of them is ours: the wrapper emits
+ * `s-maxage=21600`, so Cloud CDN keeps its own copy and no amount of
+ * `useStorage("cache").clear()` on publication reaches it. An admin who has
+ * just published a board member and reloads /eksploruj/szpitale was being shown
+ * an edge-cached answer from before they did it, with nothing on the page
+ * admitting it. On the `latest` path the response goes out `no-store`, which is
+ * the only thing the CDN honours.
  */
-export default authCachedEventHandler(async (): Promise<HospitalStats> => {
-  const db = getFirestore("koryta-pl");
+export default editorFreshCachedEventHandler(
+  async (): Promise<HospitalStats> => {
+    const db = getFirestore("koryta-pl");
 
-  const placesSnap = await db
-    .collection("nodes")
-    .where("type", "==", "place")
-    .select(
-      "name",
-      "categories",
-      "legalForm",
-      "supervisoryOrgan",
-      "isPublic",
-      "published",
-      "deleted",
-    )
-    .get();
-  const places: HospitalPlaceRow[] = placesSnap.docs.map((doc) => ({
-    ...(doc.data() as Omit<HospitalPlaceRow, "id">),
-    id: doc.id,
-  }));
-
-  // Narrowed before the edge reads: this filter is what decides how many `in`
-  // queries the next step costs, and it is far cheaper to apply it here than to
-  // fetch the edges of every institution in the database.
-  const hospitalIds = places.filter(isPublicHospital).map((place) => place.id);
-
-  const edges: BoardEdgeRow[] = [];
-  for (const chunk of chunked(hospitalIds, IN_CHUNK)) {
-    const snap = await db
-      .collection("edges")
-      .where("target", "in", chunk)
-      .where("type", "==", "employed")
-      .select("source", "target", "name", "end_date", "published", "deleted")
+    const placesSnap = await db
+      .collection("nodes")
+      .where("type", "==", "place")
+      .select(
+        "name",
+        "categories",
+        "legalForm",
+        "supervisoryOrgan",
+        "isPublic",
+        "published",
+        "deleted",
+      )
       .get();
-    for (const doc of snap.docs) edges.push(doc.data() as BoardEdgeRow);
-  }
+    const places: HospitalPlaceRow[] = placesSnap.docs.map((doc) => ({
+      ...(doc.data() as Omit<HospitalPlaceRow, "id">),
+      id: doc.id,
+    }));
 
-  const personIds = [...new Set(edges.map((edge) => edge.source))].filter(
-    (id): id is string => !!id,
-  );
-  const people: BoardPersonRow[] = [];
-  for (const chunk of chunked(personIds, GET_ALL_CHUNK)) {
-    const snaps = await db.getAll(
-      ...chunk.map((id) => db.collection("nodes").doc(id)),
-      // A person node carries their whole biography; all this needs is the
-      // party, so `fetchNodesByIds` - which reads the documents whole - is
-      // deliberately not reused here.
-      { fieldMask: ["name", "parties", "published", "deleted"] },
-    );
-    for (const snap of snaps) {
-      if (!snap.exists) continue;
-      people.push({ ...(snap.data() as BoardPersonRow), id: snap.id });
+    // Narrowed before the edge reads: this filter is what decides how many `in`
+    // queries the next step costs, and it is far cheaper to apply it here than to
+    // fetch the edges of every institution in the database.
+    const hospitalIds = places
+      .filter(isPublicHospital)
+      .map((place) => place.id);
+
+    const edges: BoardEdgeRow[] = [];
+    for (const chunk of chunked(hospitalIds, IN_CHUNK)) {
+      const snap = await db
+        .collection("edges")
+        .where("target", "in", chunk)
+        .where("type", "==", "employed")
+        .select("source", "target", "name", "end_date", "published", "deleted")
+        .get();
+      for (const doc of snap.docs) edges.push(doc.data() as BoardEdgeRow);
     }
-  }
 
-  const now = new Date();
-  return buildHospitalStats({
-    places,
-    edges,
-    people,
-    generatedAt: now.toISOString(),
-    today: now.toISOString().slice(0, 10),
-  });
-});
+    const personIds = [...new Set(edges.map((edge) => edge.source))].filter(
+      (id): id is string => !!id,
+    );
+    const people: BoardPersonRow[] = [];
+    for (const chunk of chunked(personIds, GET_ALL_CHUNK)) {
+      const snaps = await db.getAll(
+        ...chunk.map((id) => db.collection("nodes").doc(id)),
+        // A person node carries their whole biography; all this needs is the
+        // party, so `fetchNodesByIds` - which reads the documents whole - is
+        // deliberately not reused here.
+        { fieldMask: ["name", "parties", "published", "deleted"] },
+      );
+      for (const snap of snaps) {
+        if (!snap.exists) continue;
+        people.push({ ...(snap.data() as BoardPersonRow), id: snap.id });
+      }
+    }
+
+    const now = new Date();
+    return buildHospitalStats({
+      places,
+      edges,
+      people,
+      generatedAt: now.toISOString(),
+      today: now.toISOString().slice(0, 10),
+    });
+  },
+);

@@ -1,4 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import { mockNuxtImport } from "@nuxt/test-utils/runtime";
+import { computed, ref, type Ref } from "vue";
 import type {
   HospitalStats,
   SupervisoryGroup,
@@ -9,6 +11,7 @@ import {
   partyDisplay,
   partySeatRows,
   supervisionSegments,
+  useHospitalBoards,
 } from "../../../app/composables/stats/useHospitalBoards";
 import { supervisoryOrganLabel } from "../../../shared/companyOrgans";
 import { partyColors } from "../../../shared/misc";
@@ -194,5 +197,67 @@ describe("supervisionSegments", () => {
 
   it("is empty before the response arrives", () => {
     expect(supervisionSegments(null)).toEqual([]);
+  });
+});
+
+// A holder the tests drop a real `ref` into, rather than a plain object with a
+// `value`: the composable builds a `computed` over the user, so the third test
+// below only means anything if what it mutates is genuinely reactive. The ref
+// cannot be made in the `vi.hoisted` factory, which runs before vue is
+// imported.
+const { userHolder, mockUseFetch } = vi.hoisted(() => ({
+  userHolder: { user: null as Ref<{ uid: string } | null> | null },
+  mockUseFetch: vi.fn(),
+}));
+vi.mock("vuefire", () => ({ useCurrentUser: () => userHolder.user }));
+// `vi.stubGlobal` cannot reach this: the suite runs in the Nuxt environment,
+// where `useFetch` is a real auto-import resolved from `#app` rather than a
+// global the composable reads at call time.
+mockNuxtImport("useFetch", () => mockUseFetch);
+
+describe("useHospitalBoards", () => {
+  async function capturedQuery(user: { uid: string } | null = null) {
+    userHolder.user = ref(user);
+    let options: { query?: Ref<Record<string, string>> } | undefined;
+    mockUseFetch.mockImplementation((_url: string, opts: typeof options) => {
+      options = opts;
+      return {
+        data: ref(null),
+        pending: ref(false),
+        error: ref(null),
+        refresh: vi.fn(),
+      };
+    });
+    await useHospitalBoards();
+    return computed(() => options?.query?.value);
+  }
+
+  it("asks for the plain URL when nobody is signed in", async () => {
+    // The one the six-hour cache holds, ours and Cloud CDN's, and the one that
+    // gets indexed. An anonymous reader has published nothing and has no reason
+    // to pay for a recount.
+    expect((await capturedQuery()).value).toEqual({});
+  });
+
+  it("asks for the latest numbers once there is a signed-in reader", async () => {
+    // A signed-in reader is the person who might have just published a board
+    // member. `latest` is what makes the endpoint answer `no-store`, which is
+    // the only instruction Cloud CDN takes - clearing the server-side cache on
+    // publication never reached the copy at the edge.
+    expect((await capturedQuery({ uid: "admin-uid" })).value).toEqual({
+      latest: "true",
+    });
+  });
+
+  it("re-asks when the user resolves after the page has rendered", async () => {
+    const query = await capturedQuery(null);
+    expect(query.value).toEqual({});
+
+    // vuefire settles the user after hydration, so at server-render time there
+    // is nobody to know about yet. The query is reactive precisely so `useFetch`
+    // refetches at that point rather than leaving the editor on the cached copy.
+    userHolder.user!.value = { uid: "admin-uid" };
+
+    expect(query.value).toEqual({ latest: "true" });
   });
 });

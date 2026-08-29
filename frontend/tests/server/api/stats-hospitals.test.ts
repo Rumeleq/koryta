@@ -44,8 +44,25 @@ vi.mock("firebase-admin/firestore", () => {
 });
 
 // The handler is wrapped in nitro's cache; here it runs straight through.
+// Recorded rather than merely stubbed: which wrapper this endpoint uses is the
+// difference between an editor seeing what they just published and being served
+// an edge-cached answer from up to six hours earlier, so the choice is asserted
+// below rather than left to the import.
+// A plain array rather than a spy, and `vi.hoisted` rather than a `const`: the
+// wrapping happens once, when the module is imported, which is before any
+// `beforeEach` - so a spy would have its one recorded call wiped by
+// `clearAllMocks` long before the assertion, and a `const` would still be in
+// its temporal dead zone when `vi.mock`'s factory runs.
+const { wrappedWith } = vi.hoisted(() => ({ wrappedWith: [] as string[] }));
 vi.mock("~~/server/utils/handlers", () => ({
-  authCachedEventHandler: (fn: unknown) => fn,
+  authCachedEventHandler: (fn: unknown) => {
+    wrappedWith.push("authCachedEventHandler");
+    return fn;
+  },
+  editorFreshCachedEventHandler: (fn: unknown) => {
+    wrappedWith.push("editorFreshCachedEventHandler");
+    return fn;
+  },
 }));
 
 const call = () =>
@@ -67,6 +84,15 @@ beforeEach(() => {
 });
 
 describe("/api/stats/hospitals", () => {
+  it("lets an editor read through the cache", async () => {
+    // The plain cached wrapper sends `s-maxage=21600`, so Cloud CDN holds a
+    // copy that no server-side cache clear can reach - an admin who publishes a
+    // board member and reloads the page is shown the answer from before they
+    // did it. `editorFresh` answers a `latest` request `no-store` instead,
+    // which is the only instruction the CDN takes.
+    expect(wrappedWith).toEqual(["editorFreshCachedEventHandler"]);
+  });
+
   it("reads only what it needs, with queries the declared indexes serve", async () => {
     nodeDocs.push(
       {
