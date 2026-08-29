@@ -72,6 +72,12 @@
                 persistent-hint
               />
               <v-text-field
+                v-model="current.education"
+                label="Wykształcenie"
+                hint="np. magister inżynierii środowiska, duchowny prawosławny"
+                persistent-hint
+              />
+              <v-text-field
                 v-model="current.wikipedia"
                 label="Link do Wikipedii"
                 hint="Pełny link do artykułu"
