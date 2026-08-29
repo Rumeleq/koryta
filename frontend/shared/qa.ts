@@ -48,6 +48,65 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
  * before the list could be read at all. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "powiazania-nizsze-na-telefonie",
+    title: "Powiązania na telefonie są o połowę niższe",
+    description:
+      "Wiersz w „Historii powiązań” zajmował na telefonie 140-200 px, więc na " +
+      "ekran wchodziły dwa, trzy powiązania. Złożyły się na to trzy rzeczy: " +
+      "56 px odstępu przy ikonce i do 98 px na przyciski po prawej, przez co " +
+      "na nazwę instytucji zostawało 99-197 px i łamała się nawet na cztery " +
+      "linijki; osobny pasek trwania rysowany pod wierszem, szeroki na sztywne " +
+      "200 px, więc i tak ucinany z obu stron; oraz pełna nazwa komitetu " +
+      "wyborczego zajmująca trzy linijki. Teraz daty stoją zwykłym tekstem " +
+      "zaraz obok funkcji, pasek trwania zostaje tylko na komputerze, nazwa " +
+      "komitetu jest ucięta wielokropkiem (całość zostaje w dymku " +
+      "przeglądarki), a plakietka „Instytucja publiczna” zwija się do samej " +
+      "ikonki banku. Wiersz ma około 70-110 px, więc na jeden ekran wchodzi " +
+      "sześć, siedem powiązań zamiast trzech. Na komputerze nie zmienia się " +
+      "nic - pasek, pełna nazwa komitetu i pełna plakietka są tam, gdzie były.",
+    steps: [
+      "Na telefonie (albo zwęź okno poniżej 960 px) wejdź na stronę osoby z kilkoma powiązaniami, np. /osoba/maciej-sulgan-qlQRcKSMw1YLZJjNB71M.",
+      "Przewiń do „Historii powiązań” - policz, ile powiązań mieści się na jednym ekranie. Ma ich być co najmniej sześć, wcześniej wchodziły dwa albo trzy.",
+      "Sprawdź pojedynczy wiersz: pod nazwą instytucji ma być jedna linijka „Funkcja · data - data”, a pod nią nic więcej. Zielonego paska trwania nie ma.",
+      "Znajdź wiersz z kandydaturą w wyborach - nazwa komitetu ma być ucięta wielokropkiem w jednej linijce. Najedź na nią myszą (albo przytrzymaj), żeby zobaczyć całą.",
+      "Sprawdź wiersz ze spółką publiczną - zamiast napisu „Instytucja publiczna” ma być sama ikonka banku.",
+      "Zaloguj się jako admin i odśwież tę samą stronę na wąskim ekranie - ikona źródeł i kosz mają być po prawej, w jednej linii, i nadal dać się kliknąć.",
+      "Spróbuj przewinąć stronę w bok - nic nie ma wystawać poza ekran.",
+      "Wejdź na stronę spółki (/instytucja/...) na telefonie - lista osób ma wyglądać tak samo zwięźle.",
+      "Rozszerz okno powyżej 960 px - ma wrócić zielony pasek trwania po prawej stronie wiersza, pełna nazwa komitetu i napis „Instytucja publiczna”, a data ma być tylko raz, pod paskiem.",
+    ],
+    link: "/osoba/maciej-sulgan-qlQRcKSMw1YLZJjNB71M",
+    area: "public",
+  },
+  {
+    id: "home-pasek-postepu-na-telefonie",
+    title: "Pasek „Zostało nam jeszcze dużo osób” z legendą na telefonie",
+    description:
+      "Na wąskim ekranie pasek postępu na stronie głównej ma tylko 311 px " +
+      "szerokości, a wpisane w niego trzy liczby dzieliły między siebie " +
+      "kilkadziesiąt - środkowa nie mieściła się nawet we własnym kawałku " +
+      "paska i rozpychała sąsiednie, bo kawałek nie może być węższy niż " +
+      "wpisane w niego cyfry. Teraz na telefonie liczby stoją pod paskiem, w " +
+      "liście z kolorową kropką i nazwą (Opublikowane, Sprawdzone, Do " +
+      "sprawdzenia), a sam pasek jest niższy i pokazuje już tylko proporcje - " +
+      "i to dokładne, bo nic go od środka nie rozpycha. Przy okazji znika " +
+      "problem, o którym nikt nie mówił: nazwy kolorów podawał dotąd wyłącznie " +
+      "dymek po najechaniu myszą, więc na telefonie trzy gołe liczby nie " +
+      "znaczyły nic, a każda z nich była linkiem szerokim na dwadzieścia kilka " +
+      "pikseli. Na komputerze pasek zostaje dokładnie taki, jaki był.",
+    steps: [
+      "Na telefonie (albo zwęź okno poniżej 960 px) wejdź na stronę główną i zjedź do sekcji „Zostało nam jeszcze dużo osób”.",
+      "Na samym pasku nie ma już żadnych liczb - są tylko trzy kolorowe części, a pasek jest niższy niż wcześniej.",
+      "Pod paskiem są trzy wiersze: „Opublikowane”, „Sprawdzone” i „Do sprawdzenia”, każdy z kropką w kolorze swojej części paska i liczbą wyrównaną do prawej.",
+      "Sprawdź, że najdłuższa część paska to „Do sprawdzenia” i że jej liczba jest największa z trzech.",
+      "Kliknij „Opublikowane” - ma otworzyć tabelę powiązań. „Do sprawdzenia” ma otworzyć tabelę z osobami nieopublikowanymi, a „Sprawdzone” stronę /pomoc.",
+      "Rozszerz okno powyżej 960 px - liczby wracają na pasek, listy pod nim nie ma, a pasek jest znów wyższy.",
+      "Na komputerze najedź myszą na kawałek paska - dymek ma podać nazwę i liczbę, np. „Sprawdzone: 513”.",
+    ],
+    link: "/",
+    area: "public",
+  },
+  {
     id: "kategorie-spolek-przeliczone",
     title: "Kategorie spółek policzone od nowa - koleje bez drogowców",
     description:
