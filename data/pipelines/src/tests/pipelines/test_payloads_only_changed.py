@@ -23,6 +23,7 @@ from analysis.payloads.site import (
     UNRESOLVED_REGION,
     SiteSnapshot,
 )
+from entities.composite import Election, Person
 from scrapers.stores import Context, Pipeline, ProcessPolicy
 
 PERSON_ID = "person-1"
@@ -263,11 +264,38 @@ def test_a_term_only_the_reviewer_knows_is_not_a_disagreement():
     assert snapshot.changes(payload(elections=[CANDIDACY])) == []
 
 
-def test_a_candidacy_with_no_region_on_the_site_is_kept():
+def test_a_candidacy_with_no_region_on_the_site_is_reported():
     snapshot = SiteSnapshot(nodes(), edges())
     elsewhere = dict(CANDIDACY, teryt="0201")
 
     assert snapshot.changes(payload(elections=[elsewhere])) == [UNRESOLVED_REGION]
+
+
+def test_reporting_an_unplaceable_candidacy_does_not_keep_the_payload(
+    mock_ctx, monkeypatch
+):
+    """The ingest drops it and says so, so uploading achieves nothing.
+
+    It used to *throw*, and a payload that would fail is one somebody has to
+    see fail - which is why this was the one reason that kept a payload without
+    being a write.
+    """
+    snapshot = SiteSnapshot(nodes(), edges(STORED_EMPLOYMENT, STORED_CANDIDACY))
+    monkeypatch.setattr(
+        SiteSnapshot, "read", classmethod(lambda cls, ctx, date=None: snapshot)
+    )
+    person = Person(
+        name="Jan Kowalski",
+        companies=[],
+        elections=[Election(**dict(CANDIDACY, teryt="0201"))],
+        sources=[],
+        parties=["PiS"],
+        rejestrIo="https://rejestr.io/osoby/123",
+    )
+
+    kept = _people_payloads(only_changed=True).only_changed(mock_ctx, [person])
+
+    assert kept == []
 
 
 def test_a_candidacy_the_ingest_skips_is_dropped():

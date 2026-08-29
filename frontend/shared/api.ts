@@ -199,6 +199,33 @@ export type EntityResult = {
   krs?: string;
 };
 
+/** A candidacy the ingest could not turn into a relation, and why.
+ *
+ * A candidacy hangs off the region it was fought in, and PKW does not always
+ * say which one that was - it published no constituency mapping the scrapers
+ * can resolve for the elections of the 1990s, and a region the payload does
+ * name may still have no node on the site. Neither is a reason to reject the
+ * person: the employments, the articles and the node's own fields have nothing
+ * to do with it.
+ *
+ * So the candidacy is dropped and reported. Reported rather than merely
+ * dropped, because the alternative to a 500 must not be silence - a run that
+ * loses candidacies should say how many and which kind.
+ */
+export type UnplacedElection = {
+  election_type: string;
+  election_year?: string;
+  /** The code the payload carried, absent when it carried none. */
+  teryt?: string;
+  /** `no-teryt`: the payload named no region. `no-region`: it named one the
+   * site has no node for. `rejected`: the row was not usable at all - an
+   * election type the site does not have, or a write that failed. */
+  reason: "no-teryt" | "no-region" | "rejected";
+  /** Whether this is a known gap rather than something to look into. See
+   * `expectedMissingRegion` in `server/api/ingest/person.post.ts`. */
+  expected: boolean;
+};
+
 /** Fields a user may propose for a person node, whether creating a new one
  * or editing an existing one.
  *

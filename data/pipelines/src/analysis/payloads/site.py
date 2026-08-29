@@ -122,6 +122,14 @@ MISSING_ARTICLE = "article not on koryta.pl"
 NEW_MENTION = "mention not stored"
 UNRESOLVED_REGION = "candidacy the ingest cannot place"
 
+#: Reasons worth reporting that are not writes. The ingest drops a candidacy it
+#: cannot place and says so in `unplacedElections`, so a payload whose only
+#: difference is one of these would upload to no effect - it is counted, so a
+#: run says how many candidacies it is leaving behind, but it does not keep the
+#: payload. Until the ingest was changed it did: the drop was a *throw*, and a
+#: payload that would fail is one somebody has to see fail.
+INFORMATIONAL_REASONS = frozenset({UNRESOLVED_REGION})
+
 NEW_COMPANY = "company not on koryta.pl"
 COMPANY_FIELDS = "company node learns a field"
 COMPANY_UNAPPROVED = "company node has no approved revision"
@@ -597,9 +605,9 @@ class SiteSnapshot:
             if region_id is _SKIPPED:
                 continue
             if region_id is None:
-                # `lookupRegionId` throws, the request fails, and it fails the
-                # same way whether or not we send it. Keeping the payload is
-                # what makes --only-changed a filter rather than a fix.
+                # The ingest reports this candidacy and writes nothing, so
+                # sending the payload for it achieves nothing either. Counted
+                # rather than acted on - see `INFORMATIONAL_REASONS`.
                 reasons.append(UNRESOLVED_REGION)
                 continue
             edge: Edge = {

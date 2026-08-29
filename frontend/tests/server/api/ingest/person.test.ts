@@ -794,3 +794,138 @@ describe("api/ingest/person", () => {
     });
   });
 });
+
+describe("api/ingest/person, a candidacy the site cannot place", () => {
+  /** A new person with `elections` and nothing else. The person lookup misses,
+   * so the node is created; every `mockGet` after the first belongs to the
+   * candidacies. */
+  function newPersonWith(elections: unknown[], ...regionLookups: unknown[]) {
+    mockReadBody.mockResolvedValue({
+      name: "Test Person",
+      parties: [],
+      companies: [],
+      elections,
+    });
+    mockGet.mockReset();
+    mockDoc.mockReset();
+    mockDoc.mockReturnValue({
+      id: "new-doc-id",
+      parent: nodesParent,
+      ref: mockRef,
+    });
+    mockGet.mockResolvedValueOnce({ empty: true, docs: [] });
+    mockDoc.mockReturnValueOnce({
+      id: "person-id",
+      parent: nodesParent,
+      ref: mockRef,
+    });
+    for (const lookup of regionLookups) {
+      mockGet.mockResolvedValueOnce(lookup);
+    }
+  }
+
+  const found = (id: string) => ({
+    empty: false,
+    docs: [{ ref: { id }, id }],
+  });
+  const missing = { empty: true, docs: [] };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetUser.mockResolvedValue({ uid: "test-user-id", datascience: true });
+    mockWhere.mockReturnValue(queryMock);
+    queryMock.where.mockReturnValue(queryMock);
+    queryMock.limit.mockReturnValue(queryMock);
+  });
+
+  it("keeps the person when a candidacy names no region", async () => {
+    // This used to throw out of the handler. A run gathering hospital board
+    // members was losing whole people to candidacies it had not asked for.
+    newPersonWith([{ election_type: "Samorząd", election_year: "2010" }]);
+
+    const result = await handler({} as any);
+
+    expect(result.status).toBe("ok");
+    // The person node was still written.
+    expect(createRevisionTransaction).toHaveBeenCalledTimes(1);
+    expect(result.elections).toEqual([]);
+    expect(result.unplacedElections).toEqual([
+      {
+        election_type: "Samorząd",
+        election_year: "2010",
+        reason: "no-teryt",
+        expected: false,
+      },
+    ]);
+  });
+
+  it("marks the elections nobody published a constituency for as expected", async () => {
+    // PKW published no mapping `candidacy_teryt` can resolve for these, so
+    // they arrive without a code every time and are not worth looking into.
+    newPersonWith([{ election_type: "Sejm", election_year: "1993" }]);
+
+    const result = await handler({} as any);
+
+    expect(result.unplacedElections).toEqual([
+      {
+        election_type: "Sejm",
+        election_year: "1993",
+        reason: "no-teryt",
+        expected: true,
+      },
+    ]);
+  });
+
+  it("keeps the person when the region node does not exist yet", async () => {
+    newPersonWith(
+      [{ election_type: "Samorząd", election_year: "2024", teryt: "9999" }],
+      missing,
+    );
+
+    const result = await handler({} as any);
+
+    expect(result.status).toBe("ok");
+    expect(result.unplacedElections).toEqual([
+      {
+        election_type: "Samorząd",
+        election_year: "2024",
+        teryt: "9999",
+        reason: "no-region",
+        expected: false,
+      },
+    ]);
+  });
+
+  it("writes the candidacies it can place beside the ones it cannot", async () => {
+    // The old behaviour lost every candidacy after the failing one, whichever
+    // order the payload happened to list them in.
+    newPersonWith(
+      [
+        { election_type: "Samorząd", election_year: "2010" },
+        { election_type: "Samorząd", election_year: "2024", teryt: "1465" },
+      ],
+      found("teryt1465"),
+      missing, // the edge lookup: no such candidacy stored
+    );
+
+    const result = await handler({} as any);
+
+    expect(result.elections).toHaveLength(1);
+    expect(result.elections[0]).toMatchObject({ nodeId: "teryt1465" });
+    expect(result.unplacedElections).toHaveLength(1);
+  });
+
+  it("says nothing about candidacies when every one was placed", async () => {
+    // The field is omitted rather than empty, so the ordinary response - which
+    // is most of them - is unchanged.
+    newPersonWith(
+      [{ election_type: "Samorząd", election_year: "2024", teryt: "1465" }],
+      found("teryt1465"),
+      missing,
+    );
+
+    const result = await handler({} as any);
+
+    expect(result).not.toHaveProperty("unplacedElections");
+  });
+});
