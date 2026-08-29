@@ -26,7 +26,7 @@ def uploader() -> CompanyUploader:
     instance = object.__new__(CompanyUploader)
     instance.args = MagicMock(endpoint="http://localhost:3000")
     instance.headers = {}
-    instance.submit_payload = MagicMock(return_value=None)
+    instance.submit_payload = MagicMock(return_value=None)  # type: ignore[method-assign]
     return instance
 
 
