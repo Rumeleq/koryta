@@ -21,6 +21,42 @@ export const parties = [
   "Razem",
 ];
 
+/** Party names that stand for the same thing, folded to one key.
+ *
+ * SLD and Nowa Lewica are the same lineage - the party renamed in 2021 - and
+ * the site already paints them the same #D40E20, which made them two bars a
+ * reader could not tell apart and could not add up either. They are counted
+ * together now.
+ *
+ * Folding at the counting stage matters for more than tidiness: a person whose
+ * node carries BOTH labels was counted twice on one seat, once under each name.
+ * Callers must apply `canonicalParty` to a set, not a list, so the same seat is
+ * not counted twice under the merged key. */
+export const partyAliases: Record<string, string> = {
+  SLD: "Nowa Lewica",
+};
+
+/** What to call a merged key, where the merged name would hide what went in. */
+export const partyMergedLabels: Record<string, string> = {
+  "Nowa Lewica": "Nowa Lewica / SLD",
+};
+
+/** The name a party is counted under. Unknown parties pass through unchanged. */
+export function canonicalParty(party: string): string {
+  return partyAliases[party] ?? party;
+}
+
+/** Every stored name that a canonical key stands for, itself included - what a
+ * link has to filter on so the merged bar and the table behind it agree. */
+export function partyAliasesOf(canonical: string): string[] {
+  return [
+    canonical,
+    ...Object.entries(partyAliases)
+      .filter(([, to]) => to === canonical)
+      .map(([from]) => from),
+  ];
+}
+
 export const partyColors: Record<string, string> = {
   PO: "#fca241",
   PiS: "#073b76",

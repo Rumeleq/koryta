@@ -128,25 +128,15 @@
       {{ boardGroupLabels[group] }}
     </p>
 
-    <v-row class="mb-2">
-      <v-col cols="12">
-        <StatsHospitalPartySeats
-          :title="chartTitle"
-          :subtitle="chartSubtitle"
-          :rows="partyRows"
-          :loading="pending"
-          :empty-text="emptyText"
-        />
-      </v-col>
-    </v-row>
-
     <v-row class="mb-6">
       <v-col cols="12">
-        <StatsHospitalBoardTable
-          :title="tableTitle"
-          :subtitle="tableSubtitle"
-          :rows="hospitalRows"
+        <StatsHospitalBreakdown
+          v-model:dimension="breakdown"
+          :title="chartTitle"
+          :subtitle="chartSubtitle"
+          :rows="breakdownRows"
           :loading="pending"
+          :can-see-drafts="!!user"
           :empty-text="emptyText"
         />
       </v-col>
@@ -231,6 +221,7 @@ import {
   boardGroupShortLabels,
   useHospitalBoards,
   type BoardGroup,
+  type CachedGroup,
 } from "~/composables/stats/useHospitalBoards";
 import { polishCounting } from "~/composables/polish";
 import {
@@ -254,10 +245,14 @@ const {
   error,
   group,
   selected,
-  partyRows,
-  hospitalRows,
+  breakdown,
+  breakdownRows,
   segments,
   empty,
+  // Taken from the composable rather than called here: this page has a
+  // top-level `await` above, and a composable called after it runs with no
+  // active effect scope.
+  user,
 } = await useHospitalBoards();
 
 const headlineTiles = computed(() => {
@@ -308,43 +303,47 @@ const exclusionSummary = computed(() => {
   return `Poza zestawieniem zostaje ${polishCounting(data.unpaid.seats, "miejsce", "miejsca", "miejsc")} w ${polishCounting(data.unpaid.hospitals, "radzie społecznej", "radach społecznych", "radach społecznych")}.`;
 });
 
-const chartTitle = computed(() =>
-  group.value === "paid"
-    ? "Miejsca w radach nadzorczych według partii"
-    : "Miejsca w radach społecznych według partii (nieuwzględnione)",
-);
+const chartTitle = computed(() => {
+  const what =
+    group.value === "paid" ? "radach nadzorczych" : "radach społecznych";
+  const by = {
+    party: "według partii",
+    region: "według województwa",
+    hospital: "według szpitala",
+  }[breakdown.value];
+  const excluded = group.value === "paid" ? "" : " (nieuwzględnione)";
+  return `Miejsca w ${what} ${by}${excluded}`;
+});
 
+/** States the ratio in words above a chart whose whole point is that ratio, so
+ * it is on the page even for a reader who never reads a bar.
+ *
+ * The party split is the one view with no backlog to report - we do not know
+ * which party the unreviewed people belong to - so it says what it is counting
+ * instead of quoting a share that would look like coverage. */
 const chartSubtitle = computed(() => {
   const data = selected.value;
   if (!data) return "";
+  const { unreviewed } = data as CachedGroup;
   const base =
     group.value === "paid"
       ? "Miejsca, za które spółka może płacić."
       : "Miejsca bez wynagrodzenia — pokazane, żeby było widać, co wyłączyliśmy.";
-  return `${base} Osoba z dwiema partiami liczy się w każdej z nich, dlatego słupki sumują się do więcej niż ${polishCounting(data.seats, "miejsce", "miejsca", "miejsc")}; udziały liczymy wobec ${formatCount(data.seatsWithParty)} miejsc z przypisaną partią.`;
-});
 
-const tableTitle = computed(() =>
-  group.value === "paid"
-    ? "Szpitale z radą nadzorczą"
-    : "Szpitale z radą społeczną",
-);
-
-const tableSubtitle = computed(() => {
-  const data = selected.value;
-  if (!data) return "";
-  const missing = data.hospitals - data.hospitalsWithSeats;
-  // The hospitals with nobody on record are the denominator that stops a party
-  // looking clean when it is only unobserved, so the count goes next to the
-  // list rather than into a footnote.
-  const unobserved =
-    missing > 0
-      ? ` Przy ${polishCounting(missing, "szpitalu", "szpitalach", "szpitalach")} z tej grupy nie mamy jeszcze w bazie nikogo.`
-      : "";
-  const ended = data.endedSeats
-    ? ` W bazie jest też ${polishCounting(data.endedSeats, "miejsce", "miejsca", "miejsc")} z datą końca — tych nie liczymy.`
-    : "";
-  return `Wypisujemy ${polishCounting(data.hospitalsWithSeats, "szpital", "szpitale", "szpitali")} z obsadzonym organem.${unobserved}${ended}`;
+  if (breakdown.value === "party") {
+    return `${base} Liczymy wyłącznie ${formatCount(data.seats)} miejsc sprawdzonych i opublikowanych przez redakcję. Osoba z dwiema partiami liczy się w każdej z nich, dlatego słupki sumują się do więcej niż ${formatCount(data.seats)}.`;
+  }
+  // Cached-response caveat, as in `regionDisplayRows`: a response from the
+  // previous build carries no `unreviewed`, and this must say nothing rather
+  // than print "NaN".
+  if (unreviewed === undefined) return base;
+  const total = data.seats + unreviewed;
+  if (total === 0) return base;
+  const share = new Intl.NumberFormat("pl-PL", {
+    style: "percent",
+    maximumFractionDigits: 1,
+  }).format(data.seats / total);
+  return `${base} Z ${formatCount(total)} miejsc znanych z KRS redakcja sprawdziła i opublikowała ${formatCount(data.seats)} (${share}). Kolorowa głowa słupka to te sprawdzone, w podziale na partie; szary ogon to sama liczba osób, o których poza liczbą nie mówimy nic.`;
 });
 
 const emptyText = computed(() =>

@@ -5,6 +5,7 @@ import {
   isPublicHospital,
   isSupervisoryRole,
   NO_PARTY,
+  NO_REGION,
   type BoardEdgeRow,
   type BoardPersonRow,
   type HospitalPlaceRow,
@@ -186,7 +187,9 @@ describe("buildHospitalStats", () => {
         supervisoryOrgan: "rada_nadzorcza",
         legalForm: null,
         seats: 1,
+        unreviewed: 0,
         parties: ["PiS"],
+        byParty: [{ party: "PiS", seats: 1, people: 1, hospitals: 1 }],
       },
     ]);
   });
@@ -310,5 +313,276 @@ describe("buildHospitalStats", () => {
     expect(stats.paid.rows[0]?.legalForm).toBe(
       "SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ",
     );
+  });
+});
+
+describe("boardSeats: the unreviewed bucket", () => {
+  it("counts a sitting seat nobody has published", () => {
+    const { current, unreviewed } = boardSeats(
+      [seat("p", "h", { published: false })],
+      "2026-08-22",
+    );
+    expect(current).toHaveLength(0);
+    expect(unreviewed).toEqual([{ placeId: "h", personId: "p" }]);
+  });
+
+  it("leaves out a draft the register says is over", () => {
+    // Backlog is work waiting to be done. A spell that ended is not work.
+    const { unreviewed } = boardSeats(
+      [seat("p", "h", { published: false, end_date: "2020-01-01" })],
+      "2026-08-22",
+    );
+    expect(unreviewed).toHaveLength(0);
+  });
+
+  it("leaves out an approved removal", () => {
+    const { unreviewed } = boardSeats(
+      [seat("p", "h", { published: false, deleted: true })],
+      "2026-08-22",
+    );
+    expect(unreviewed).toHaveLength(0);
+  });
+
+  it("counts a pair holding both a draft and a published spell as reviewed", () => {
+    const { current, unreviewed } = boardSeats(
+      [
+        seat("p", "h", { published: false }),
+        seat("p", "h", { published: true }),
+      ],
+      "2026-08-22",
+    );
+    expect(current).toHaveLength(1);
+    expect(unreviewed).toHaveLength(0);
+  });
+
+  it("does not double count two drafts for the same pair", () => {
+    const { unreviewed } = boardSeats(
+      [
+        seat("p", "h", { published: false }),
+        seat("p", "h", { published: false, name: "Rada Nadzorcza (członek)" }),
+      ],
+      "2026-08-22",
+    );
+    expect(unreviewed).toHaveLength(1);
+  });
+
+  it("ignores a draft edge that is not a supervisory role", () => {
+    const { unreviewed } = boardSeats(
+      [seat("p", "h", { published: false, name: "Zarząd" })],
+      "2026-08-22",
+    );
+    expect(unreviewed).toHaveLength(0);
+  });
+});
+
+describe("buildHospitalStats: by województwo", () => {
+  const mazowieckie = place("h1", {
+    supervisoryOrgan: "rada_nadzorcza",
+    regionTeryt: "1465",
+  });
+  const alsoMazowieckie = place("h2", {
+    supervisoryOrgan: "rada_nadzorcza",
+    regionTeryt: "14",
+  });
+  const pomorskie = place("h3", {
+    supervisoryOrgan: "rada_nadzorcza",
+    regionTeryt: "2261",
+  });
+
+  it("rolls a gmina and a powiat code up into one województwo row", () => {
+    const stats = buildHospitalStats({
+      places: [mazowieckie, alsoMazowieckie],
+      edges: [],
+      people: [],
+      generatedAt: "2026-08-22T00:00:00.000Z",
+      today: "2026-08-22",
+      wojewodztwoNames: { "14": "Województwo mazowieckie" },
+    });
+    expect(stats.paid.byRegion).toHaveLength(1);
+    expect(stats.paid.byRegion[0]).toMatchObject({
+      teryt: "14",
+      name: "Województwo mazowieckie",
+      groupHospitals: 2,
+    });
+  });
+
+  it("normalises a name stored without the prefix", () => {
+    const stats = buildHospitalStats({
+      places: [pomorskie],
+      edges: [],
+      people: [],
+      generatedAt: "2026-08-22T00:00:00.000Z",
+      today: "2026-08-22",
+      wojewodztwoNames: { "22": "pomorskie" },
+    });
+    expect(stats.paid.byRegion[0]!.name).toBe("Województwo pomorskie");
+  });
+
+  it("keeps a region whose node it could not name", () => {
+    const stats = buildHospitalStats({
+      places: [pomorskie],
+      edges: [],
+      people: [],
+      generatedAt: "2026-08-22T00:00:00.000Z",
+      today: "2026-08-22",
+    });
+    expect(stats.paid.byRegion[0]!.name).toBe("Województwo 22");
+  });
+
+  it("parks a hospital the register places nowhere under the sentinel", () => {
+    const stats = buildHospitalStats({
+      places: [place("h9", { supervisoryOrgan: "rada_nadzorcza" })],
+      edges: [],
+      people: [],
+      generatedAt: "2026-08-22T00:00:00.000Z",
+      today: "2026-08-22",
+    });
+    expect(stats.paid.byRegion[0]!.teryt).toBe(NO_REGION);
+  });
+
+  it("splits reviewed seats by party and the backlog by count alone", () => {
+    const stats = buildHospitalStats({
+      places: [mazowieckie, pomorskie],
+      edges: [
+        seat("known", "h1"),
+        seat("draft1", "h1", { published: false }),
+        seat("draft2", "h1", { published: false }),
+        seat("draft3", "h3", { published: false }),
+      ],
+      people: [
+        person("known", ["PiS"]),
+        // Carries a party, but nobody has published them - so the party must
+        // not reach the response at all.
+        person("draft1", ["PO"], { published: false }),
+        person("draft2", ["PO"], { published: false }),
+        person("draft3", ["PSL"], { published: false }),
+      ],
+      generatedAt: "2026-08-22T00:00:00.000Z",
+      today: "2026-08-22",
+      wojewodztwoNames: { "14": "mazowieckie", "22": "pomorskie" },
+    });
+
+    const maz = stats.paid.byRegion.find((row) => row.teryt === "14")!;
+    expect(maz).toMatchObject({ seats: 1, unreviewed: 2, seatsWithParty: 1 });
+    expect(maz.byParty).toEqual([
+      { party: "PiS", seats: 1, people: 1, hospitals: 1 },
+    ]);
+
+    const pom = stats.paid.byRegion.find((row) => row.teryt === "22")!;
+    expect(pom).toMatchObject({ seats: 0, unreviewed: 1 });
+    // The whole point: a region with only drafts says how many, and nothing
+    // whatever about who they are.
+    expect(pom.byParty).toEqual([]);
+
+    // And no party of an unpublished person appears anywhere in the response.
+    expect(JSON.stringify(stats)).not.toContain("PSL");
+    expect(JSON.stringify(stats)).not.toContain("PO");
+  });
+
+  it("keeps every region row summing to its group total", () => {
+    const stats = buildHospitalStats({
+      places: [mazowieckie, alsoMazowieckie, pomorskie],
+      edges: [
+        seat("a", "h1"),
+        seat("b", "h2"),
+        seat("c", "h3", { published: false }),
+        seat("d", "h1", { published: false }),
+      ],
+      people: [person("a", ["PO"]), person("b", undefined)],
+      generatedAt: "2026-08-22T00:00:00.000Z",
+      today: "2026-08-22",
+    });
+    const sum = (key: "seats" | "unreviewed") =>
+      stats.paid.byRegion.reduce((total, row) => total + row[key], 0);
+    expect(sum("seats")).toBe(stats.paid.seats);
+    expect(sum("unreviewed")).toBe(stats.paid.unreviewed);
+    expect(
+      stats.paid.byRegion.reduce((t, row) => t + row.groupHospitals, 0),
+    ).toBe(stats.paid.hospitals);
+  });
+
+  it("counts hospitals of every organ in `hospitals` but only its own in `groupHospitals`", () => {
+    const stats = buildHospitalStats({
+      places: [
+        mazowieckie,
+        place("h4", { supervisoryOrgan: "rada_spoleczna", regionTeryt: "14" }),
+      ],
+      edges: [],
+      people: [],
+      generatedAt: "2026-08-22T00:00:00.000Z",
+      today: "2026-08-22",
+    });
+    expect(stats.paid.byRegion[0]).toMatchObject({
+      hospitals: 2,
+      groupHospitals: 1,
+    });
+    expect(stats.unpaid.byRegion[0]).toMatchObject({
+      hospitals: 2,
+      groupHospitals: 1,
+    });
+  });
+});
+
+describe("buildHospitalStats: parties that stand for the same thing", () => {
+  const paid = place("h", { supervisoryOrgan: "rada_nadzorcza", regionTeryt: "14" });
+
+  it("counts SLD under Nowa Lewica, so the two share one bar", () => {
+    // The site paints both #D40E20, which made them two bars nobody could tell
+    // apart and could not add up either.
+    const stats = buildHospitalStats({
+      places: [paid],
+      edges: [seat("a", "h"), seat("b", "h")],
+      people: [person("a", ["SLD"]), person("b", ["Nowa Lewica"])],
+      generatedAt: "2026-08-22T00:00:00.000Z",
+      today: "2026-08-22",
+    });
+    expect(stats.paid.byParty).toEqual([
+      { party: "Nowa Lewica", seats: 2, people: 2, hospitals: 1 },
+    ]);
+  });
+
+  it("counts a person carrying both labels once, not twice", () => {
+    // One person, one seat. Folding without deduplicating would have made the
+    // merged bar twice as long as the board it describes.
+    const stats = buildHospitalStats({
+      places: [paid],
+      edges: [seat("a", "h")],
+      people: [person("a", ["SLD", "Nowa Lewica"])],
+      generatedAt: "2026-08-22T00:00:00.000Z",
+      today: "2026-08-22",
+    });
+    expect(stats.paid.seats).toBe(1);
+    expect(stats.paid.seatsWithParty).toBe(1);
+    expect(stats.paid.byParty).toEqual([
+      { party: "Nowa Lewica", seats: 1, people: 1, hospitals: 1 },
+    ]);
+  });
+
+  it("merges in the region and hospital splits too, not just the total", () => {
+    const stats = buildHospitalStats({
+      places: [paid],
+      edges: [seat("a", "h"), seat("b", "h")],
+      people: [person("a", ["SLD"]), person("b", ["Nowa Lewica"])],
+      generatedAt: "2026-08-22T00:00:00.000Z",
+      today: "2026-08-22",
+    });
+    expect(stats.paid.byRegion[0]!.byParty).toEqual([
+      { party: "Nowa Lewica", seats: 2, people: 2, hospitals: 1 },
+    ]);
+    expect(stats.paid.rows[0]!.byParty).toEqual([
+      { party: "Nowa Lewica", seats: 2, people: 2, hospitals: 1 },
+    ]);
+    expect(stats.paid.rows[0]!.parties).toEqual(["Nowa Lewica"]);
+  });
+
+  it("leaves every other party alone", () => {
+    const stats = buildHospitalStats({
+      places: [paid],
+      edges: [seat("a", "h")],
+      people: [person("a", ["PiS"])],
+      generatedAt: "2026-08-22T00:00:00.000Z",
+      today: "2026-08-22",
+    });
+    expect(stats.paid.byParty[0]!.party).toBe("PiS");
   });
 });
