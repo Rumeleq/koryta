@@ -27,6 +27,23 @@ html {
   opacity: 0;
 }
 
+/* Vuetify draws a field's label as a `.v-label`, at
+   `--v-medium-emphasis-opacity` - 0.6 in the light theme - over the
+   rgba(0, 0, 0, 0.87) the app inherits from `.v-application`. That composites
+   to #7a7a7a on white, 4.29:1, under the 4.5:1 AA asks for; and the floating
+   copy, the one an outlined field shows once it holds a value and the only
+   thing then naming the control, is 0.75em - 12px. The palette's neutral ink
+   at full opacity measures 6.50:1.
+
+   Global rather than per-page: the label is a Vuetify default, so every form
+   on the site carries it. Three classes deep, which leaves Vuetify's own
+   four-class `.v-field--error:not(.v-field--disabled) .v-label.v-field-label`
+   ahead of it, so an invalid field still labels itself in red. */
+.v-field .v-label.v-field-label {
+  opacity: 1;
+  color: rgb(var(--v-theme-ink-neutral));
+}
+
 /* A link that is the row rather than a call to action - an entry name in a
    list, where every row carries one and the browser default turns the whole
    column blue. Reads as body text, underlines only when it is actually being

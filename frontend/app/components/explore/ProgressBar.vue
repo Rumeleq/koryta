@@ -7,23 +7,12 @@
   >
     <div class="d-flex align-center flex-wrap ga-2">
       <span class="text-subtitle-1 font-weight-bold">Postęp weryfikacji</span>
-      <span v-if="stats" class="text-body-2 text-medium-emphasis">
+      <span v-if="stats" class="text-body-2 text-ink-neutral">
         sprawdzono {{ polishNumber(checkedCount) }} z
         {{ polishCountingGenitive(stats.total, "osoby", "osób") }} ({{
           checkedPercent
         }}%)
       </span>
-      <v-spacer />
-      <v-btn
-        v-if="!hideCta"
-        to="/eksploruj/nowe"
-        color="primary"
-        variant="tonal"
-        size="small"
-        :prepend-icon="mdiArrowRight"
-      >
-        Pomóż sprawdzać
-      </v-btn>
     </div>
 
     <v-skeleton-loader v-if="!stats" type="text" class="mt-2" />
@@ -64,7 +53,7 @@
         <span
           v-for="segment in segments"
           :key="segment.key"
-          class="text-body-2 text-medium-emphasis d-flex align-center"
+          class="text-body-2 text-ink-neutral d-flex align-center"
         >
           <span
             class="legend-dot mr-1"
@@ -73,7 +62,7 @@
           {{ segment.label }}: {{ segment.value }}
         </span>
         <v-spacer />
-        <span class="text-caption text-medium-emphasis">
+        <span class="text-caption text-ink-neutral">
           z głosami: {{ stats.withVotes }} · z notatkami:
           {{ stats.withNotes }}
         </span>
@@ -86,7 +75,7 @@
           <v-icon
             :icon="mdiHandHeartOutline"
             size="small"
-            color="medium-emphasis"
+            color="ink-neutral"
           />
           <span>
             Twój wkład:
@@ -102,19 +91,23 @@
           </span>
           <span
             v-if="votesCount + notesCount + revisionsCount === 0"
-            class="text-medium-emphasis"
+            class="text-ink-neutral"
           >
             — oceń pierwszą osobę i dołóż swoją cegiełkę!
           </span>
         </template>
         <template v-else>
+          <!-- The invitation a guest meets on /eksploruj/nowe, which mounts
+               this component unconditionally. It was `text-primary`: the
+               brand's sage as 14px ink on white is 1.85:1. Info, because
+               that is the palette's link ink - 6.35:1 here. -->
           <v-icon
             :icon="mdiHandHeartOutline"
             size="small"
-            color="medium-emphasis"
+            color="ink-neutral"
           />
-          <span class="text-medium-emphasis">
-            <NuxtLink to="/login" class="text-primary">Zaloguj się</NuxtLink>,
+          <span class="text-ink-neutral">
+            <NuxtLink to="/login" class="text-ink-info">Zaloguj się</NuxtLink>,
             aby pomóc w sprawdzaniu osób i śledzić swój wkład.
           </span>
         </template>
@@ -159,7 +152,13 @@
           </v-tooltip>
         </div>
 
-        <span class="text-medium-emphasis">
+        <!-- `text-ink-neutral` rather than Vuetify's `text-medium-emphasis`,
+             here and everywhere else in this component: the query bar this
+             band renders inside counts its rows in the palette's neutral, so
+             the row was carrying two different greys at once, #4c616b and
+             #666666. Both clear AA - medium emphasis measures 5.74:1 on white
+             and the ink 6.50:1 - so this is consistency, not contrast. -->
+        <span class="text-ink-neutral">
           sprawdzono {{ polishNumber(checkedCount) }} z
           {{ polishCountingGenitive(stats.total, "osoby", "osób") }} ({{
             checkedPercent
@@ -180,7 +179,7 @@
           <v-icon
             :icon="mdiHandHeartOutline"
             size="small"
-            color="medium-emphasis"
+            color="ink-neutral"
             class="mr-1"
           />
           Twój wkład:
@@ -194,35 +193,16 @@
           }}
           zmian
         </span>
-        <span v-else class="text-medium-emphasis">
+        <span v-else class="text-ink-neutral">
           <v-icon
             :icon="mdiHandHeartOutline"
             size="small"
-            color="medium-emphasis"
+            color="ink-neutral"
             class="mr-1"
           />
-          <NuxtLink to="/login" class="text-primary">Zaloguj się</NuxtLink>, aby
-          pomóc w sprawdzaniu osób i śledzić swój wkład.
+          <NuxtLink to="/login" class="text-ink-info">Zaloguj się</NuxtLink>,
+          aby pomóc w sprawdzaniu osób i śledzić swój wkład.
         </span>
-
-        <v-spacer />
-        <!-- Tonal, not the mock's text button, even though the mock reads
-             lighter: this is the same call to action the card variant renders,
-             and one action that looks like two different controls depending on
-             which page it is on is worse than either. The theme's primary is
-             #a8c79f, so the label is pale in both variants - at least the
-             tonal underlay gives the button a surface to aim at. -->
-        <v-btn
-          v-if="!hideCta"
-          to="/eksploruj/nowe"
-          color="primary"
-          variant="tonal"
-          size="small"
-          class="flex-shrink-0"
-          :append-icon="mdiArrowRight"
-        >
-          Pomóż sprawdzać
-        </v-btn>
       </div>
 
       <!-- The legend is the only line here that is reference rather than news,
@@ -235,7 +215,7 @@
         <span
           v-for="segment in segments"
           :key="segment.key"
-          class="text-caption text-medium-emphasis d-flex align-center"
+          class="text-caption text-ink-neutral d-flex align-center"
         >
           <span
             class="legend-dot legend-dot--sm mr-1"
@@ -249,7 +229,7 @@
 </template>
 
 <script setup lang="ts">
-import { mdiArrowRight, mdiHandHeartOutline } from "@mdi/js";
+import { mdiHandHeartOutline } from "@mdi/js";
 import { computed } from "vue";
 import type { Query } from "~~/server/api/nodes/index.get";
 import type { ProgressStats } from "~~/server/api/stats/progress.get";
@@ -260,7 +240,13 @@ const props = defineProps<{
   /** The table query; only its structural filters are used, the breakdown by
    * status (visibility, votes) is what the bar itself shows. */
   query: Query;
-  /** Hide the call-to-action button (e.g. when already on /eksploruj/nowe). */
+  /** Accepted and ignored: this component no longer draws a „Pomóż
+   * sprawdzać” button at all. Both callers passed `hide-cta` - nowe.vue is
+   * the page it links to, and the query bar draws its own filled copy at the
+   * end of the work row - so the tonal one here was never painted, and its
+   * label was the pale `primary` on white the palette replaced. Kept as a
+   * prop so the attribute those callers pass does not land on the root
+   * element. */
   hideCta?: boolean;
   /** Render as a band inside the table page's query bar instead of as a card:
    * one line at md and up, no card border, no padding of its own. Off keeps
