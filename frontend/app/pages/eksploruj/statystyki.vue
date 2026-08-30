@@ -4,8 +4,8 @@
       <div class="flex-grow-1">
         <h1 class="text-h4 mb-1">Statystyki</h1>
         <p class="text-body-2 text-medium-emphasis mb-0">
-          Ile jest w bazie, ile z tego ktoś już sprawdził i co się w niej
-          ostatnio działo.
+          Kto się tym zajmuje i co ostatnio zrobił, a niżej — ile jest w bazie i
+          ile z tego ktoś już sprawdził.
         </p>
       </div>
       <v-btn to="/eksploruj/szpitale" variant="tonal">
@@ -20,6 +20,82 @@
         Pomóż sprawdzać
       </v-btn>
     </div>
+
+    <!-- ------------------------------------------------------------------ -->
+    <!-- Who did what comes first. The inventory below it is the same numbers
+         it has always been, but it is the answer to "how big is this", and a
+         volunteer opening the page is asking "is anyone else here, and did what
+         I did count". That question gets the top of the page. -->
+    <div class="d-flex align-center flex-wrap ga-3 mb-3">
+      <h2 class="text-h6 mb-0">Kto tworzy koryta.pl</h2>
+      <v-spacer />
+      <!-- One filter row, above everything it scopes: the range below changes
+           the ranking, the tiles and the timeline together. -->
+      <v-btn-toggle
+        v-model="days"
+        density="compact"
+        variant="outlined"
+        divided
+        mandatory
+      >
+        <v-btn
+          v-for="range in activityRanges"
+          :key="range"
+          :value="range"
+          size="small"
+        >
+          {{ range }} dni
+        </v-btn>
+      </v-btn-toggle>
+    </div>
+
+    <v-alert
+      v-if="activityError"
+      type="error"
+      variant="tonal"
+      class="mb-4"
+      text="Nie udało się pobrać aktywności."
+    />
+
+    <v-alert
+      v-if="activity?.truncated.length"
+      type="warning"
+      variant="tonal"
+      density="compact"
+      class="mb-4"
+      :text="truncatedMessage"
+    />
+
+    <StatsContributorTable
+      class="mb-4"
+      :contributors="activity?.contributors ?? []"
+      :identified="activity?.identified ?? false"
+      :contributor-count="activity?.contributorCount ?? 0"
+      :self="activity?.self ?? null"
+      :signed-in="!!user"
+      :profile-public="profilePublic"
+      :window-days="days"
+      :loading="activityPending"
+    />
+
+    <v-card variant="outlined" class="mb-4">
+      <v-card-text>
+        <v-skeleton-loader v-if="!activity" type="text@2" />
+        <div v-else class="d-flex flex-wrap ga-8">
+          <StatsStatTile
+            v-for="tile in activityTiles"
+            :key="tile.label"
+            v-bind="tile"
+          />
+        </div>
+      </v-card-text>
+    </v-card>
+
+    <StatsActivityTimeline
+      class="mb-6"
+      :daily="activity?.daily ?? []"
+      :loading="activityPending"
+    />
 
     <v-alert
       v-if="databaseError"
@@ -185,69 +261,6 @@
         />
       </v-col>
     </v-row>
-
-    <!-- ------------------------------------------------------------------ -->
-    <div class="d-flex align-center flex-wrap ga-3 mb-3">
-      <h2 class="text-h6 mb-0">Aktywność</h2>
-      <v-spacer />
-      <!-- One filter row, above everything it scopes: the range below changes
-           the timeline, the tiles and the ranking together. -->
-      <v-btn-toggle
-        v-model="days"
-        density="compact"
-        variant="outlined"
-        divided
-        mandatory
-      >
-        <v-btn v-for="range in RANGES" :key="range" :value="range" size="small">
-          {{ range }} dni
-        </v-btn>
-      </v-btn-toggle>
-    </div>
-
-    <v-alert
-      v-if="activityError"
-      type="error"
-      variant="tonal"
-      class="mb-4"
-      text="Nie udało się pobrać aktywności."
-    />
-
-    <v-alert
-      v-if="activity?.truncated.length"
-      type="warning"
-      variant="tonal"
-      density="compact"
-      class="mb-4"
-      :text="truncatedMessage"
-    />
-
-    <v-card variant="outlined" class="mb-4">
-      <v-card-text>
-        <v-skeleton-loader v-if="!activity" type="text@2" />
-        <div v-else class="d-flex flex-wrap ga-8">
-          <StatsStatTile
-            v-for="tile in activityTiles"
-            :key="tile.label"
-            v-bind="tile"
-          />
-        </div>
-      </v-card-text>
-    </v-card>
-
-    <StatsActivityTimeline
-      class="mb-4"
-      :daily="activity?.daily ?? []"
-      :loading="activityPending"
-    />
-
-    <StatsContributorTable
-      :contributors="activity?.contributors ?? []"
-      :identified="activity?.identified ?? false"
-      :contributor-count="activity?.contributorCount ?? 0"
-      :window-days="days"
-      :loading="activityPending"
-    />
   </div>
 </template>
 
@@ -258,9 +271,13 @@ import {
   activityKinds,
   activityKindLabels,
   activityKindDescriptions,
+  activityRanges,
+  defaultActivityRange,
+  type ActivityRange,
 } from "~~/shared/activity";
 import type { DatabaseStats } from "~~/server/api/stats/database.get";
 import type { ActivityStats } from "~~/server/api/stats/activity.get";
+import { publicProfileEnabled } from "~~/shared/profile";
 import { authRequest, useAuthState } from "~/composables/auth";
 import { polishCounting } from "~/composables/polish";
 import {
@@ -274,9 +291,15 @@ import {
 
 useHead({ title: "Statystyki - koryta.pl" });
 
-const RANGES = [7, 30, 90] as const;
+const { isAdmin, user, userConfig } = useAuthState();
 
-const { isAdmin } = useAuthState();
+/** Whether the reader has already agreed to be named in the ranking, which is
+ * what decides which invitation the table shows them. Read from the config
+ * document rather than from the response: the response deliberately does not
+ * say which rows belong to whom, including theirs. */
+const profilePublic = computed(() =>
+  publicProfileEnabled(userConfig?.data?.value?.publicProfile),
+);
 
 /** The state of the database does not depend on who is asking or on the
  * selected range, so it is fetched once and server-rendered. */
@@ -289,7 +312,7 @@ const {
 /** Activity carries identities for admins, so it has to go out with the user's
  * token — which means the browser, after auth has settled. Lazy on purpose:
  * the state of the database is already rendered and should not wait for it. */
-const days = ref<number>(30);
+const days = ref<ActivityRange>(defaultActivityRange);
 const {
   data: activity,
   pending: activityPending,
