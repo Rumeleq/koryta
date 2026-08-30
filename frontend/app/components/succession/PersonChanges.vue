@@ -123,6 +123,7 @@ import {
 } from "@mdi/js";
 import { generateEntityUrl } from "~/composables/slugs";
 import { gapLabel } from "~~/shared/succession";
+import { shortDate } from "~~/shared/dates";
 import type { PersonSuccession } from "~~/server/api/edges/successions.get";
 
 const props = defineProps<{
@@ -156,35 +157,6 @@ const hidden = computed(() => data.value?.hidden ?? 0);
  * in flight, which is what keeps a section that may not exist from flashing a
  * heading on a client-side navigation. */
 const empty = computed(() => !posts.value.length && !hidden.value);
-
-/* ---------- dates ---------- */
-
-// `timeZone: "UTC"` against a date built with `Date.UTC`: a register day is a
-// day, not an instant, and left to the local zone a browser west of Greenwich
-// would render every one of them as the day before.
-const SHORT_DATE = new Intl.DateTimeFormat("pl-PL", {
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-  timeZone: "UTC",
-});
-
-/** The three numbers in an ISO day, or null for anything else.
- *
- * Same strictness as `spellDate` in `shared/succession.ts`, and for the same
- * reason: `new Date("2016")` answers 1 January, which would print a date the
- * register never recorded. */
-function parts(iso: string | null | undefined) {
-  const match = iso ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso) : null;
-  if (!match) return null;
-  return { y: Number(match[1]), m: Number(match[2]), d: Number(match[3]) };
-}
-
-function shortDate(iso: string | null | undefined): string {
-  const part = parts(iso);
-  if (!part) return "brak daty";
-  return SHORT_DATE.format(new Date(Date.UTC(part.y, part.m - 1, part.d)));
-}
 
 /* ---------- the cards ---------- */
 

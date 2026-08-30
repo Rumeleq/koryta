@@ -18,7 +18,8 @@
 
   <v-dialog v-model="open" max-width="560">
     <v-card>
-      <v-card-title class="d-flex align-center">
+      <v-card-title class="d-flex align-center ga-2">
+        <v-icon :icon="mdiShareVariant" size="small" class="text-ink-sage" />
         Udostępnij ten widok
         <v-spacer />
         <!-- A dialog this size covers all but a ~20px strip of a 390px phone,
@@ -39,8 +40,19 @@
              link „wygląda długo i strasznie”, and it is frightening because
              `visibility=private` tells the recipient nothing about being sent
              a list of drafts. Whoever pastes this reads the sentence first and
-             decides from it whether the link is worth sending at all. -->
-        <p class="text-body-1 font-weight-medium mb-3">{{ sentence }}</p>
+             decides from it whether the link is worth sending at all.
+
+             On the pale sage the entity page puts its meta pills on, with the
+             filter icon in front of it: `bg-surface-sage` carries its own ink
+             (#46673c on #e9f1e7, 5.57:1), so the block that has to be read
+             before anything is pasted is also the one piece of colour in the
+             card. -->
+        <div
+          class="d-flex ga-2 align-start rounded-lg pa-3 mb-3 bg-surface-sage"
+        >
+          <v-icon :icon="mdiFilterVariant" size="small" class="mt-1" />
+          <p class="text-body-1 font-weight-medium mb-0">{{ sentence }}</p>
+        </div>
 
         <v-text-field
           ref="urlField"
@@ -68,7 +80,7 @@
 
         <div
           v-if="canAddPaging && !withPaging"
-          class="text-caption text-medium-emphasis mt-2"
+          class="text-caption text-ink-neutral mt-2"
         >
           Link nie zawiera numeru strony ani liczby wierszy. Odbiorca zacznie od
           pierwszej.
@@ -80,6 +92,7 @@
           color="primary"
           variant="flat"
           class="text-none"
+          :prepend-icon="mdiContentCopy"
           @click="copy(url, 'Skopiowano link.')"
         >
           Kopiuj link
@@ -90,7 +103,8 @@
              open to understand. -->
         <v-btn
           variant="text"
-          class="text-none"
+          class="text-none text-ink-sage"
+          :prepend-icon="mdiTextBoxOutline"
           @click="copy(`${sentence}\n${url}`, 'Skopiowano opis i link.')"
         >
           Kopiuj link z opisem
@@ -109,7 +123,13 @@
 </template>
 
 <script setup lang="ts">
-import { mdiClose, mdiContentCopy, mdiShareVariant } from "@mdi/js";
+import {
+  mdiClose,
+  mdiContentCopy,
+  mdiFilterVariant,
+  mdiShareVariant,
+  mdiTextBoxOutline,
+} from "@mdi/js";
 import { computed, ref } from "vue";
 import type { ComponentPublicInstance } from "vue";
 import {
@@ -202,7 +222,12 @@ const copy = async (text: string, done: string) => {
     announce(
       "Przeglądarka nie dała dostępu do schowka. Skopiuj ręcznie: Ctrl+C.",
       {
-        color: "warning",
+        // `surface-warning` and not `warning`: Vuetify picks a snackbar's ink
+        // from the fill by APCA and answers #fb8c00 with white, which is
+        // 2.37:1 - the sentence a reader has to act on, in the one place they
+        // have just been told something went wrong. The pale token carries
+        // ink.warning at 5.54:1.
+        color: "surface-warning",
         timeout: 8000,
       },
     );

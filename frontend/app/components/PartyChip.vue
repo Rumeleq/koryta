@@ -40,6 +40,14 @@ const style = computed(() => {
   /* Inline-block and not inline: an inline box ignores the width a caller caps
    * it at, which is what the ellipsis below needs to have anything to do. */
   display: inline-block;
+  /* The chip is its own root now, so in a flex row it is the flex item - and a
+   * flex item stretches to the cross axis unless told otherwise. Beside the
+   * `text-h5` heading in EntityDetailsCard's `v-card-title` that made the chip
+   * as tall as the person's name. It did not show while the root was a <div>
+   * wrapping this span: the div stretched and the inline span inside it kept
+   * its text height. Ignored outside a flex or grid parent, which is every
+   * other caller. */
+  align-self: center;
   padding: 0.1rem 0.4rem;
   overflow: hidden;
   text-overflow: ellipsis;

@@ -453,6 +453,27 @@ const sortKey = computed(() =>
 
 const sortBy = computed(() => [{ key: sortKey.value, order: "desc" as const }]);
 
+/** „12”, not the „12.4” `shared/stats.ts` computes.
+ *
+ * The tenth is false precision - it comes off edge dates that are missing a
+ * day here and a month there - and printed as it arrives it also puts a dot
+ * where Polish writes a comma. explore/Table.vue rounds the same figure for
+ * the caption it draws under the companies, but it suppresses that caption on
+ * a page which declares a „Lata pracy” column of its own, and it has no
+ * `item.experience` slot - so this column was reaching Vuetify's default cell
+ * and printing „12.4” after the caption had stopped.
+ *
+ * „poniżej roku” under one year, because rounding turns four months of work
+ * into „0” - a row claiming the person has never worked anywhere. Nothing at
+ * all when the total is missing, which is how the rest of the row prints what
+ * it does not know.
+ */
+function experienceYears(experience: number | undefined) {
+  if (!experience) return "";
+  if (experience < 1) return "poniżej roku";
+  return String(Math.round(experience));
+}
+
 /** Five columns, against the eleven this page used to declare - and it is the
  * card they have to fit inside, 1248px at a 1280 viewport, that decides how
  * many there is room for.
@@ -479,6 +500,9 @@ const headers = [
   {
     title: "Lata pracy",
     key: "experience",
+    // Vuetify runs `value` over the row and prints what it returns; without it
+    // the cell falls through to `item.experience` as it arrives.
+    value: (item: PersonRich) => experienceYears(item.experience),
     sortable: false,
     align: "center" as const,
   },

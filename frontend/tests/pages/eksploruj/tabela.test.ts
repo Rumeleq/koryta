@@ -6,6 +6,7 @@ import * as components from "vuetify/components";
 import * as directives from "vuetify/directives";
 import type { Query } from "~~/server/api/nodes/index.get";
 import TabelaPage from "../../../app/pages/eksploruj/tabela.vue";
+import ExploreTable from "../../../app/components/explore/Table.vue";
 
 const vuetify = createVuetify({ components, directives });
 
@@ -229,15 +230,61 @@ describe("/eksploruj/tabela's columns", () => {
     expect(freshBar.attributes("itemsperpage")).toBeUndefined();
   });
 
-  it("keeps Widoczność behind being signed in", async () => {
+  /** „Widoczność” was the last of the count-style columns, and a two-value
+   * flag is a badge's job: the Osoba cell marks a draft with „szkic” and says
+   * nothing about the nine rows in ten that are published. Nothing changes for
+   * a guest, who was never offered the column at all. */
+  it("folds Widoczność into the Osoba cell for a signed-in reader", async () => {
     authUser.value = {
       getIdTokenResult: () => Promise.resolve({ claims: {} }),
     };
 
     const wrapper = await mountPage();
 
-    expect(headerTitles(wrapper)).toContain("Widoczność");
+    expect(headerTitles(wrapper)).not.toContain("Widoczność");
     // ...and the merge is not undone for a signed-in reader either.
     expect(headerTitles(wrapper)).not.toContain("Partie");
+    expect(wrapper.findComponent(ExploreTable).props("draftWithName")).toBe(
+      true,
+    );
+  });
+
+  it("leaves the badge off for a guest, whose rows are all published", async () => {
+    const wrapper = await mountPage();
+
+    expect(wrapper.findComponent(ExploreTable).props("draftWithName")).toBe(
+      false,
+    );
+  });
+
+  /** Dropping the column must not drop the sort behind it. `visibility` maps
+   * onto `stats.isApproved` in server/api/nodes/index.get.ts and is still in
+   * `tableSortOptions`, which is what the query bar builds its sort menu from -
+   * so a signed-in reader can still order by it, and a link somebody already
+   * shared still works with no header left to click. */
+  it("still orders by visibility when a link asks for it", async () => {
+    authUser.value = {
+      getIdTokenResult: () => Promise.resolve({ claims: {} }),
+    };
+
+    const wrapper = await mountPage({
+      sortBy: "visibility",
+      sortDesc: "true",
+    });
+
+    expect(currentQuery()).toMatchObject({
+      sortBy: "visibility",
+      sortDesc: "true",
+    });
+    // No column claims it, and none may pretend to: the arrow belongs to the
+    // sort button on the query bar now.
+    expect(wrapper.findAll("th.v-data-table__th--sorted")).toHaveLength(0);
+    // And the bar is told who is reading, which is what puts „Status” in that
+    // menu (`adminOnly` in shared/queryUrl.ts).
+    expect(
+      wrapper
+        .find("form-eksploruj-tabela-filters-stub")
+        .attributes("showvisibility"),
+    ).toBe("true");
   });
 });

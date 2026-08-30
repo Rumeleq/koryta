@@ -64,6 +64,7 @@
           :company="company"
           search-with-name
           score-on-phone
+          :draft-with-name="!!user"
           @focus="focusPerson"
         />
       </v-card>
@@ -81,9 +82,14 @@
         class="mt-6"
       />
 
+      <!-- `color`, because `type="warning"` alone paints the text in Vuetify's
+           own #fb8c00 - 2.37:1 on the tonal fill it draws behind it. The type
+           is left on for the semantics; the icon was already this component's
+           own. -->
       <v-alert
         v-if="region && !company"
         type="warning"
+        color="ink-warning"
         variant="tonal"
         class="mt-4"
         :icon="mdiCash"
@@ -215,59 +221,59 @@ const PHONE_HIDDEN = {
   cellProps: { class: "hidden-sm-and-down" },
 };
 
-const headers = computed(() => {
-  const baseHeaders = [
-    // The pink „otwórz wyszukiwarki” button rides in this cell on a desktop
-    // (`search-with-name`); the „Eksploruj” column it came from is gone. Its
-    // other half, the magnifier, only opened the drawer - which is what
-    // clicking the name has always done.
-    { title: "Osoba", key: "name", sortable: true },
-    // Keyed on `latestEmploymentStart` rather than on a `firmy` matching the
-    // title. The key is emitted verbatim as `?sortBy=` and handed to a
-    // Firestore `orderBy` with no allow-list in between
-    // (`server/api/nodes/index.get.ts:145`), so a prettier key would empty the
-    // table rather than reorder it - and would strand the
-    // `?sortBy=latestEmploymentStart` links that /eksploruj/nowe and the QA
-    // list already carry. „Lata pracy” is in this column's sort menu. Not
-    // phone-hidden: the employers are half of what a row says.
-    { title: "Firmy", key: "latestEmploymentStart", sortable: true },
-    // `sortable: false` and it has to stay that way: `elections` is not a key
-    // the api maps onto a Firestore path, so a click would put it into
-    // `orderBy` verbatim and answer with an empty table rather than an error.
-    // Below 960px explore/Table.vue folds these chips back into the „Firmy”
-    // cell, where they cost no column of their own.
-    { title: "Wybory", key: "elections", sortable: false, ...PHONE_HIDDEN },
-    // `stats.votes.interesting`, spelled the way the api spells it; the old
-    // `votes.interesting` matched no slot at all. „Notatki” is in this
-    // column's sort menu. Hidden on a phone, where the number comes back as a
-    // line under the name (`score-on-phone`) - at 390px this header sits at
-    // x=363 on a 358px viewport, so neither the count nor the sort behind it
-    // can be reached.
-    {
-      title: "Oceny",
-      key: "stats.votes.interesting",
-      sortable: true,
-      align: "center" as const,
-      ...PHONE_HIDDEN,
-    },
-    {
-      title: "Twój głos",
-      key: "userVote",
-      sortable: false,
-      align: "center" as const,
-      ...PHONE_HIDDEN,
-    },
-  ];
-  if (user.value) {
-    baseHeaders.push({
-      title: "Widoczność",
-      key: "visibility",
-      sortable: true,
-      ...PHONE_HIDDEN,
-    });
-  }
-  return baseHeaders;
-});
+// Nothing in here depends on who is reading any more, so it is a plain array:
+// „Widoczność” was the one entry that did, and it is a badge beside the name
+// now (`draft-with-name` above). It was a two-value flag whose common value is
+// „opublikowane”, so as a column it spent 142px repeating that word to mark
+// the exception by its absence.
+//
+// The sort behind it is untouched and has to stay that way: `visibility` maps
+// onto `stats.isApproved` in server/api/nodes/index.get.ts, `tableSortOptions`
+// carries it as „Status” flagged `adminOnly`, and the query bar's sort menu is
+// built from that list - so a signed-in reader still orders by it, and an
+// incoming `?sortBy=visibility` link still works with no column to click.
+const headers = [
+  // The pink „otwórz wyszukiwarki” button rides in this cell on a desktop
+  // (`search-with-name`); the „Eksploruj” column it came from is gone. Its
+  // other half, the magnifier, only opened the drawer - which is what
+  // clicking the name has always done.
+  { title: "Osoba", key: "name", sortable: true },
+  // Keyed on `latestEmploymentStart` rather than on a `firmy` matching the
+  // title. The key is emitted verbatim as `?sortBy=` and handed to a
+  // Firestore `orderBy` with no allow-list in between
+  // (`server/api/nodes/index.get.ts:145`), so a prettier key would empty the
+  // table rather than reorder it - and would strand the
+  // `?sortBy=latestEmploymentStart` links that /eksploruj/nowe and the QA
+  // list already carry. „Lata pracy” is in this column's sort menu. Not
+  // phone-hidden: the employers are half of what a row says.
+  { title: "Firmy", key: "latestEmploymentStart", sortable: true },
+  // `sortable: false` and it has to stay that way: `elections` is not a key
+  // the api maps onto a Firestore path, so a click would put it into
+  // `orderBy` verbatim and answer with an empty table rather than an error.
+  // Below 960px explore/Table.vue folds these chips back into the „Firmy”
+  // cell, where they cost no column of their own.
+  { title: "Wybory", key: "elections", sortable: false, ...PHONE_HIDDEN },
+  // `stats.votes.interesting`, spelled the way the api spells it; the old
+  // `votes.interesting` matched no slot at all. „Notatki” is in this
+  // column's sort menu. Hidden on a phone, where the number comes back as a
+  // line under the name (`score-on-phone`) - at 390px this header sits at
+  // x=363 on a 358px viewport, so neither the count nor the sort behind it
+  // can be reached.
+  {
+    title: "Oceny",
+    key: "stats.votes.interesting",
+    sortable: true,
+    align: "center" as const,
+    ...PHONE_HIDDEN,
+  },
+  {
+    title: "Twój głos",
+    key: "userVote",
+    sortable: false,
+    align: "center" as const,
+    ...PHONE_HIDDEN,
+  },
+];
 
 // TODO calculate the hidden count
 const hiddenCount = computed(() => {
@@ -462,6 +468,20 @@ const focusPerson = (item: PersonRich) => {
 </script>
 
 <style scoped>
+/* The sage band the entity pages put behind a section heading, here behind the
+ * column titles - which above 960px stick to the app bar as the reader scrolls
+ * and have to stay opaque over the rows passing under them. Sage as a fill,
+ * with the titles left in the table's own high-emphasis ink, which measures
+ * 13.9:1 on it.
+ *
+ * Three classes deep because Vuetify's own header background is four elements
+ * and three classes (`.v-table.v-table--fixed-header > .v-table__wrapper >
+ * table > thead > tr > th`), and a shorter selector loses to it: the scope
+ * attribute counts where a class does, not where an element does. */
+.table-card :deep(.v-table--fixed-header .v-table__wrapper .v-data-table__th) {
+  background: rgb(var(--v-theme-surface-sage));
+}
+
 @media (min-width: 960px) {
   /* The header sticks to the app bar rather than to the table, which needs
    * every scroll container between the two out of the way - a `position:

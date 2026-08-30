@@ -142,15 +142,24 @@
              whatever the page is written in: the default is a Vuetify locale
              key and this app ships no Polish translation for it. Spelled out
              per chip so a screen reader, and an e2e locator, can say which of
-             six filters is about to go. -->
+             six filters is about to go.
+
+             `variant="flat"` and a `bg-surface-*` class rather than
+             `variant="tonal" color="primary"`: a tonal chip paints the colour
+             itself as the label, and primary is a pale fill - #a8c79f on the
+             white sheet measured 1.85:1 against the 4.5:1 AA needs, which is
+             the complaint that started this. The class carries its ink with
+             it, so the pair cannot be split up later. -->
         <v-chip
           v-for="chip in railChips"
           :key="chip.key"
           size="small"
-          variant="tonal"
+          variant="flat"
+          border
           closable
-          :color="chip.admin ? 'blue-grey' : 'primary'"
-          :prepend-icon="chip.admin ? mdiShieldAccountOutline : undefined"
+          :class="chip.look.surface"
+          :style="chip.look.style"
+          :prepend-icon="chip.look.icon"
           :close-icon="mdiClose"
           :aria-label="chip.label"
           :close-label="`Usuń filtr: ${chip.label}`"
@@ -163,7 +172,7 @@
              verification chips, an empty rail is not an unfiltered table. -->
         <span
           v-if="chips.length === 0"
-          class="text-body-2 text-medium-emphasis d-none d-md-inline"
+          class="text-body-2 text-ink-neutral d-none d-md-inline"
         >
           Wszystkie osoby w bazie
         </span>
@@ -184,7 +193,7 @@
            table move. -->
       <span
         v-if="totalItems !== undefined"
-        class="text-body-2 text-medium-emphasis flex-shrink-0 tabela-query-bar__count"
+        class="text-body-2 text-ink-neutral flex-shrink-0 tabela-query-bar__count"
       >
         {{ polishCountingGrouped(totalItems, "osoba", "osoby", "osób") }}
       </span>
@@ -277,8 +286,10 @@
               v-if="shortcut.chip"
               v-bind="activatorProps"
               size="small"
-              variant="tonal"
-              color="blue-grey"
+              variant="flat"
+              border
+              :class="shortcut.chip.look.surface"
+              :prepend-icon="shortcut.chip.look.icon"
               closable
               :close-icon="mdiClose"
               :aria-label="shortcut.chip.label"
@@ -292,7 +303,7 @@
               v-bind="activatorProps"
               variant="text"
               size="x-small"
-              class="text-none text-medium-emphasis flex-shrink-0"
+              class="text-none text-ink-neutral flex-shrink-0"
               :prepend-icon="mdiPlus"
             >
               {{ shortcut.label }}
@@ -309,16 +320,21 @@
           </v-card>
         </v-menu>
 
-        <!-- ExploreProgressBar carries this button too, but anchored to the
-             right edge of its own box - which ends before the shortcuts. It is
-             hidden there (`hide-cta`) and drawn here so that the row ends on
-             the invitation rather than breaking in the middle of it. Same
-             destination, same variant and size, so it is still one control
-             wherever a reader meets it. -->
+        <!-- The only „Pomóż sprawdzać” a reader of this page meets.
+             ExploreProgressBar had a second copy, anchored to the right edge
+             of its own box - which ends before the shortcuts - and both of its
+             callers hid it, so it is gone from that component. Drawn here so
+             the row ends on the invitation rather than breaking in the middle
+             of it. (/eksploruj/statystyki draws its own, on its own page.)
+
+             Filled rather than tonal: a tonal button writes its colour as the
+             label, and primary is a fill - „Pomóż sprawdzać” in #a8c79f on
+             white measured 1.85:1. Filled, Vuetify pairs it with the ink it
+             computes for the fill, which on this sage is black at 11.33:1. -->
         <v-btn
           to="/eksploruj/nowe"
           color="primary"
-          variant="tonal"
+          variant="flat"
           size="small"
           class="text-none flex-shrink-0 ms-auto"
           :append-icon="mdiArrowRight"
@@ -352,15 +368,26 @@ import {
   mdiArrowDown,
   mdiArrowRight,
   mdiArrowUp,
+  mdiBus,
   mdiChevronDown,
   mdiClose,
+  mdiFlashOutline,
+  mdiHospitalBuilding,
   mdiPlus,
-  mdiShieldAccountOutline,
+  mdiRadiator,
+  mdiRecycle,
+  mdiSoccer,
   mdiSort,
+  mdiStethoscope,
+  mdiTagOutline,
+  mdiTrain,
   mdiTuneVariant,
+  mdiWaterPump,
 } from "@mdi/js";
 import { computed, ref } from "vue";
 import type { Query } from "~~/server/api/nodes/index.get";
+import { readableInkOn } from "~~/shared/colors";
+import { partyColors } from "~~/shared/misc";
 import {
   describeQuery,
   queryChips,
@@ -502,6 +529,136 @@ const query = computed<TableQuery>(() => ({
  * prevent. The x on the chip is the only way back. */
 const chips = computed(() => queryChips(query.value, lookup.value));
 
+/** The pale background each filter's chip is painted on.
+ *
+ * One class per chip and not a colour name: Vuetify writes `bg-surface-sage`
+ * together with its `on-surface-sage` ink (#46673c on #e9f1e7, 5.57:1), so a
+ * chip cannot end up with a background from one decision and a label from
+ * another - which is how the rail came to paint #a8c79f, a fill colour, as
+ * 12px text at 1.85:1.
+ *
+ * The hues group the filters rather than giving each one its own: sage is what
+ * the table is about, blue is where, and the editor's own narrowings stay
+ * grey. tests/shared/colors.test.ts holds every one of these pairs to 4.5:1,
+ * and the test beside this file measures the chips as the bar mounts them.
+ */
+const CHIP_SURFACES: Partial<Record<ShareKey, string>> = {
+  place: "bg-surface-sage",
+  category: "bg-surface-sage",
+  currentlyEmployed: "bg-surface-sage",
+  teryt: "bg-surface-info",
+  companyTeryt: "bg-surface-info",
+  party: "bg-surface-muted",
+  hideVoted: "bg-surface-muted",
+  minEmploymentDate: "bg-surface-muted",
+  minVotes: "bg-surface-muted",
+};
+
+/** Anything `queryChips` grows later, until somebody gives it a hue of its
+ * own. Grey is the only tone here that says nothing about what it is filtering
+ * and so cannot say anything wrong. */
+const CHIP_FALLBACK = "bg-surface-muted";
+
+/** The one chip that gets an icon: the category, whose label is a bare sector
+ * name („Szpitale”) with nothing in front of it to say what is being filtered.
+ * Its own sector icon where there is one, below.
+ *
+ * Every other chip names its filter in the label - „Region: Małopolskie”,
+ * „Siedziba: Małopolskie”, „Zatrudnieni od 1 marca 2021”, „Min. 5 głosów”,
+ * „Tylko szkice” - so the icon repeated the word beside it, and it repeated it
+ * in the width of a glyph and its gap, on a rail that shares one 44px line
+ * with the heading, the „Filtry” button, the count and the sort. */
+const CATEGORY_FALLBACK_ICON = mdiTagOutline;
+
+/** A sector's own icon, keyed by the values in `shared/companyCategories`. A
+ * category added there and not here keeps the generic tag. */
+const CATEGORY_ICONS: Record<string, string> = {
+  szpitale: mdiHospitalBuilding,
+  przychodnie: mdiStethoscope,
+  wodociagi: mdiWaterPump,
+  cieplownictwo: mdiRadiator,
+  energetyka: mdiFlashOutline,
+  odpady: mdiRecycle,
+  koleje: mdiTrain,
+  "komunikacja-miejska": mdiBus,
+  sport: mdiSoccer,
+};
+
+interface ChipLook {
+  /** A `bg-surface-*` class, or nothing where `style` paints the chip. */
+  surface: string;
+  /** Only the category chip has one - see `CATEGORY_FALLBACK_ICON`. `v-chip`
+   * draws no `prepend` slot for `undefined`, so the chip is its label. */
+  icon: string | undefined;
+  /** Only the party chip, which takes the party's own colour. */
+  style?: { backgroundColor: string; color: string };
+}
+
+/** The party's own colour, when the filter names exactly one party the site
+ * has a colour for. `queryChips` merges `?party` and `?parties` into a single
+ * chip; this bar only ever binds `party`, so one value there is the whole
+ * filter. „Partie: 3” and „Brak partii” have no colour to take and stay grey.
+ */
+const partyFill = computed(() => {
+  const chosen = party.value;
+  return chosen?.length === 1 ? partyColors[chosen[0]!] : undefined;
+});
+
+/** How one chip is painted, given what it is filtering on.
+ *
+ * The three chips that decide their own colour read it out of the model rather
+ * than off their label: a party chip says „PiS” and a category chip says
+ * „Szpitale”, and matching on those strings would repaint itself the day
+ * either list is reworded.
+ */
+function chipLook(chip: QueryChip): ChipLook {
+  if (chip.key === "party" && partyFill.value) {
+    // The label sits on a fill that runs from #f5c400 to near-black, so the
+    // ink is measured against it rather than fixed: black on Konfederacja's
+    // navy is 1.29:1, and this is the same call PartyChip makes on the row
+    // below, so a party reads the same in the filter and in the table.
+    return {
+      surface: "",
+      icon: undefined,
+      style: {
+        backgroundColor: partyFill.value,
+        color: readableInkOn(partyFill.value),
+      },
+    };
+  }
+  if (chip.key === "category") {
+    return {
+      surface: CHIP_SURFACES.category!,
+      icon: CATEGORY_ICONS[category.value ?? ""] ?? CATEGORY_FALLBACK_ICON,
+    };
+  }
+  // „Tylko szkice” in the same amber the table's `szkic` badge uses, and
+  // „Tylko opublikowane” in the green of a published row: the filter and the
+  // rows it leaves behind are then the same colour.
+  if (chip.key === "visibility") {
+    return {
+      surface:
+        visibility.value === "private"
+          ? "bg-surface-warning"
+          : "bg-surface-success",
+      icon: undefined,
+    };
+  }
+  return {
+    surface: CHIP_SURFACES[chip.key] ?? CHIP_FALLBACK,
+    icon: undefined,
+  };
+}
+
+/** A chip with its paint attached, so the template asks once per chip rather
+ * than once per bound attribute. */
+type DressedChip = QueryChip & { look: ChipLook };
+
+const dress = (chip: QueryChip): DressedChip => ({
+  ...chip,
+  look: chipLook(chip),
+});
+
 /** A chip only pretends to be a button where the control behind it exists: a
  * guest has no „Weryfikacja” block in the panel (FilterPanel gates it on the
  * same prop), so opening it on an administrative chip would answer a click
@@ -524,12 +681,13 @@ const VERIFICATION_KEYS = new Set<ShareKey>([
 const showWorkRow = computed(() => props.showProgress && props.showVisibility);
 
 /** The rail drops the verification filters when the work row is drawing them:
- * the same filter as two chips, one blue-grey above the other, reads as two
+ * the same filter as two chips, one grey above the other, reads as two
  * filters. */
-const railChips = computed(() =>
-  showWorkRow.value
+const railChips = computed<DressedChip[]>(() =>
+  (showWorkRow.value
     ? chips.value.filter((chip) => !VERIFICATION_KEYS.has(chip.key))
-    : chips.value,
+    : chips.value
+  ).map(dress),
 );
 
 /** What a `+ Nazwa` button does, short enough to fit on the work row. The set
@@ -548,10 +706,10 @@ const VERIFICATION_SHORTCUTS = [
 ] as const;
 
 const workRowFilters = computed(() =>
-  VERIFICATION_SHORTCUTS.map((shortcut) => ({
-    ...shortcut,
-    chip: chips.value.find((chip) => chip.key === shortcut.key),
-  })),
+  VERIFICATION_SHORTCUTS.map((shortcut) => {
+    const chip = chips.value.find((item) => item.key === shortcut.key);
+    return { ...shortcut, chip: chip ? dress(chip) : undefined };
+  }),
 );
 
 /** How many filters are narrowing the table right now. On the button because a
@@ -681,6 +839,12 @@ function clearAll() {
 </script>
 
 <style scoped>
+/* The bar keeps the plain hairline `v-sheet border` draws on all four sides.
+   It had a 4px sage edge on the leading one, the accent the entity page puts
+   on its cards, and there is only one bar on the page - so the edge marked it
+   off from nothing, while spending the colour that the header band, the meta
+   pill and the party chips below need to be read as meaning something. */
+
 /* 44px of bar, whatever it is holding. `min-height` and not `height`: below
    960px the chips wrap under the controls and the row has to grow. */
 .tabela-query-bar__main {

@@ -325,6 +325,7 @@ import { useCurrentUser } from "vuefire";
 import { authFetch } from "~/composables/auth";
 import { createSlug, generateEntityUrl } from "~/composables/slugs";
 import { gapLabel, MAX_GAP_DAYS, MAX_OVERLAP_DAYS } from "~~/shared/succession";
+import { isoDay, longDate, shortDate } from "~~/shared/dates";
 import type {
   CompanySuccessions,
   CurrentPost,
@@ -394,46 +395,7 @@ const today = useState("succession-today", () => {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 });
 
-/* ---------- dates ---------- */
-
-// `timeZone: "UTC"` against a date built with `Date.UTC`: a register day is a
-// day, not an instant, and left to the local zone a browser west of Greenwich
-// would render every one of them as the day before.
-const LONG_DATE = new Intl.DateTimeFormat("pl-PL", {
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-  timeZone: "UTC",
-});
-const SHORT_DATE = new Intl.DateTimeFormat("pl-PL", {
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-  timeZone: "UTC",
-});
-
-/** The three numbers in an ISO day, or null for anything else.
- *
- * Same strictness as `spellDate` in `shared/succession.ts`, and for the same
- * reason: `new Date("2016")` answers 1 January, which would print a date the
- * register never recorded. */
-function parts(iso: string | null | undefined) {
-  const match = iso ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso) : null;
-  if (!match) return null;
-  return { y: Number(match[1]), m: Number(match[2]), d: Number(match[3]) };
-}
-
-function longDate(iso: string | null | undefined): string {
-  const part = parts(iso);
-  if (!part) return "brak daty";
-  return LONG_DATE.format(new Date(Date.UTC(part.y, part.m - 1, part.d)));
-}
-
-function shortDate(iso: string | null | undefined): string {
-  const part = parts(iso);
-  if (!part) return "brak daty";
-  return SHORT_DATE.format(new Date(Date.UTC(part.y, part.m - 1, part.d)));
-}
+/* ---------- durations ---------- */
 
 /** 1 / 2-4 / 5+, with the 12-14 exception Polish keeps for itself. */
 function pluralPl(n: number, one: string, few: string, many: string): string {
@@ -451,8 +413,8 @@ function count(n: number, one: string, few: string, many: string): string {
 /** How long a spell ran, in years and months. An open spell is measured to
  * today, which is what "2 lata na stanowisku" means on a current post. */
 function duration(start: string | null, end: string | null): string {
-  const from = parts(start);
-  const to = parts(end) ?? parts(today.value);
+  const from = isoDay(start);
+  const to = isoDay(end) ?? isoDay(today.value);
   if (!from || !to) return "";
   let months = (to.y - from.y) * 12 + (to.m - from.m);
   if (to.d < from.d) months -= 1;
