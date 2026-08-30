@@ -83,6 +83,7 @@ import {
 } from "@mdi/js";
 import { parties } from "~~/shared/misc";
 import { generateEntityUrl } from "~/composables/slugs";
+import { omniSearchTarget } from "~/composables/omniSearch";
 import type { NodeType } from "~~/shared/model";
 import type { ProposableNodeType } from "~~/shared/api";
 import { refDebounced } from "@vueuse/core";
@@ -275,28 +276,7 @@ watch(nodeGroupPicked, (value) => {
     return;
   }
 
-  let path = value?.path ?? currentRoute.value.path;
-  const allowedPath =
-    path == "/graf" ||
-    path.startsWith("/eksploruj/tabela") ||
-    path.startsWith("/entity/person/") ||
-    path.startsWith("/entity/region/teryt1261") ||
-    path.startsWith("/region/krakow-teryt1261") ||
-    path.startsWith("/osoba/") ||
-    path.startsWith("/instytucja/") ||
-    path.startsWith("/region/") ||
-    path.startsWith("/artykul/") ||
-    path.startsWith("/edit/");
-  if (!allowedPath) {
-    path = "/eksploruj/tabela";
-  }
-  push({
-    path: path,
-    query: {
-      ...currentRoute.value.query,
-      ...value.query,
-    },
-  });
+  push(omniSearchTarget(currentRoute.value, value));
   autocompleteFocus.value = false;
 });
 </script>
