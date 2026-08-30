@@ -4,7 +4,7 @@ import re
 import textwrap
 from collections import Counter
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Iterable, cast
 
 import pandas as pd
 from bs4 import BeautifulSoup, Tag
@@ -15,7 +15,7 @@ from scrapers.article.pipelines.common import hash_bytes, is_html
 from scrapers.article.pipelines.done_urls_pipeline import ArticleDoneUrls
 from scrapers.article.pipelines.pipeline_utils import (
     article_workers,
-    iter_done_urls,
+    iter_done_urls_from_file,
     llm_model,
     read_html_from_storage,
 )
@@ -144,8 +144,12 @@ class ArticleDomainSelectors(Pipeline):
 
     def process(self, ctx: Context):
 
-        done_df = self.done_urls.read_or_process(ctx)
-        candidates = _candidate_done_urls_by_domain(iter_done_urls(done_df))
+        self.done_urls.read_or_process(ctx)
+        candidates = _candidate_done_urls_by_domain(
+            iter_done_urls_from_file(
+                self.done_urls.final_output_path, progress_every=200000
+            )
+        )
         existing = _existing_selector_rows(
             self.read(ctx) if self.output_time(ctx) is not None else None
         )
@@ -381,7 +385,7 @@ def _selector_row_from_responses(
 
 
 def _candidate_done_urls_by_domain(
-    done_urls: list[DoneUrl],
+    done_urls: Iterable[DoneUrl],
 ) -> dict[str, list[DoneUrl]]:
     scored: dict[str, list[tuple[int, str, DoneUrl]]] = {}
     seen_urls: set[str] = set()
