@@ -42,8 +42,8 @@ describe("StatsHospitalBoardTable", () => {
   });
 
   it("labels a party the site has no chip for instead of drawing an empty one", async () => {
-    // PartyChip renders no background at all for an unknown key, so the
-    // sentinel has to be caught before it reaches one.
+    // PartyChip paints no fill for a key `partyColors` does not know, so the
+    // sentinel has to be caught before it reaches one and reads as a party.
     const wrapper = await mountTable([row()]);
     expect(wrapper.text()).toContain("Bez partii w bazie");
     expect(wrapper.text()).not.toContain("__NONE__");

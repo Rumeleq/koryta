@@ -11,39 +11,55 @@ import { useCurrentUser, useDocument, useFirebaseApp } from "vuefire";
 import { useAuthState } from "./auth";
 import type { VoteCategory, VoteDocument } from "~~/shared/model";
 
-const configMap: Record<
+/** The ink tokens rather than Vuetify's own `success`/`error`/`warning`:
+ * `button/vote/Number.vue` writes these two names straight into `text-<name>`
+ * on the count and into `:color` on the two arrows, and Vuetify's status
+ * colours are picked as fills. On the white pill the count sits in, `success`
+ * #4CAF50 measured 2.78:1 and `warning` #FB8C00 2.37:1 - both under the 3:1
+ * an icon needs, let alone the 4.5:1 of the 12px number between them. That is
+ * the „Twój głos” column of /eksploruj/tabela.
+ *
+ * `error` #B00020 passed on its own at 7.33:1 and was swapped anyway, so that
+ * a category's up and down arrow are two steps of one ramp rather than one
+ * measured colour beside one nobody here chose. `ink.danger` is 6.54:1.
+ *
+ * Nothing outside this file reads these two fields, so no filled control is
+ * repainted by it. `shared/colors.ts` carries the measurements and
+ * tests/composables/votes.test.ts holds them.
+ */
+export const voteCategoryConfig: Record<
   VoteCategory,
   { text: string; icon: string; color: string; downColor: string }
 > = {
   interesting: {
     text: "Dobre znalezisko",
     icon: mdiLightbulbOutline,
-    color: "success",
-    downColor: "error",
+    color: "ink-success",
+    downColor: "ink-danger",
   },
   quality: {
     text: "Znaleziony problem",
     icon: mdiAlertCircleOutline,
-    color: "error",
-    downColor: "success",
+    color: "ink-danger",
+    downColor: "ink-success",
   },
   correct: {
     text: "Poprawny fakt",
     icon: mdiCheckCircleOutline,
-    color: "success",
-    downColor: "error",
+    color: "ink-success",
+    downColor: "ink-danger",
   },
   insufficient: {
     text: "Za mało informacji",
     icon: mdiHelpCircleOutline,
-    color: "warning",
-    downColor: "warning",
+    color: "ink-warning",
+    downColor: "ink-warning",
   },
   wrongPerson: {
     text: "To nie ta osoba",
     icon: mdiAccountAlertOutline,
-    color: "warning",
-    downColor: "warning",
+    color: "ink-warning",
+    downColor: "ink-warning",
   },
 };
 
@@ -99,7 +115,7 @@ export function useVotes(
   const { user } = useAuthState();
   const firebaseApp = useFirebaseApp();
   const db = getFirestore(firebaseApp, "koryta-pl");
-  const config = configMap[category];
+  const config = voteCategoryConfig[category];
 
   const idValue = computed(() => toValue(targetId));
 
