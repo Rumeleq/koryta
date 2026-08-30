@@ -69,12 +69,14 @@ import {
 } from "~/utils/chartTheme";
 
 /** Columns show a day's total broken into the kinds of change that made it up,
- * which is what "co się działo" means here: five stacked series, each one
- * interaction the site records.
+ * which is what "co się działo" means here: one stacked series per interaction
+ * the site records, in `activityKinds` order.
  *
- * Five is at the method's comfortable ceiling for a stack, so the legend is
- * always on and the table view carries every number - three of the five hues
- * sit below 3:1 on white and are only allowed with that relief. */
+ * That is past the method's comfortable ceiling for a stack - it was five when
+ * this was written and is seven now - so the legend is always on and the table
+ * view below carries every number. Three of the hues sit below 3:1 on white and
+ * are only allowed with that relief; see `chartTheme.ts` before adding an
+ * eighth. */
 const props = defineProps<{
   daily: { date: string; counts: ActivityCounts; total: number }[];
   loading?: boolean;

@@ -12,18 +12,7 @@
 
     <v-card-text :class="{ 'contributors--stale': loading }">
       <v-alert
-        v-if="!identified"
-        type="info"
-        variant="tonal"
-        density="compact"
-        :text="
-          `W tym okresie dane zmieniało ${polishCounting(contributorCount, 'osoba', 'osoby', 'osób')}. ` +
-          'Kto konkretnie — widzą tylko administratorzy.'
-        "
-      />
-
-      <v-alert
-        v-else-if="contributors.length === 0"
+        v-if="contributors.length === 0"
         type="info"
         variant="tonal"
         density="compact"
@@ -59,11 +48,17 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(row, index) in contributors" :key="row.key">
+            <tr
+              v-for="(row, index) in contributors"
+              :key="row.key"
+              :class="{ 'contributors__row--self': row.isSelf }"
+            >
               <td class="text-medium-emphasis stats-numeric">
                 {{ index + 1 }}
               </td>
               <td>
+                <!-- Only an admin holds a uid, and only a uid opens the review
+                     queue filtered to one person. -->
                 <NuxtLink
                   v-if="identified && row.uid"
                   :to="proposalsTo(row.uid)"
@@ -72,7 +67,7 @@
                 >
                   <UserChip :uid="row.uid" :user="chipUser(row)" />
                 </NuxtLink>
-                <UserChip v-else :uid="row.uid" :user="chipUser(row)" />
+                <StatsContributorName v-else :row="row" />
               </td>
               <td>
                 <div
@@ -124,13 +119,56 @@
           </tbody>
         </v-table>
       </div>
+
+      <!-- Both of these read off who is signed in, which the server does not
+           know, so they are client-only rather than server-rendered wrong and
+           corrected a tick later. -->
+      <ClientOnly>
+        <!-- Where the reader stands, when the table itself cannot say so
+             because their row is past the slice it shows. -->
+        <div
+          v-if="selfBelowTheFold"
+          class="text-body-2 text-medium-emphasis mt-3"
+        >
+          Twoje miejsce:
+          <strong class="text-high-emphasis">{{ self!.rank }}</strong>
+          z {{ contributorCount }} — {{ selfTotalLabel }} w tym okresie.
+        </div>
+
+        <!-- The invitation, and the only place the setting is explained to
+             somebody who has not gone looking for it. Not shown to an admin:
+             they see every name already, so it would be advice about a page
+             they are not on - and not shown while the response is in flight
+             either, since `identified` is false until it lands and an admin
+             would otherwise be told to sign in for a moment. -->
+        <v-alert
+          v-if="!identified && !loading"
+          :type="callToAction.type"
+          variant="tonal"
+          density="compact"
+          class="mt-4"
+        >
+          <div class="d-flex flex-wrap align-center ga-3">
+            <span class="flex-grow-1">{{ callToAction.text }}</span>
+            <v-btn
+              v-if="callToAction.to"
+              :to="callToAction.to"
+              size="small"
+              variant="tonal"
+              :append-icon="mdiArrowRight"
+            >
+              {{ callToAction.action }}
+            </v-btn>
+          </div>
+        </v-alert>
+      </ClientOnly>
     </v-card-text>
   </v-card>
 </template>
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { mdiTrophyOutline } from "@mdi/js";
+import { mdiTrophyOutline, mdiArrowRight } from "@mdi/js";
 import {
   activityKinds,
   activityKindLabels,
@@ -142,10 +180,14 @@ import { polishCounting } from "~/composables/polish";
 
 /** Who moved the data in the selected window, ranked.
  *
- * Only admins get names: `/api/stats/activity` withholds identities from
- * everybody else, on the same reasoning that makes `/api/users/lookup`
- * admin-only. What a non-admin sees is the head count, which says how alive the
- * project is without naming anyone.
+ * The ranking is public and the names in it are not. `/api/stats/activity`
+ * decides that per row before it sends anything - a row the caller may not put
+ * a name to arrives already masked, with no uid, address or avatar attached -
+ * so this component renders `row.name` and never has to know whose it is. That
+ * is the point: there is nothing here to leak, whatever the markup does.
+ *
+ * An admin still sees the whole identity, and their rows still link into the
+ * review queue, because the uid arrives only for them.
  *
  * The per-row bar shows the mix of what a person did, in the same colours the
  * timeline uses, and its width scales with their total — so the ranking is
@@ -156,14 +198,27 @@ const props = defineProps<{
   identified: boolean;
   contributorCount: number;
   windowDays: number;
+  /** Where the reader stands overall, ranked slice or not. */
+  self?: { rank: number; total: number } | null;
+  /** Whether anybody is signed in, which decides what the invitation offers. */
+  signedIn?: boolean;
+  /** Whether the reader has already turned their own name on. */
+  profilePublic?: boolean;
   loading?: boolean;
 }>();
 
-const subtitle = computed(() =>
-  props.windowDays === 1
-    ? "Zmiany z dzisiaj"
-    : `Zmiany z ostatnich ${props.windowDays} dni`,
-);
+const subtitle = computed(() => {
+  const window =
+    props.windowDays === 1
+      ? "Zmiany z dzisiaj"
+      : `Zmiany z ostatnich ${props.windowDays} dni`;
+  return `${window} · ${polishCounting(
+    props.contributorCount,
+    "osoba",
+    "osoby",
+    "osób",
+  )} przy pracy`;
+});
 
 const topTotal = computed(() =>
   Math.max(1, ...props.contributors.map((row) => row.total)),
@@ -173,7 +228,7 @@ const mixWidth = (row: ActivityContributor) =>
   `${Math.max(6, (row.total / topTotal.value) * 100)}%`;
 
 const chipUser = (row: ActivityContributor) => ({
-  displayName: row.displayName,
+  displayName: row.name,
   email: row.email,
   photoURL: row.photoURL,
 });
@@ -189,6 +244,39 @@ const mixLabel = (row: ActivityContributor) =>
     .filter((kind) => row.counts[kind] > 0)
     .map((kind) => `${activityKindLabels[kind]}: ${row.counts[kind]}`)
     .join(", ");
+
+const selfBelowTheFold = computed(
+  () => !!props.self && !props.contributors.some((row) => row.isSelf),
+);
+
+const selfTotalLabel = computed(() =>
+  polishCounting(props.self?.total ?? 0, "działanie", "działania", "działań"),
+);
+
+const callToAction = computed(() => {
+  if (!props.signedIn) {
+    return {
+      type: "info" as const,
+      text: "Zaloguj się, żeby zobaczyć swoje miejsce w rankingu — i zdecydować, czy Twoja nazwa ma być w nim widoczna.",
+      action: "Zaloguj się",
+      to: "/login",
+    };
+  }
+  if (props.profilePublic) {
+    return {
+      type: "success" as const,
+      text: "Twoja nazwa jest tu widoczna dla wszystkich. Możesz ją schować z powrotem w ustawieniach profilu.",
+      action: "Ustawienia",
+      to: "/profil",
+    };
+  }
+  return {
+    type: "info" as const,
+    text: "Dla innych Twoja nazwa jest tu zamazana. Jeśli chcesz, żeby było widać, kto to zrobił — włącz to w swoim profilu.",
+    action: "Pokaż moją nazwę",
+    to: "/profil",
+  };
+});
 </script>
 
 <style scoped>
@@ -199,6 +287,12 @@ const mixLabel = (row: ActivityContributor) =>
 
 .contributors__scroll {
   overflow-x: auto;
+}
+
+/* The reader's own row. A tint rather than a border: the row keeps its height,
+   so the ranking does not jump when the response with the reader in it lands. */
+.contributors__row--self > td {
+  background-color: rgba(var(--v-theme-primary), 0.07);
 }
 
 .contributors__mix {
