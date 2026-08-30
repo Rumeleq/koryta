@@ -2,16 +2,43 @@ import { z } from "zod";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 import { defineEventHandler, getValidatedQuery, setResponseHeader } from "h3";
-import { getUser } from "~~/server/utils/auth";
+import { getOptionalUser } from "~~/server/utils/auth";
 import { collectActivityEvents } from "~~/server/utils/activityEvents";
 import {
-  aggregateActivity,
+  dayStartIso,
+  ensureDailyRollups,
+  mergeRollups,
+  mergeTruncated,
+  rollupForDay,
+  splitSettledDays,
+  type DailyRollup,
+} from "~~/server/utils/activityRollup";
+import {
+  daysBetween,
   type ActivityAggregate,
 } from "~~/server/utils/activityStats";
-import type { ActivityCounts, ActivityKind } from "~~/shared/activity";
+import {
+  activityRanges,
+  defaultActivityRange,
+  type ActivityCounts,
+  type ActivityKind,
+  type ActivityRange,
+} from "~~/shared/activity";
+import { maskedContributorName, publicProfileEnabled } from "~~/shared/profile";
 
 const queryValidator = z.object({
-  days: z.coerce.number().int().min(1).max(365).default(30),
+  // One of the three the page offers, not a range. See `activityRanges`: every
+  // distinct value is its own memo entry and its own catch-up build, so an open
+  // range is an amplifier a signed-out caller can pull on.
+  days: z.coerce
+    .number()
+    .int()
+    .refine(
+      (value): value is ActivityRange =>
+        (activityRanges as readonly number[]).includes(value),
+      { message: `days must be one of ${activityRanges.join(", ")}` },
+    )
+    .default(defaultActivityRange),
 });
 
 /** How many contributors the leaderboard resolves names for. Well past the
@@ -23,13 +50,24 @@ const LEADERBOARD_SIZE = 25;
 const AUTH_LOOKUP_CHUNK = 100;
 
 export type ActivityContributor = {
-  /** Stable key for a table row or chart series. The uid for an admin, an
-   * opaque ordinal for everyone else. */
+  /** Stable key for a table row or chart series. The uid for an admin, the rank
+   * for everybody else — who never receive a uid. */
   key: string;
-  /** Null unless the caller is an admin - a uid identifies a person. */
+  /** Null unless the caller is an admin. A uid identifies a person, and it does
+   * so whether or not that person agreed to be named, so it is withheld even
+   * from the rows that carry a real name. */
   uid: string | null;
-  displayName: string | null;
+  /** What to print for this row. Never empty: a contributor who has not made
+   * their profile public is masked, not blanked. */
+  name: string;
+  /** Whether `name` is this person's own name rather than a mask. */
+  named: boolean;
+  /** The caller's own row, which is always named — to them. */
+  isSelf: boolean;
+  /** Admin only. */
   email: string | null;
+  /** Only for a row that is named; an avatar identifies a person as surely as
+   * the name over it. */
   photoURL: string | null;
   counts: ActivityCounts;
   total: number;
@@ -38,50 +76,70 @@ export type ActivityContributor = {
 
 export type ActivityStats = {
   window: { since: string; until: string; days: number };
-  /** True when the caller may see who did what. Admins only. */
+  /** True when the caller sees every name, uid and address. Admins only. */
   identified: boolean;
   totals: ActivityCounts;
   total: number;
   /** One entry per day of the window, oldest first, gaps filled with zeros. */
   daily: { date: string; counts: ActivityCounts; total: number }[];
-  /** Distinct people who did anything in the window. Always returned - a head
-   * count says how alive the project is without naming anyone. */
+  /** Distinct people who did anything in the window. */
   contributorCount: number;
-  /** Ranked contributors. Empty for non-admins. */
+  /** Ranked contributors, named as far as the caller is allowed to see. */
   contributors: ActivityContributor[];
+  /** How many of the ranked rows carry a real name, so the page can say what
+   * turning the setting on would change without counting rows itself. */
+  namedCount: number;
+  /** Where the caller stands, even when that is outside the ranked slice.
+   * Null for a visitor who is signed out or did nothing in the window. */
+  self: { rank: number; total: number; counts: ActivityCounts } | null;
   /** Kinds whose scan hit its cap, so their counts are a lower bound. */
   truncated: ActivityKind[];
 };
 
 /** What people did to the data, by day and by interaction kind.
  *
- * The aggregate is public: the totals and the shape of the week are the point
- * of a stats page, and a head count of contributors names nobody. Who did what
- * is not - a uid is an identifier, and the display names behind them come from
- * the same admin-only lookup `/api/users/lookup` guards. So the expensive part
- * is computed once, cached, and shared; identities are layered on afterwards,
- * per caller.
+ * The aggregate is public, and so is the ranking — the point of the page is
+ * that volunteers can see the work adding up, and a leaderboard nobody but an
+ * administrator may look at does not do that. What is not public is *who*: a
+ * display name is somebody's real name, and it is shown to a stranger only if
+ * that person turned `publicProfile` on from /profil. Everybody else appears
+ * masked, and their uid, address and avatar never leave this handler. See
+ * `shared/profile.ts`.
+ *
+ * The counting is done once per day and stored (`activityRollup.ts`); this
+ * assembles a window out of those days plus a live read of the days too recent
+ * to have settled, and layers identities on afterwards, per caller.
  */
 export default defineEventHandler(async (event): Promise<ActivityStats> => {
   const { days } = await getValidatedQuery(event, (q) =>
     queryValidator.parse(q),
   );
 
-  // An anonymous caller has no token at all, which `getUser` reports as a 401.
-  // That is not an error here - it just means an unidentified aggregate.
-  const caller = await getUser(event).catch(() => null);
+  // Signed out is not an error here - it just means an unidentified aggregate.
+  const caller = await getOptionalUser(event);
   const isAdmin = caller?.admin === true;
 
   const windowed = await cachedWindow(days);
+  const ranked = windowed.aggregate.contributors;
 
-  const contributors = isAdmin
-    ? await identify(windowed.aggregate.contributors.slice(0, LEADERBOARD_SIZE))
-    : [];
-
-  if (isAdmin) {
-    // The cached body is shared; this one is not.
+  if (caller) {
+    // The cached body is shared and says nothing about who asked for it; this
+    // one names the caller's own row and their standing, so it is theirs alone.
     setResponseHeader(event, "Cache-Control", "private, no-store");
   }
+
+  const contributors = ranked
+    .slice(0, LEADERBOARD_SIZE)
+    .map((contributor, index) =>
+      present(contributor, index, windowed, {
+        isAdmin,
+        callerUid: caller?.uid ?? null,
+      }),
+    );
+
+  const selfIndex = caller
+    ? ranked.findIndex((contributor) => contributor.uid === caller.uid)
+    : -1;
 
   return {
     window: windowed.window,
@@ -89,8 +147,17 @@ export default defineEventHandler(async (event): Promise<ActivityStats> => {
     totals: windowed.aggregate.totals,
     total: windowed.aggregate.total,
     daily: windowed.aggregate.daily,
-    contributorCount: windowed.aggregate.contributors.length,
+    contributorCount: ranked.length,
     contributors,
+    namedCount: contributors.filter((row) => row.named).length,
+    self:
+      selfIndex >= 0
+        ? {
+            rank: selfIndex + 1,
+            total: ranked[selfIndex]!.total,
+            counts: ranked[selfIndex]!.counts,
+          }
+        : null,
     truncated: windowed.truncated,
   };
 });
@@ -99,14 +166,61 @@ type WindowedActivity = {
   window: { since: string; until: string; days: number };
   aggregate: ActivityAggregate;
   truncated: ActivityKind[];
+  /** Display data for the ranked slice, from the auth service. Server side
+   * only — `present` decides which fields of it any given caller may see. */
+  identities: Record<
+    string,
+    {
+      displayName: string | null;
+      email: string | null;
+      photoURL: string | null;
+    }
+  >;
+  /** Which of the ranked contributors agreed to be named in public. */
+  public: Record<string, boolean>;
 };
+
+/** One ranked contributor as this caller may see them. */
+function present(
+  contributor: ActivityAggregate["contributors"][number],
+  index: number,
+  windowed: WindowedActivity,
+  caller: { isAdmin: boolean; callerUid: string | null },
+): ActivityContributor {
+  const identity = windowed.identities[contributor.uid];
+  const isSelf = contributor.uid === caller.callerUid;
+  // Your own name is not a disclosure, so it is shown to you whatever the
+  // setting says - seeing where you stand is the reason the ranking is public.
+  const named =
+    caller.isAdmin || isSelf || windowed.public[contributor.uid] === true;
+
+  const rank = index + 1;
+  const ownName =
+    identity?.displayName || (caller.isAdmin ? identity?.email : null);
+
+  return {
+    key: caller.isAdmin ? contributor.uid : `rank-${rank}`,
+    uid: caller.isAdmin ? contributor.uid : null,
+    name: named
+      ? ownName || `Uczestnik #${rank}`
+      : maskedContributorName(identity?.displayName, rank),
+    named: named && !!ownName,
+    isSelf,
+    email: caller.isAdmin ? (identity?.email ?? null) : null,
+    photoURL: named ? (identity?.photoURL ?? null) : null,
+    counts: contributor.counts,
+    total: contributor.total,
+    lastActiveAt: contributor.lastActiveAt,
+  };
+}
 
 /** The whole read-and-roll-up, memoized per window length.
  *
- * Four collection scans per page view is the cost worth avoiding; five minutes
- * of staleness on a chart of days is not worth noticing. The cached value keeps
- * uids in it, because the admin path needs them - they are stripped on the way
- * out for everyone else, never cached-in-public.
+ * Five minutes of staleness on a chart of days is not worth noticing, and the
+ * memo is what keeps the auth and `users` lookups off the per-request path as
+ * well. What it holds is shared between callers, so it holds everything anyone
+ * may see and nothing is stripped out on the way in — `present` does the
+ * stripping, per caller, on the way out.
  */
 const cachedWindow = defineCachedFunction(
   async (days: number): Promise<WindowedActivity> => {
@@ -122,15 +236,45 @@ const cachedWindow = defineCachedFunction(
     };
 
     const db = getFirestore("koryta-pl");
-    const { events, truncated } = await collectActivityEvents(
-      db,
-      since.toISOString(),
-    );
+
+    // A settled day is counted once and kept; the tail of the window is read
+    // live, because a vote stamped by a slow browser clock can still land in it.
+    // `daysBetween` ends on `until`, which is today, so `live` is never empty.
+    const spanned = daysBetween(window.since, window.until);
+    const { settled, live } = splitSettledDays(spanned, until);
+    const [past, current] = await Promise.all([
+      ensureDailyRollups(db, settled),
+      collectActivityEvents(db, {
+        sinceIso: dayStartIso(live[0] ?? window.until),
+      }),
+    ]);
+
+    // One scan covers every live day; `rollupForDay` keeps only the events that
+    // fall on the day it is given, so handing it the same list per day is what
+    // splits them.
+    const rollups: DailyRollup[] = [
+      ...past,
+      ...live.map((day) =>
+        rollupForDay(day, current.events, current.truncated),
+      ),
+    ];
+
+    const aggregate = mergeRollups(spanned, rollups);
+    const ranked = aggregate.contributors.slice(0, LEADERBOARD_SIZE);
+    const [identities, publicProfiles] = await Promise.all([
+      identify(ranked.map((c) => c.uid)),
+      readPublicProfiles(
+        db,
+        ranked.map((c) => c.uid),
+      ),
+    ]);
 
     return {
       window,
-      aggregate: aggregateActivity(events, window),
-      truncated: [...new Set(truncated)],
+      aggregate,
+      truncated: mergeTruncated(rollups),
+      identities,
+      public: publicProfiles,
     };
   },
   {
@@ -141,41 +285,56 @@ const cachedWindow = defineCachedFunction(
   },
 );
 
-/** Attach display data to the ranked uids, so a chart can say "Anna" instead of
- * a 28-character opaque string. Uids that no longer resolve keep their place in
+/** Display data for the ranked uids, so a chart can say "Anna" instead of a
+ * 28-character opaque string. Uids that no longer resolve keep their place in
  * the ranking - the work happened even if the account is gone. */
 async function identify(
-  ranked: ActivityAggregate["contributors"],
-): Promise<ActivityContributor[]> {
-  const found = new Map<
-    string,
-    {
-      displayName: string | null;
-      email: string | null;
-      photoURL: string | null;
-    }
-  >();
+  uids: string[],
+): Promise<WindowedActivity["identities"]> {
+  const found: WindowedActivity["identities"] = {};
+  if (uids.length === 0) return found;
 
-  for (let i = 0; i < ranked.length; i += AUTH_LOOKUP_CHUNK) {
-    const chunk = ranked.slice(i, i + AUTH_LOOKUP_CHUNK);
-    const result = await getAuth().getUsers(chunk.map((c) => ({ uid: c.uid })));
+  for (let i = 0; i < uids.length; i += AUTH_LOOKUP_CHUNK) {
+    const chunk = uids.slice(i, i + AUTH_LOOKUP_CHUNK);
+    const result = await getAuth().getUsers(chunk.map((uid) => ({ uid })));
     for (const user of result.users) {
-      found.set(user.uid, {
+      found[user.uid] = {
         displayName: user.displayName ?? null,
         email: user.email ?? null,
         photoURL: user.photoURL ?? null,
-      });
+      };
     }
   }
 
-  return ranked.map((contributor) => ({
-    key: contributor.uid,
-    uid: contributor.uid,
-    displayName: found.get(contributor.uid)?.displayName ?? null,
-    email: found.get(contributor.uid)?.email ?? null,
-    photoURL: found.get(contributor.uid)?.photoURL ?? null,
-    counts: contributor.counts,
-    total: contributor.total,
-    lastActiveAt: contributor.lastActiveAt,
-  }));
+  return found;
+}
+
+/** Who among the ranked said their name may be shown.
+ *
+ * Read with the admin SDK, which the `users` rules do not apply to - they let
+ * only the owner read their own document, and deliberately so. Nothing but the
+ * boolean leaves this function.
+ */
+async function readPublicProfiles(
+  db: FirebaseFirestore.Firestore,
+  uids: string[],
+): Promise<Record<string, boolean>> {
+  const allowed: Record<string, boolean> = {};
+  if (uids.length === 0) return allowed;
+
+  // The field mask is not an optimisation. A `users` document is writable by
+  // its owner (`firestore.rules`), with no constraint on shape or size, so
+  // pulling it whole would carry whatever they chose to put in it into this
+  // handler's memo. One boolean is all this decision needs.
+  const snapshots = await db.getAll(
+    ...uids.map((uid) => db.collection("users").doc(uid)),
+    { fieldMask: ["publicProfile"] },
+  );
+  for (const snapshot of snapshots) {
+    allowed[snapshot.id] = publicProfileEnabled(
+      snapshot.data()?.publicProfile as boolean | undefined,
+    );
+  }
+
+  return allowed;
 }
