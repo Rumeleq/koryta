@@ -48,6 +48,36 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
  * before the list could be read at all. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "szpitale-na-telefonie",
+    title: "Szpitale na telefonie: wykres na górze, bez kolumn redakcyjnych",
+    description:
+      "Strona nie mieściła się na telefonie - trzeba było ją oddalić, żeby " +
+      "cokolwiek przeczytać. Wiersz wykresu miał pięć kolumn i przy " +
+      "najwęższym ustawieniu i tak potrzebował 446 px, a w karcie na " +
+      "ekranie 375 px jest ich około 310. Poniżej progu „sm” zostają trzy " +
+      "kolumny: nazwa, słupek i liczba znalezionych miejsc. Znikają dwie " +
+      "redakcyjne - „do sprawdzenia” i „kolejka pracy” - bo wybierania " +
+      "sobie następnej partii osób do sprawdzenia nikt nie robi na " +
+      "telefonie; liczba zaległości jest dalej w widoku tabeli. " +
+      "Do tego wykres wychodzi na samą górę strony: pięć kafelków, pasek " +
+      "organów nadzoru i notka o radach społecznych to kontekst do jego " +
+      "czytania, a nie wejście, a na telefonie były trzema ekranami " +
+      "wstępu przed pierwszym słupkiem. Teraz stoją pod wykresem, w tej " +
+      "samej kolejności co wcześniej. Sama strona przestała też dokładać " +
+      "16 px marginesu do tego, który ma już kontener.",
+    steps: [
+      "Otwórz /eksploruj/szpitale na telefonie (albo w oknie 375 px szerokości).",
+      "Strona nie ma się przewijać na boki i nie ma wymagać oddalenia - żaden element nie wystaje poza ekran.",
+      "Pierwsze, co widać pod nagłówkiem i jednym akapitem, to „Podział na partie” i wykres. Kafelki „W skrócie” są dopiero pod nim.",
+      "Wiersz wykresu ma nazwę, słupek i jedną liczbę. Nie ma kolumny „do sprawdzenia” ani przycisku „Zobacz osoby” / „Zaloguj się”.",
+      "Przełącz kartę na widok tabeli (ikona w prawym górnym rogu): kolumna „Do sprawdzenia” ma tam nadal być, a tabela ma się przewijać w poziomie w swojej ramce, nie razem ze stroną.",
+      "Rozszerz okno powyżej 600 px: obie kolumny mają wrócić, razem z przyciskiem kolejki.",
+      "Notka „Rada społeczna to nie rada nadzorcza” stoi teraz pod wykresem i mówi o przełączniku „nad wykresem” - sprawdź, że wskazuje na ten, który faktycznie jest wyżej.",
+    ],
+    link: "/eksploruj/szpitale",
+    area: "public",
+  },
+  {
     id: "omnisearch-opuszcza-podglad-rewizji",
     title: "Wyszukiwarka wychodzi z podglądu rewizji",
     description:
