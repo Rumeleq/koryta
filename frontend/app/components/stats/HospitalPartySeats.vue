@@ -32,10 +32,12 @@
         <tbody>
           <tr v-for="row in rows" :key="row.party">
             <td>
-              <!-- PartyChip emits no background at all for a party it has no
-                   colour for, so anything outside `partyColors` - including the
-                   bucket for people with no party - gets a plain label and the
-                   dot beside it instead. -->
+              <!-- PartyChip draws no fill at all for a party outside
+                   `partyColors`, so anything outside it - including the bucket
+                   for people with no party - gets a plain label and the dot
+                   beside it instead, in the colour this table's own legend and
+                   its bars already use. Without that, those rows would be bare
+                   text in a column of painted chips. -->
               <PartyChip v-if="row.known" :party="row.party" />
               <span v-else class="d-flex align-center ga-2">
                 <span

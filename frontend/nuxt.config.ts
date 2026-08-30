@@ -1,5 +1,6 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 import { bundleSharpBinaries } from "./build/sharp-binaries";
+import { themeColors } from "./shared/colors";
 
 // Force IPv4 for emulators to avoid Node 17+ IPv6 issues
 process.env.FIRESTORE_EMULATOR_HOST = "127.0.0.1:8080";
@@ -190,6 +191,14 @@ export default defineNuxtConfig({
             colors: {
               primary: "#a8c79f",
               secondary: "#fad3d0",
+              // The ink and pale-surface tokens. primary and secondary are
+              // pale fills - as text on a white card primary measures 1.85:1,
+              // so `text-primary` was never readable - and shared/colors.ts
+              // holds the dark companions that are, each measured against
+              // every surface it can land on. Spread rather than listed so
+              // the hexes have one home and the test that checks their
+              // contrast is checking what Vuetify actually paints.
+              ...themeColors,
             },
           },
         },
