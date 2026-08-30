@@ -2,6 +2,7 @@ import { getFirestore } from "firebase-admin/firestore";
 import { getApp } from "firebase-admin/app";
 import { nodeTypes, pageIsPublic } from "~~/shared/model";
 import { authCachedEventHandler } from "~~/server/utils/handlers";
+import { resolveMergedNode } from "~~/server/utils/merge";
 import { z } from "zod";
 import type { Node } from "~~/shared/model";
 
@@ -65,9 +66,18 @@ async function getLatestRevision(db: FirebaseFirestore.Firestore, id: string) {
   return { id, ...revisionDoc.data().data };
 }
 
+/** The page, or the page it was merged into.
+ *
+ * A duplicate keeps its document so its url still resolves, but it is
+ * `deleted`, so answering with it would 404 every link anybody ever made to it
+ * - which is the opposite of why it was kept. Answering with the survivor
+ * instead costs nothing here and does the redirect for free: `[seoType]/[slug]`
+ * already compares the url it was asked for against `generateNodeUrl` of what
+ * this returns, and sends the reader to the difference.
+ */
 async function getEntity(db: FirebaseFirestore.Firestore, id: string) {
-  const nodeDoc = await db.collection("nodes").doc(id).get();
-  if (!nodeDoc.exists) {
+  const { snapshot: nodeDoc } = await resolveMergedNode(db, id);
+  if (!nodeDoc?.exists) {
     return undefined;
   }
   const result = {
