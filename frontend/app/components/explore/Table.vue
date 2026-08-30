@@ -165,6 +165,14 @@
                `size="small"` where the column's copy took the default 48px,
                because this one shares a flex row with the party chips and a
                full-height button would set the height of every row.
+               `density="comfortable"` on top of that, for the gap rather
+               than the height: at the default density Vuetify draws an icon
+               button as a circle of `--v-btn-height + 12px`, so `small`'s 28px
+               became a 40px disc, and the six pixels that bought on each side
+               read as distance between the glyph and the party chip beside it
+               rather than as part of the button. Comfortable is
+               `--v-btn-height + 0`, so the circle is the 28px the size already
+               asked for and the only gap left is the row's own `ga-1`.
                `hidden-sm-and-down` rather than a `useDisplay()` test: under
                SSR Vuetify builds its display state from a placeholder 1280px
                and corrects it only when suspense resolves, so a phone would
@@ -192,6 +200,7 @@
                 variant="text"
                 color="ink-neutral"
                 size="small"
+                density="comfortable"
                 class="hidden-sm-and-down"
                 @click.stop="
                   executeSearchAll(item, region, company);
