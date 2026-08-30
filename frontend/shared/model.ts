@@ -16,6 +16,31 @@ type PageBase<PageType> = {
   votes?: Votes;
   deleted?: boolean;
   delete_reason?: string;
+  /** The page this one turned out to be a second copy of.
+   *
+   * Set only alongside `deleted`, and only by a merge: the duplicate keeps its
+   * document so that its url, and the votes and revisions filed against it,
+   * still resolve to something. Readers are sent to the surviving page rather
+   * than to a 404, which is what makes an old link - or a search engine's
+   * memory of one - worth keeping.
+   *
+   * Never a chain. A merge resolves the target's own `merged_into` first, so
+   * every duplicate points straight at the page a reader should end up on. */
+  merged_into?: string;
+  /** Set where a page is known to be two people who were never told apart, and
+   * nobody has separated them yet.
+   *
+   * The evidence is upstream and the work is by hand, so the two are hours or
+   * days apart: `create_people_table` groups namesakes born within a year of
+   * each other on purpose, and once their candidacies and posts are on one page
+   * nothing stored says which of them belongs to whom. Marking is what keeps
+   * the page on a list until somebody who can tell gets to it. */
+  needs_split?: {
+    reason: string;
+    /** ISO 8601, UTC, like `AuditEntry.at`. */
+    at: string;
+    user: string;
+  };
   visibility?: boolean;
   stats?: NodeStats;
   revisions?: NodeRevisions;

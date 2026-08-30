@@ -65,6 +65,8 @@ export const skippedChangeFields = new Set([
   "votes",
   "id",
   "visibility",
+  "merged_into",
+  "needs_split",
   "nameChunksLower",
 ]);
 

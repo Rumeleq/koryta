@@ -72,6 +72,53 @@ export const QA_ITEMS: QaItem[] = [
     area: "admin",
   },
   {
+    id: "scalanie-duplikatow-osob",
+    title: "Duplikat osoby można scalić z właściwą stroną",
+    description:
+      "Jedna osoba na dwóch stronach to dwie połowy tego, co o niej wiadomo, i " +
+      "żadnej z nich nie da się po prostu usunąć. Admin wskazuje więc, która " +
+      "strona jest duplikatem, a której powiązania mają zostać - i wszystkie " +
+      "powiązania duplikatu przenoszą się na stronę, która zostaje. Powtórzone " +
+      "zatrudnienia znikają, bo powiedziane dwa razy nie mówią nic więcej; " +
+      "powtórzone kandydatury zostają i są zgłaszane do przejrzenia, bo dwa " +
+      "identycznie zapisane starty w wyborach potrafią być dwoma prawdziwymi. " +
+      "Duplikat nie znika z bazy: jego adres nadal działa i przekierowuje na " +
+      "stronę, która została, więc stare linki się nie psują. Przed scaleniem " +
+      "okno pokazuje, co dokładnie się stanie.",
+    steps: [
+      "Jako admin wejdź na stronę osoby, która ma swój duplikat, i otwórz „Ta strona to duplikat”.",
+      "Wskaż drugą stronę i wpisz powód. Okno ma najpierw pokazać podsumowanie: ile powiązań się przeniesie, ile zniknie jako powtórzenie, ile zostanie do przejrzenia.",
+      "Potwierdź. Powinno przerzucić cię na stronę, która została, i mieć na niej powiązania z obu.",
+      "Wejdź na stary adres duplikatu - ma przekierować na stronę, która została, a nie pokazać 404.",
+      "Sprawdź /admin/audyt (log admina): ma być wpis „Scalenie duplikatu” z oboma id.",
+    ],
+    area: "admin",
+  },
+  {
+    id: "strona-ktora-jest-dwiema-osobami",
+    title: "Stronę, która okazała się dwiema osobami, można rozdzielić",
+    description:
+      "Odwrotny problem do duplikatu i trudniejszy: przy dwóch osobach o tym " +
+      "samym imieniu, nazwisku i roczniku pipeline traktował je jak jedną, a " +
+      "powiązania nie zapisują, z którego wpisu w rejestrze pochodzą - więc " +
+      "żadne zapytanie nie powie, czyja jest która posada. Może to powiedzieć " +
+      "tylko człowiek, dlatego rozdzielenie polega na zaznaczeniu powiązań " +
+      "należących do tej drugiej osoby. Można je przenieść na stronę utworzoną " +
+      "wcześniej ręcznie albo od razu założyć nową. Ponieważ zauważenie " +
+      "problemu i rozplątanie go to zwykle dwa różne dni, stronę można też " +
+      "najpierw tylko oznaczyć - wtedy admin widzi na niej pasek, że to dwie " +
+      "osoby, razem z powodem i tym, kto to zgłosił. Powiązania niezaznaczone " +
+      "zostają tam, gdzie były.",
+    steps: [
+      "Jako admin otwórz osobę, co do której wiadomo, że łączy dwie (np. częste imię i nazwisko z posadami w dwóch odległych miejscach), i wybierz „Ta strona to dwie osoby”.",
+      "Użyj „Zaznacz do rozdzielenia” z powodem. Odśwież stronę - ma być widoczny pasek z powodem i autorem zgłoszenia.",
+      "Wróć do okna, wybierz „Rozdziel teraz”, zaznacz powiązania drugiej osoby i wpisz jej imię.",
+      "Sprawdź podsumowanie przed potwierdzeniem, potwierdź, a potem otwórz nową stronę - ma mieć dokładnie zaznaczone powiązania i być szkicem do publikacji.",
+      "Wróć na pierwotną stronę: pasek „to dwie osoby” ma zniknąć, a niezaznaczone powiązania zostać.",
+    ],
+    area: "admin",
+  },
+  {
     id: "kandydatura-bez-regionu-nie-blokuje-osoby",
     title: "Jedna kandydatura bez regionu nie przepada już razem z całą osobą",
     description:
