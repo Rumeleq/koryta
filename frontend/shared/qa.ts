@@ -49,7 +49,8 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
 export const QA_ITEMS: QaItem[] = [
   {
     id: "szpitale-na-telefonie",
-    title: "Szpitale na telefonie: wykres na górze, bez kolumn redakcyjnych",
+    title:
+      "Szpitale na telefonie: wykres od razu, bez wstępu i bez kolumn dla redakcji",
     description:
       "Strona nie mieściła się na telefonie - trzeba było ją oddalić, żeby " +
       "cokolwiek przeczytać. Wiersz wykresu miał pięć kolumn i przy " +
@@ -58,21 +59,32 @@ export const QA_ITEMS: QaItem[] = [
       "kolumny: nazwa, słupek i liczba znalezionych miejsc. Znikają dwie " +
       "redakcyjne - „do sprawdzenia” i „kolejka pracy” - bo wybierania " +
       "sobie następnej partii osób do sprawdzenia nikt nie robi na " +
-      "telefonie; liczba zaległości jest dalej w widoku tabeli. " +
+      "telefonie. Z tego samego powodu znika na telefonie przełącznik " +
+      "wykres/tabela: dwie ikony obok tytułu łamały go na trzy linijki, " +
+      "czyli kosztowały ekran wysokości. Na telefonie nie ma więc dojścia " +
+      "do tabeli ani do liczby zaległości - jedno i drugie jest dla tej " +
+      "samej osoby przy biurku. " +
       "Do tego wykres wychodzi na samą górę strony: pięć kafelków, pasek " +
       "organów nadzoru i notka o radach społecznych to kontekst do jego " +
       "czytania, a nie wejście, a na telefonie były trzema ekranami " +
       "wstępu przed pierwszym słupkiem. Teraz stoją pod wykresem, w tej " +
-      "samej kolejności co wcześniej. Sama strona przestała też dokładać " +
-      "16 px marginesu do tego, który ma już kontener.",
+      "samej kolejności co wcześniej. Nad wykresem nie ma już akapitu " +
+      "wstępu ani nagłówka „Podział na partie” - obydwa powtarzały to, co " +
+      "mówi tytuł karty i notka pod nią, a nagłówek przestał być prawdziwy, " +
+      "gdy wykres dostał podział na województwa i szpitale. Zniknął też " +
+      "przycisk „Statystyki bazy”: prowadził na stronę redakcyjną, a nie " +
+      "tam, gdzie idzie czytelnik tej. Sama strona przestała wreszcie " +
+      "dokładać 16 px marginesu do tego, który ma już kontener.",
     steps: [
       "Otwórz /eksploruj/szpitale na telefonie (albo w oknie 375 px szerokości).",
       "Strona nie ma się przewijać na boki i nie ma wymagać oddalenia - żaden element nie wystaje poza ekran.",
-      "Pierwsze, co widać pod nagłówkiem i jednym akapitem, to „Podział na partie” i wykres. Kafelki „W skrócie” są dopiero pod nim.",
+      "Pod nagłówkiem „Rady nadzorcze szpitali publicznych” nie ma akapitu wstępu ani przycisku „Statystyki bazy” - od razu jest przełącznik rady nadzorcze / rady społeczne i wykres. Kafelki „W skrócie” są dopiero pod nim.",
+      "Nie ma nagłówka „Podział na partie”. Kartę tytułuje sam wykres, zgodnie z wybranym podziałem.",
       "Wiersz wykresu ma nazwę, słupek i jedną liczbę. Nie ma kolumny „do sprawdzenia” ani przycisku „Zobacz osoby” / „Zaloguj się”.",
-      "Przełącz kartę na widok tabeli (ikona w prawym górnym rogu): kolumna „Do sprawdzenia” ma tam nadal być, a tabela ma się przewijać w poziomie w swojej ramce, nie razem ze stroną.",
-      "Rozszerz okno powyżej 600 px: obie kolumny mają wrócić, razem z przyciskiem kolejki.",
-      "Notka „Rada społeczna to nie rada nadzorcza” stoi teraz pod wykresem i mówi o przełączniku „nad wykresem” - sprawdź, że wskazuje na ten, który faktycznie jest wyżej.",
+      "W prawym górnym rogu karty nie ma pary ikon wykres/tabela, a tytuł karty nie łamie się przez nie na trzy linijki.",
+      "Rozszerz okno powyżej 600 px: mają wrócić obie kolumny, przycisk kolejki i przełącznik wykres/tabela. Po przełączeniu na tabelę kolumna „Do sprawdzenia” ma tam być, a tabela ma się przewijać w poziomie w swojej ramce, nie razem ze stroną.",
+      "Notka „Rada społeczna to nie rada nadzorcza” stoi pod wykresem i mówi o przełączniku „nad wykresem” - sprawdź, że wskazuje na ten, który faktycznie jest wyżej.",
+      "Wejdź na /eksploruj/statystyki na telefonie: tam przełącznik wykres/tabela ma zostać - zniknął tylko na wykresie szpitali.",
     ],
     link: "/eksploruj/szpitale",
     area: "public",

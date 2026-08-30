@@ -10,6 +10,8 @@
       <template #append>
         <v-btn-toggle
           v-model="view"
+          class="stats-card__view"
+          :class="{ 'stats-card__view--desktop-only': hideViewToggleOnMobile }"
           density="compact"
           variant="outlined"
           divided
@@ -58,6 +60,15 @@ defineProps<{
   /** Dim the current render rather than swapping in a skeleton - a refetch
    * should not make the page jump. */
   loading?: boolean;
+  /** Drop the chart/table switch below `sm`.
+   *
+   * Opt-in rather than the default, because it is a real loss: the table is
+   * where the numbers are legible without colour, and taking it away takes that
+   * with it. It is worth it on a card whose title is long enough that the
+   * switch beside it squeezes the heading into three wrapped lines - two icons'
+   * worth of width costing a screenful of height on a phone - and not worth it
+   * on the short-titled cards of /eksploruj/statystyki. */
+  hideViewToggleOnMobile?: boolean;
 }>();
 
 const view = ref<"chart" | "table">("chart");
@@ -72,5 +83,11 @@ const view = ref<"chart" | "table">("chart");
 .stats-card__table {
   max-height: 420px;
   overflow-y: auto;
+}
+
+@media (max-width: 599.98px) {
+  .stats-card__view--desktop-only {
+    display: none;
+  }
 }
 </style>
