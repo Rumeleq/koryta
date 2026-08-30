@@ -72,6 +72,51 @@
           </v-card-text>
         </v-card>
 
+        <v-card class="mb-4" rounded="lg">
+          <v-card-title>Widoczność w statystykach</v-card-title>
+          <v-card-subtitle class="text-wrap">
+            Ranking na
+            <NuxtLink to="/eksploruj/statystyki">stronie statystyk</NuxtLink>
+            pokazuje, kto ile sprawdził. Nazwy są w nim zamazane, dopóki ich
+            właściciele nie zdecydują inaczej.
+          </v-card-subtitle>
+          <v-card-text>
+            <v-switch
+              v-model="publicProfile"
+              color="primary"
+              :label="publicProfileLabel.title"
+              :hint="publicProfileLabel.hint"
+              persistent-hint
+              :disabled="!profileVisibilityLoaded"
+              :loading="savingVisibility || !profileVisibilityLoaded"
+              @update:model-value="saveVisibility"
+            />
+            <!-- The name at stake is the one edited in the card above, so show
+                 what it turns into rather than leaving it to be guessed. -->
+            <div class="text-caption text-medium-emphasis mt-3">
+              <!-- An account opened with an email and a password has no display
+                   name until somebody sets one, and the ranking falls back to a
+                   bare ordinal for it - so there is nothing to preview and
+                   nothing this switch would reveal. Say that, rather than
+                   printing an empty name. -->
+              <template v-if="!ownDisplayName">
+                Nie masz jeszcze nazwy użytkownika, więc w rankingu widnieje sam
+                numer. Ustaw ją wyżej, a wrócimy do tego.
+              </template>
+              <template v-else-if="publicProfile">
+                Inni widzą w rankingu
+                <strong>{{ ownDisplayName }}</strong
+                >.
+              </template>
+              <template v-else>
+                Inni widzą w rankingu
+                <strong>{{ maskedContributorName(ownDisplayName, 1) }}</strong
+                >. Swoje własne miejsce widzisz tak czy inaczej.
+              </template>
+            </div>
+          </v-card-text>
+        </v-card>
+
         <!-- What happened to the proposals comes before the switches that
              control the mail about them. -->
         <ProfileMyRevisions />
@@ -176,6 +221,11 @@ import {
   notificationLabels,
   type NotificationKind,
 } from "~~/shared/notifications";
+import {
+  maskedContributorName,
+  publicProfileEnabled,
+  publicProfileLabel,
+} from "~~/shared/profile";
 
 definePageMeta({
   middleware: "auth",
@@ -251,6 +301,55 @@ const saveProfile = async () => {
     notify("Nie udało się zapisać zmian. Spróbuj ponownie.", "error");
   } finally {
     savingProfile.value = false;
+  }
+};
+
+// Whether this account's name may be shown next to its work in the public
+// ranking. Off unless the owner says otherwise, and the server applies the same
+// default when it builds the ranking - see `shared/profile.ts`.
+const publicProfile = ref(false);
+const savingVisibility = ref(false);
+
+/** The name the ranking would use, which is the one edited above rather than
+ * whatever was last saved - so the preview follows the field. */
+const ownDisplayName = computed(
+  () => displayNameInput.value.trim() || user.value?.displayName || "",
+);
+
+/** The stored config has arrived. Same guard as the notification switches, and
+ * for the same reason: a toggle made before the read lands would write the
+ * default over a choice already made. */
+const profileVisibilityLoaded = computed(
+  () => userConfig?.data?.value !== undefined,
+);
+
+watch(
+  () => userConfig?.data?.value?.publicProfile,
+  (choice) => {
+    publicProfile.value = publicProfileEnabled(choice);
+  },
+  { immediate: true },
+);
+
+const saveVisibility = async () => {
+  if (!user.value) return;
+  savingVisibility.value = true;
+  try {
+    await setDoc(
+      doc(firestore, "users", user.value.uid),
+      { publicProfile: publicProfile.value },
+      { merge: true },
+    );
+    notify(
+      publicProfile.value
+        ? "Twoja nazwa jest teraz widoczna w statystykach."
+        : "Twoja nazwa jest znów zamazana w statystykach.",
+    );
+  } catch (err) {
+    console.error("Failed to save profile visibility:", err);
+    notify("Nie udało się zapisać ustawienia. Spróbuj ponownie.", "error");
+  } finally {
+    savingVisibility.value = false;
   }
 };
 

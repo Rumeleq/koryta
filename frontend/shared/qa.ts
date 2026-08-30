@@ -48,6 +48,56 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
  * before the list could be read at all. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "ranking-wspolautorow-na-gorze",
+    title:
+      "Statystyki zaczynają się od tego, kto je tworzy — z zamazanymi nazwami i przełącznikiem w profilu",
+    description:
+      "Ranking „Najaktywniejsi” był na samym dole strony i widzieli go " +
+      "wyłącznie administratorzy; wszyscy inni dostawali jedno zdanie o tym, " +
+      "ile osób coś robiło. Teraz jest na górze i widzą go wszyscy, ale " +
+      "nazwy są zamazane (A•••••) — dopóki ich właściciel nie włączy " +
+      "widoczności w /profil. Swoje własne miejsce widzisz zawsze, także " +
+      "wtedy, gdy wypadasz poza pokazaną dwudziestkę piątkę. Serwer nie " +
+      "wysyła nikomu poza administratorem uid, adresu ani awatara osoby, " +
+      "która się nie zgodziła.",
+    steps: [
+      "Otwórz /eksploruj/statystyki bez logowania: ranking jest pierwszą sekcją, nazwy są zamazane, a pod tabelą jest zaproszenie do zalogowania.",
+      "Zaloguj się jako zwykły użytkownik i wróć na tę stronę: Twój wiersz jest podświetlony i podpisany „· Ty”, a zaproszenie zmienia się w „Pokaż moją nazwę”.",
+      "Wejdź w /profil, w karcie „Widoczność w statystykach” zobacz podgląd zamazanej nazwy i włącz przełącznik.",
+      "Wróć na /eksploruj/statystyki — po odświeżeniu (odpowiedź jest buforowana do 5 minut) Twoja nazwa jest widoczna, a zaproszenie mówi, że można ją schować z powrotem.",
+      "Zaloguj się jako administrator: nazwy, adresy i odnośniki do kolejki rewizji są jak dotąd.",
+    ],
+    link: "/eksploruj/statystyki",
+    area: "public",
+  },
+  {
+    id: "aktywnosc-bez-hurtu-ingestu",
+    title:
+      "Aktywność liczy decyzje, a nie zapisy: koniec z ingestem i publikowaniem krawędzi na szczycie rankingu",
+    description:
+      "Wykres i ranking liczyły każdy zapis osobno, więc dominowały je dwie " +
+      "rzeczy, które nie są niczyją pracą redakcyjną. Węzły artykułów: każda " +
+      "zescrapowana albo przechwycona strona zakładała węzeł i liczyła się " +
+      "jako „propozycja zmiany” (48 z 51 propozycji najaktywniejszej osoby w " +
+      "ostatnich 30 dniach). Oraz publikowanie: opublikowanie osoby z " +
+      "kilkunastoma powiązaniami zostawiało w dzienniku ~25 wpisów i tyleż " +
+      "kresek na wykresie. Teraz artykuły zakładane przez ingest nie liczą się " +
+      "wcale (ale artykuł poprawiony ręcznie — owszem), a publikacja to jedna " +
+      "nowa kategoria „Opublikowane osoby” — jedna na stronę, nie jedna na " +
+      "powiązanie. Przy okazji wróciły notatki: od 2 sierpnia zapisują datę " +
+      "jako znacznik czasu, a nie tekst, i licznik „Źródło lub zgłoszenie” ich " +
+      "nie widział — w 30-dniowym oknie pokazywał 18 źródeł zamiast 272.",
+    steps: [
+      "Otwórz /eksploruj/statystyki i sprawdź, że w kaflach aktywności jest kategoria „Opublikowane osoby” (fioletowa), obok „Decyzji administratora”.",
+      "Najedź na nią: opis mówi, że powiązania opublikowane razem ze stroną liczą się raz.",
+      "Jako administrator opublikuj osobę z kilkoma powiązaniami, odczekaj do 5 minut (bufor) i sprawdź, że w rankingu przybyła 1 publikacja, a nie tyle, ile było powiązań.",
+      "Dodaj artykuł przez /zrodla albo wtyczkę i sprawdź, że licznik „Propozycja zmiany” się nie zmienił.",
+      "Dodaj źródło do notatki i sprawdź, że licznik „Źródło lub zgłoszenie” urósł — wcześniej stał w miejscu.",
+    ],
+    link: "/eksploruj/statystyki",
+    area: "public",
+  },
+  {
     id: "tabela-kontrast-i-kolory",
     title:
       "Tabela eksploracji: czytelne kolory zamiast bladej zieleni, i kolor tylko tam, gdzie coś znaczy",

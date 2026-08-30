@@ -29,6 +29,10 @@ export type UserConfig = {
    * `newsletter`, which is broadcast to whoever asked for it: these default to
    * on and are read by the server before it queues anything. */
   notifications?: NotificationPreferences;
+  /** Whether this person's name may be shown next to their work on
+   * /eksploruj/statystyki. Absent means no - see `shared/profile.ts`, and note
+   * that `/api/stats/activity` reads this same field with the admin SDK. */
+  publicProfile?: boolean;
 };
 
 export function useAuthState() {
