@@ -13,6 +13,7 @@ import pandas as pd
 import pytest
 
 from analysis.payloads import PeoplePayloads
+from analysis.payloads.person import collapsed_people, one_register_entry
 from analysis.payloads.site import (
     ENRICHED_CANDIDACY,
     MISSING_COMPANY,
@@ -123,7 +124,35 @@ def test_a_payload_the_site_already_holds_is_dropped():
 def test_a_person_the_site_does_not_have_is_kept():
     snapshot = SiteSnapshot(nodes(), edges())
 
-    assert snapshot.changes(payload(name="Anna Nowak")) == [NEW_PERSON]
+    assert snapshot.changes(
+        payload(name="Anna Nowak", rejestrIo="https://rejestr.io/osoby/999")
+    ) == [NEW_PERSON]
+
+
+def test_a_new_spelling_of_a_stored_person_is_not_a_new_person():
+    """The name is not the identity, and this is the whole duplicate bug.
+
+    The pipeline picks a name out of a `list_distinct` whose order is a hash, so
+    one human is "Andrzej Golimont" one run and "Andrzej Marcin Golimont" the
+    next. Reading the second as somebody new is what filed 170 people under two
+    pages each; the register entry is what says they are one.
+    """
+    snapshot = SiteSnapshot(nodes(), edges())
+
+    assert snapshot.changes(payload(name="Jan Marek Kowalski")) == []
+
+
+def test_a_namesake_with_another_register_entry_is_a_new_person():
+    """And the other direction, which matching loosely would have made worse.
+
+    Two strangers share a name; only the register tells them apart. 36 stored
+    nodes have had one overwrite the other's `rejestrIo` already.
+    """
+    snapshot = SiteSnapshot(nodes(), edges())
+
+    assert snapshot.changes(payload(rejestrIo="https://rejestr.io/osoby/456")) == [
+        NEW_PERSON
+    ]
 
 
 def test_a_party_the_node_does_not_carry_is_kept():
@@ -139,6 +168,9 @@ def test_a_party_the_node_already_carries_is_dropped():
 
 
 def test_a_rejestr_io_link_the_node_lacks_is_kept():
+    """Also the fallback match: 880 people predate the pipeline sending a
+    register entry, and the name is the only thing left to find them by. The
+    payload is kept because it has one to give them."""
     snapshot = SiteSnapshot(nodes(person={"rejestrIo": None}), edges())
 
     assert snapshot.changes(payload()) == [PERSON_FIELDS]
@@ -415,4 +447,45 @@ def test_a_column_another_document_fills_is_not_a_value_here():
 
     assert snapshot.companies == {"0000123456": COMPANY_ID}
     assert snapshot.regions == {"1465": "teryt1465"}
-    assert list(snapshot.people) == ["Jan Kowalski"]
+    assert list(snapshot.people) == ["https://rejestr.io/osoby/123"]
+    assert list(snapshot.people_by_name) == ["Jan Kowalski"]
+
+
+class TestOneRegisterEntry:
+    """Which rejestr.io entry a row that carries several is filed under.
+
+    A row carrying two is two people: `create_people_table` groups namesakes of
+    the same age on purpose and cannot tell them from strangers. Nothing here
+    undoes that - the point is only that the choice does not *move*, because
+    `/api/ingest/person` now identifies a person by their register entry, and an
+    entry that changes between runs opens a second page for them.
+    """
+
+    def test_the_only_entry_is_the_answer(self):
+        assert one_register_entry(["1956879"]) == "1956879"
+
+    def test_the_choice_does_not_depend_on_the_order_it_arrives_in(self):
+        """duckdb's `list_distinct` returns a hash order, not the input order,
+        so the same set reaches this function differently on different runs."""
+        assert one_register_entry(["1956879", "383093"]) == one_register_entry(
+            ["383093", "1956879"]
+        )
+
+    def test_entries_sort_as_numbers_rather_than_as_text(self):
+        assert one_register_entry(["1956879", "383093"]) == "383093"
+
+    def test_a_non_numeric_entry_still_sorts_somewhere_stable(self):
+        assert one_register_entry(["abc", "123"]) == "123"
+        assert one_register_entry(["abc", "abd"]) == "abc"
+
+    def test_a_row_with_no_entry_at_all_is_an_error(self):
+        with pytest.raises(ValueError):
+            one_register_entry([])
+
+    def test_a_collapsed_row_is_reported_rather_than_dropped(self):
+        collapsed_people.clear()
+        one_register_entry(["1956879", "383093"])
+        one_register_entry(["123"])
+
+        assert dict(collapsed_people) == {"383093, 1956879": 1}
+        collapsed_people.clear()
