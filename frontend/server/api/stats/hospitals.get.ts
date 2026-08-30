@@ -1,5 +1,6 @@
 import { getFirestore } from "firebase-admin/firestore";
 import { editorFreshCachedEventHandler } from "~~/server/utils/handlers";
+import { wojewodztwoOf } from "~~/shared/teryt";
 import {
   buildHospitalStats,
   isPublicHospital,
@@ -19,6 +20,7 @@ export type {
   HospitalStats,
   HospitalRow,
   PartySeats,
+  RegionRow,
   SupervisoryGroup,
 } from "~~/server/utils/hospitalStats";
 
@@ -53,6 +55,15 @@ function chunked<T>(values: T[], size: number): T[][] {
  *    `fetchEdges()`, which reads the entire edges collection and is one of the
  *    known cost sinks.
  * 3. the people on the far end of those edges, by id.
+ * 4. where each hospital sits, for the by-województwo breakdown. A company's
+ *    seat is a `seat` edge from the region that holds it, so this asks the
+ *    edges rather than reading the region collection: `target` + `type` is the
+ *    same composite index step 2 uses, and it locates all 143 rada nadzorcza
+ *    hospitals from 144 edges and 116 region documents. Reading every region
+ *    node instead - which is what `regionsByPlaceId` does in the browser -
+ *    would be 1,389 documents and 1.3 MB of `stats` blobs for the same answer.
+ *    The sixteen województwo nodes are then fetched by derived id (`teryt14`)
+ *    for their names.
  *
  * Nothing here depends on who is asking, and behind the six-hour cache the
  * whole thing runs a few dozen times a day at most.
@@ -124,6 +135,79 @@ export default editorFreshCachedEventHandler(
       }
     }
 
+    // Where each hospital sits. Only the hospitals are asked about, so this is
+    // five `in` queries rather than a read of the region collection.
+    const seatEdges: { source?: string; target?: string; deleted?: unknown }[] =
+      [];
+    for (const chunk of chunked(hospitalIds, IN_CHUNK)) {
+      const snap = await db
+        .collection("edges")
+        .where("target", "in", chunk)
+        .where("type", "==", "seat")
+        .select("source", "target", "deleted")
+        .get();
+      for (const doc of snap.docs) seatEdges.push(doc.data());
+    }
+
+    const regionIds = [
+      ...new Set(
+        seatEdges
+          .filter((edge) => edge.deleted !== true && !!edge.source)
+          .map((edge) => edge.source as string),
+      ),
+    ];
+    const regionTeryt = new Map<string, string>();
+    for (const chunk of chunked(regionIds, GET_ALL_CHUNK)) {
+      const snaps = await db.getAll(
+        ...chunk.map((id) => db.collection("nodes").doc(id)),
+        { fieldMask: ["teryt"] },
+      );
+      for (const snap of snaps) {
+        const teryt = snap.get("teryt");
+        if (typeof teryt === "string" && teryt) regionTeryt.set(snap.id, teryt);
+      }
+    }
+
+    // The most specific claim wins, the way `regionsByPlaceId` resolves it: a
+    // powiat beats the województwo around it. A longer TERYT is a finer region.
+    const placeTeryt = new Map<string, string>();
+    for (const edge of seatEdges) {
+      if (edge.deleted === true || !edge.source || !edge.target) continue;
+      const teryt = regionTeryt.get(edge.source);
+      if (!teryt) continue;
+      const held = placeTeryt.get(edge.target);
+      if (held && held.length >= teryt.length) continue;
+      placeTeryt.set(edge.target, teryt);
+    }
+    for (const place of places) {
+      const teryt = placeTeryt.get(place.id);
+      if (teryt) place.regionTeryt = teryt;
+    }
+
+    // Names for the sixteen. Region node ids are `teryt<code>`, so these are
+    // exact document reads rather than a query over the collection.
+    const wojCodes = [
+      ...new Set(
+        [...placeTeryt.values()]
+          .map((teryt) => wojewodztwoOf(teryt))
+          .filter((code): code is string => !!code),
+      ),
+    ];
+    const wojewodztwoNames: Record<string, string> = {};
+    for (const chunk of chunked(wojCodes, GET_ALL_CHUNK)) {
+      const snaps = await db.getAll(
+        ...chunk.map((code) => db.collection("nodes").doc(`teryt${code}`)),
+        { fieldMask: ["name", "teryt"] },
+      );
+      for (const snap of snaps) {
+        const name = snap.get("name");
+        const teryt = snap.get("teryt");
+        if (typeof name === "string" && typeof teryt === "string") {
+          wojewodztwoNames[teryt] = name;
+        }
+      }
+    }
+
     const now = new Date();
     return buildHospitalStats({
       places,
@@ -131,6 +215,7 @@ export default editorFreshCachedEventHandler(
       people,
       generatedAt: now.toISOString(),
       today: now.toISOString().slice(0, 10),
+      wojewodztwoNames,
     });
   },
 );
