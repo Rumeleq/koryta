@@ -195,15 +195,19 @@ async def _generate_selectors(
     rows: list[dict[str, Any]] = []
     domain_concurrency = max(
         1,
-        int(
-            article_workers()
-            or SELECTOR_DOMAIN_CONCURRENCY
-        ),
+        int(article_workers() or SELECTOR_DOMAIN_CONCURRENCY),
     )
     semaphore = asyncio.Semaphore(domain_concurrency)
 
+    verified = load_verified_selectors()
     tasks = []
+    skipped_verified = 0
     for domain, candidates in sorted(candidates_by_domain.items()):
+        selector = verified.get(domain)
+        if selector is not None:
+            rows.append(_verified_selector_row(domain, selector))
+            skipped_verified += 1
+            continue
         cached = existing.get(domain)
         if cached is not None and _selector_cache_valid(cached, model):
             rows.append(cached)
@@ -228,6 +232,8 @@ async def _generate_selectors(
             smoothing=0.05,
         ):
             rows.append(await task)
+
+    print(f"Skipped {skipped_verified:,} hardcoded domains")
 
     prompt_rows = [row for row in rows if row.get("status") == "needs_llm"]
     rows = [row for row in rows if row.get("status") != "needs_llm"]
@@ -604,6 +610,23 @@ def _selector_status_row(
         "sample_html_hashes": [],
         "selector_prompt_version": SELECTOR_PROMPT_VERSION,
         "model": model,
+    }
+
+
+def _verified_selector_row(
+    domain: str,
+    selector: str,
+) -> dict[str, Any]:
+    return {
+        "domain": domain,
+        "selector": selector,
+        "status": "verified",
+        "votes": 0,
+        "all_votes": {},
+        "sample_urls": [],
+        "sample_html_hashes": [],
+        "selector_prompt_version": None,
+        "model": None,
     }
 
 
