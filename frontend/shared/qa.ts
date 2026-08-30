@@ -48,6 +48,30 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
  * before the list could be read at all. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "osoba-rozpoznawana-po-rejestrze",
+    title: "Upload rozpoznaje osobę po wpisie w rejestrze, nie po imieniu",
+    description:
+      "Pipeline nie ma jednego, stałego zapisu czyjegoś imienia - raz przysyła " +
+      "„Andrzej Golimont”, raz „Andrzej Marcin Golimont”, bo wybiera je z listy, " +
+      "której kolejność nie jest ustalona. Upload porównywał dokładnie ten " +
+      "napis, więc druga pisownia zakładała drugą stronę: tak powstało 170 par " +
+      "stron opisujących jedną osobę. W drugą stronę było gorzej - dwóch " +
+      "różnych ludzi o tym samym imieniu i nazwisku trafiało na jedną stronę, a " +
+      "drugi z nich nadpisywał pierwszemu odnośnik do rejestru. Teraz upload " +
+      "szuka najpierw po wpisie w rejestr.io, który jest jeden na człowieka. Po " +
+      "imieniu dopasowuje się tylko do strony, która żadnego wpisu jeszcze nie " +
+      "ma - i wtedy jej ten wpis dopisuje. Strona z innym wpisem w rejestrze to " +
+      "nie jest ta sama osoba, choćby nazywała się tak samo.",
+    steps: [
+      "Poproś o upload osoby, która jest już na stronie, ale w pipeline ma inną pisownię imienia (np. z drugim imieniem). Nie powinna powstać druga strona - ma się zaktualizować istniejąca.",
+      "Sprawdź /admin/rewizje/kolejka: nie powinno przybyć nowej osoby o niemal identycznym imieniu.",
+      "Otwórz osobę bez wypełnionego rejestr.io i poproś o jej upload - odnośnik do rejestru ma się pojawić na istniejącej stronie, bez zakładania nowej.",
+      "Sprawdź przypadek odwrotny: dwie różne osoby o tym samym imieniu i nazwisku, o różnych wpisach w rejestrze, mają zostać dwiema stronami.",
+    ],
+    link: "/admin/rewizje/kolejka",
+    area: "admin",
+  },
+  {
     id: "kandydatura-bez-regionu-nie-blokuje-osoby",
     title: "Jedna kandydatura bez regionu nie przepada już razem z całą osobą",
     description:

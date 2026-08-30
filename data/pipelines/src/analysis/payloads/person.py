@@ -75,6 +75,7 @@ class PeoplePayloads(Pipeline[Person]):
         for person in result:
             unmapped.update(unmapped_committees(person.elections))
         report_unmapped_committees(unmapped)
+        report_collapsed_people()
         if self.args.only_changed:
             result = self.only_changed(ctx, result)
         return (
@@ -180,10 +181,7 @@ class PeoplePayloads(Pipeline[Person]):
                 f"https://pl.wikipedia.org/wiki/{wiki_name.replace(' ', '_')}"
             )
 
-        rejestr_ids = row["rejestrio_id"]
-        if len(rejestr_ids) > 2:
-            print(f"Found duplicated rejestr_ids: {rejestr_ids}")
-        rejestr_id = rejestr_ids[0]
+        rejestr_id = one_register_entry(row["rejestrio_id"])
         rejestrIo = f"https://rejestr.io/osoby/{rejestr_id}"
 
         return Person(
@@ -348,6 +346,72 @@ def unmapped_committees(elections: list[Election]) -> list[str]:
         for election in elections
         if election.committee and not parties_of_committee(election.committee)
     ]
+
+
+#: How many collapsed rows to name in the run report.
+COLLAPSED_PEOPLE_REPORTED = 20
+
+#: Rows whose `rejestrio_id` held more than one entry, by the ids it held.
+#: Module level because `map_person_payload` is called per row and the report is
+#: for the run: a count only means something next to the size of the run that
+#: produced it.
+collapsed_people: typing.Counter[str] = collections.Counter()
+
+
+def one_register_entry(rejestr_ids: typing.Sequence) -> str:
+    """The register entry to file this row under, of the ones it carries.
+
+    A row carrying two is two people. `create_people_table` groups by name and
+    birth *year*, and smooths years within one of each other across the whole
+    partition, so two strangers who share a name and were born a year apart come
+    out as one row holding both their register entries - and `any_value` has
+    already picked one of their birth dates arbitrarily by then. The pipeline's
+    own invariant test puts the floor at 135 such people
+    (`KNOWN_CONTRADICTIONS` in `tests/pipelines/test_invariants.py`).
+
+    Nothing here can undo that, and taking one entry is still better than
+    inventing a third: what it costs is the second person's identity, which is
+    then separated on the site by hand through `/api/nodes/split`.
+
+    **Sorted, which is the part that matters.** The list comes out of duckdb's
+    `list_distinct`, whose order is a hash and is neither the input order nor
+    stable across runs: adding one crawl reorders it. Taking `[0]` of that meant
+    the same collapsed row could be filed under entry A one run and entry B the
+    next - and now that `/api/ingest/person` identifies a person by their
+    register entry, an id that moves is an id that opens a second page. Numeric
+    where the ids are numeric, so 1956879 does not sort before 383093.
+
+    Reported rather than dropped, because the row is still most of a real
+    person: `report_collapsed_people` names them at the end of the run so the
+    split queue has somewhere to start.
+    """
+    ids = [str(value) for value in rejestr_ids if str(value)]
+    if not ids:
+        raise ValueError("A person payload needs at least one rejestr.io entry")
+    ids.sort(key=lambda value: (0, int(value)) if value.isdigit() else (1, value))
+    if len(ids) > 1:
+        collapsed_people[", ".join(ids)] += 1
+    return ids[0]
+
+
+def report_collapsed_people() -> None:
+    """Name the rows that are two people, so somebody can take them apart.
+
+    Every one of these is a page on the site that will hold both of their posts
+    and both of their candidacies, under whichever of the two names the run
+    picked. There is no way to tell them apart from here - the register entries
+    are the only evidence, and only one of them survives into the payload.
+    """
+    if not collapsed_people:
+        return
+    total = sum(collapsed_people.values())
+    print(
+        f"{total} payloads merge two or more rejestr.io entries into one "
+        f"person; each is a page that will hold two people's careers. "
+        f"Filed under the lowest entry of each set. The sets:"
+    )
+    for entries, count in collapsed_people.most_common(COLLAPSED_PEOPLE_REPORTED):
+        print(f"  {count:6d}  {entries}")
 
 
 def report_unmapped_committees(unmapped: typing.Counter[str]) -> None:

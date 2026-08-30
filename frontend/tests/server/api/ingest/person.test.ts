@@ -929,3 +929,171 @@ describe("api/ingest/person, a candidacy the site cannot place", () => {
     expect(result).not.toHaveProperty("unplacedElections");
   });
 });
+
+describe("api/ingest/person, one register entry is one human", () => {
+  /** The `nodes` collection, keyed by id. The lookups this suite is about are
+   * equality queries with a `type` filter, so the fake answers them by
+   * filtering rather than by returning whatever was queued next - which is the
+   * only way to tell a match on `rejestrIo` from a match on `name`. */
+  let nodes: Record<string, Record<string, unknown>> = {};
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function fakeQuery(constraints: [string, unknown][]): any {
+    return {
+      where: (field: string, _op: string, value: unknown) =>
+        fakeQuery([...constraints, [field, value]]),
+      limit: () => fakeQuery(constraints),
+      get: async () => {
+        const docs = Object.entries(nodes)
+          .filter(([, data]) =>
+            constraints.every(([field, value]) => data[field] === value),
+          )
+          .map(([id, data]) => ({
+            id,
+            ref: { id, parent: nodesParent },
+            data: () => data,
+          }));
+        // `limit(1)`, the way the endpoint asks for it.
+        return { empty: docs.length === 0, docs: docs.slice(0, 1) };
+      },
+    };
+  }
+
+  function payload(body: Record<string, unknown>) {
+    mockReadBody.mockResolvedValue({
+      parties: [],
+      companies: [],
+      elections: [],
+      ...body,
+    });
+  }
+
+  /** The node a revision was written to, by the id of the ref it was given. */
+  function revisionTargetId() {
+    const call = vi.mocked(createRevisionTransaction).mock.calls[0];
+    return (call?.[3] as unknown as { id: string } | undefined)?.id;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetUser.mockResolvedValue({ uid: "test-user-id", datascience: true });
+    nodes = {};
+    mockDoc.mockReset();
+    mockDoc.mockImplementation((id?: string) => ({
+      id: id ?? "new-doc-id",
+      parent: nodesParent,
+      ref: mockRef,
+    }));
+    mockWhere.mockImplementation((field: string, _op: string, value: unknown) =>
+      fakeQuery([[field, value]]),
+    );
+  });
+
+  it("matches a stored person whose name the pipeline spelled differently this run", async () => {
+    // The bug, in one payload. `list_distinct` orders by a hash, so the same
+    // human is "Andrzej Golimont" one run and "Andrzej Marcin Golimont" the
+    // next; matching on the name exactly filed 170 people under two pages
+    // each. The register entry is the same both times.
+    nodes.golimont = {
+      type: "person",
+      name: "Andrzej Marcin Golimont",
+      rejestrIo: "383093",
+      parties: [],
+    };
+    payload({ name: "Andrzej Golimont", rejestrIo: "383093" });
+
+    const result = await handler({} as any);
+
+    expect(result.personId).toBe("golimont");
+    expect(result.person).toBe("unchanged");
+    // No second page for the same human.
+    expect(createRevisionTransaction).not.toHaveBeenCalled();
+  });
+
+  it("gives a second register entry its own page instead of overwriting the first", async () => {
+    // The collapse, the other way round: two strangers who share a name are
+    // two people, and the old lookup put them on one page and let the second
+    // of them overwrite the first's `rejestrIo` on the way in. 36 nodes are
+    // still in that state.
+    nodes.nowak1961 = {
+      type: "person",
+      name: "Michał Nowak",
+      rejestrIo: "111111",
+      parties: [],
+    };
+    payload({ name: "Michał Nowak", rejestrIo: "222222" });
+
+    const result = await handler({} as any);
+
+    expect(result.person).toBe("created");
+    expect(result.personId).toBe("new-doc-id");
+    expect(revisionTargetId()).toBe("new-doc-id");
+    expect(createRevisionTransaction).toHaveBeenCalledWith(
+      mockDb,
+      expect.anything(),
+      expect.objectContaining({ uid: "test-user-id" }),
+      expect.anything(),
+      expect.objectContaining({
+        name: "Michał Nowak",
+        type: "person",
+        rejestrIo: "222222",
+      }),
+      expect.anything(),
+    );
+    // And the stranger's page is left alone.
+    expect(revisionTargetId()).not.toBe("nowak1961");
+  });
+
+  it("adopts the register entry onto a person stored without one", async () => {
+    // 880 people predate the pipeline sending a `rejestrIo`. Refusing to match
+    // them on the name would give every one of them a second page on the next
+    // run; the match writes the entry, so it happens once per person.
+    nodes.stary = { type: "person", name: "Jan Kowalski", parties: [] };
+    payload({ name: "Jan Kowalski", rejestrIo: "999999" });
+
+    const result = await handler({} as any);
+
+    expect(result.personId).toBe("stary");
+    expect(result.person).toBe("updated");
+    expect(createRevisionTransaction).toHaveBeenCalledWith(
+      mockDb,
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ rejestrIo: "999999" }),
+      expect.anything(),
+    );
+  });
+
+  it("still matches by name when the payload names no register entry", async () => {
+    // Nothing else identifies such a payload, and the pipelines that send a
+    // `rejestrIo` are not the only callers.
+    nodes.stary = {
+      type: "person",
+      name: "Jan Kowalski",
+      rejestrIo: "999999",
+      parties: [],
+    };
+    payload({ name: "Jan Kowalski" });
+
+    const result = await handler({} as any);
+
+    expect(result.personId).toBe("stary");
+    expect(createRevisionTransaction).not.toHaveBeenCalled();
+  });
+
+  it("never matches an article that happens to carry the person's name", async () => {
+    // An article titled "Paweł Obermeyer" - his facebook page - is stored
+    // beside the person of that name, and four such pairs were live when the
+    // `type` filter was added. Matching one of them would write a person's
+    // parties onto an article.
+    nodes.artykul = { type: "article", name: "Paweł Obermeyer" };
+    payload({ name: "Paweł Obermeyer", parties: ["PiS"] });
+
+    const result = await handler({} as any);
+
+    expect(result.person).toBe("created");
+    expect(revisionTargetId()).toBe("new-doc-id");
+    expect(revisionTargetId()).not.toBe("artykul");
+  });
+});
