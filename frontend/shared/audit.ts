@@ -18,6 +18,12 @@ export const auditActions = [
   "publish",
   "unpublish",
   "delete",
+  // Two people who were one page, and one person who was two. Both rewrite
+  // relations across nodes rather than changing what a single page says, so
+  // neither leaves a revision that explains where the graph moved to - the
+  // node it moved off may not even be readable afterwards.
+  "merge",
+  "split",
 ] as const;
 
 export type AuditAction = (typeof auditActions)[number];
@@ -39,6 +45,19 @@ export type AuditEntry = {
   /** Why the suggestion was turned down, or why the entry was removed. Only a
    * rejection and a removal carry one. */
   reason?: string;
+  /** Where a merged page's relations went, and which ones.
+   *
+   * A merge is the one action whose undo cannot be read back off the documents
+   * it touched: a relation moved onto the surviving page is indistinguishable
+   * from one that was always there, so nothing on either page says which of
+   * them to hand back. Only the ids are kept - what each relation said is in
+   * its own revisions, which the move leaves alone.
+   */
+  merge?: {
+    into: string;
+    moved: string[];
+    collapsed: string[];
+  };
 };
 
 /** Whether the action decides visibility rather than content, which is the cut
@@ -55,4 +74,6 @@ export const auditActionLabels: Record<AuditAction, string> = {
   publish: "Opublikowanie strony",
   unpublish: "Ukrycie strony",
   delete: "Usunięcie wpisu",
+  merge: "Scalenie duplikatu",
+  split: "Rozdzielenie strony",
 };

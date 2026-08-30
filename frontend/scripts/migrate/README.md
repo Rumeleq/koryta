@@ -102,6 +102,55 @@ repairs the 6088 documents already stored that way _and_ the function no longer
 does it. Without the second half the count would simply grow back — the people
 affected had gone from 105 to 461 in the month before it was noticed.
 
+## `merge-duplicate-people.ts`, and the two flags it adds
+
+It folds together the person pages that share a `rejestr.io` id — one human who
+got two pages because the ingest matched on the name string and the pipeline's
+name for him was not stable across runs ("Andrzej Golimont" one night, "Andrzej
+Marcin Golimont" the next). 170 pairs against the 2026-08-29 export. The cause
+is fixed in `server/api/ingest/person.post.ts`, which now matches on `rejestrIo`
+first; this repairs what the old rule already wrote.
+
+It is the one script here that does **not** run under a bare `npx tsx`:
+
+```bash
+npx tsx --tsconfig .nuxt/tsconfig.server.json \
+  scripts/migrate/merge-duplicate-people.ts --limit 10
+```
+
+Everything it knows about merging comes from `server/utils/merge.ts`, which is
+also what `/api/nodes/merge` calls — the same reasoning behind the admin button
+and behind 170 merges at once, rather than two copies that can disagree about
+what a duplicate relation is. `merge.ts` reaches its neighbours through the
+`~~/` alias, which plain tsx cannot resolve, so the run points it at Nuxt's
+generated server tsconfig. That is the trade `apply-company-categories.ts` made
+the other way when it copied `INTERNAL_FIELDS` rather than import it; here the
+thing being imported is the migration's whole subject, so a copy is not on.
+
+`--limit N` does the first N duplicate groups and stops, in a stable order, so
+the first run can do ten and be looked at. Use it: each relation the script
+writes fires `onEdgeWritten` (`functions/src/edges.ts`), which re-reads every
+edge of the relation's source node, and a full run is ~2000 of those. Not at a
+busy moment.
+
+Reading the dry run: it prints the first ten groups with both names, both ids
+and each page's relation count, then the totals, and it says so loudly if those
+totals are nowhere near the 170 groups / 2044 relations / 452 collapses / 72
+review cases measured against the export. The 72 are `election` relations the
+survivor already appears to hold and which are moved across anyway rather than
+collapsed — nothing stored separates two candidacies in one place in one year,
+so somebody has to read them on the surviving page afterwards.
+
+Each merge is one Firestore batch, so no merge can be left half-applied: a
+failure stops the script with everything before it whole and everything after it
+untouched, and re-running finishes the job because a page that already carries
+`merged_into` is skipped. A single merge needing more than 500 writes is
+reported and skipped rather than split across batches.
+
+It only repairs one page per person. The opposite error — 36 pages that are two
+people whose `rejestrIo` overwrote each other — is `needs_split` and
+`/api/nodes/split`, and is by hand.
+
 ## The invariants suite
 
 `data/pipelines/src/tests/pipelines/test_invariants.py` checks these properties

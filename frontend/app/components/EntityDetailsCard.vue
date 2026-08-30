@@ -39,6 +39,15 @@
             :to="`/admin/rewizje/${entity.id}`"
             data-testid="admin-revisions-link"
           />
+          <!-- The two verdicts about who this page is: a second copy of
+               somebody, or two people who were never told apart. They sit with
+               the other admin controls because that is where an admin already
+               looks when a page reads wrong. -->
+          <AdminNodeIdentityActions
+            :node-id="entity.id"
+            :node-name="entity.name"
+            node-type="person"
+          />
         </template>
         <DialogProposeEditNode
           v-if="entity && type === 'person'"
@@ -55,6 +64,14 @@
     </v-card-title>
     <template #append> </template>
     <v-card-text class="px-0 pt-2">
+      <!-- Above everything the page says about the person, because while the
+           mark stands, everything it says is about two of them. Admin-only:
+           the component gates itself. -->
+      <AdminNeedsSplitBanner
+        v-if="entity?.id"
+        :node-id="entity.id"
+        :needs-split="personEntity?.needs_split"
+      />
       <CardPersonInfo :person="personEntity" class="mb-2" />
       {{ entity?.content }}
     </v-card-text>
