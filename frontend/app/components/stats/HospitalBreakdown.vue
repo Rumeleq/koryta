@@ -1,5 +1,10 @@
 <template>
-  <StatsChartCard :title="title" :subtitle="subtitle" :loading="loading">
+  <StatsChartCard
+    :title="title"
+    :subtitle="subtitle"
+    :loading="loading"
+    hide-view-toggle-on-mobile
+  >
     <template #chart>
       <div
         v-if="rows.length === 0"
@@ -719,8 +724,13 @@ const paletteVars = computed(() => ({
    page came out 130px wider than the screen and had to be zoomed out to read at
    all. The two that go are the editorial pair: „do sprawdzenia” and the queue
    button, which are how a logged-in editor picks their next batch of people to
-   review. That is not work anybody does on a phone, and the count is still
-   there in the table view for a reader who wants it. */
+   review. That is not work anybody does on a phone.
+
+   Note that the backlog is then off the phone entirely: `hideViewToggleOnMobile`
+   takes the table view with it, and the table is where the count would
+   otherwise still be readable. Deliberate - both are for the same reader doing
+   the same job at a desk - but it does mean this row is the whole of what a
+   phone shows, so what stays in it has to be the reading, not the work. */
 @media (max-width: 599.98px) {
   .breakdown__row {
     /* 62px, not the 56px above: „znalezione” is one word and breaks to

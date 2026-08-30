@@ -3,26 +3,13 @@
        a 375px screen on nothing before a word was read. Kept from `sm` up,
        where there is room for it. -->
   <div class="py-4 px-0 pa-sm-4">
-    <div class="d-flex align-start flex-wrap ga-4 mb-6">
-      <div class="flex-grow-1">
-        <h1 class="text-h5 text-sm-h4 mb-1">
-          Rady nadzorcze szpitali publicznych
-        </h1>
-        <p class="text-body-2 text-medium-emphasis mb-0">
-          Szpital prowadzony jako spółka ma radę nadzorczą, a zasiadanie w niej
-          jest co do zasady odpłatne. Pokazujemy, z jakich partii są ludzie,
-          którzy zajmują te miejsca — i dlaczego nie liczymy tu rad społecznych.
-        </p>
-      </div>
-      <v-btn
-        to="/eksploruj/statystyki"
-        color="primary"
-        variant="tonal"
-        :prepend-icon="mdiArrowRight"
-      >
-        Statystyki bazy
-      </v-btn>
-    </div>
+    <!-- The heading and nothing else. The standfirst that stood here said what
+         a rada nadzorcza is, what we show and what we leave out - all three of
+         which the chart's own subtitle and the note under it say again, in
+         front of the numbers they qualify. The button beside it went to
+         /eksploruj/statystyki, which is the editors' page and not where a
+         reader of this one is going next. -->
+    <h1 class="text-h5 text-sm-h4 mb-4">Rady nadzorcze szpitali publicznych</h1>
 
     <v-alert
       v-if="error"
@@ -47,11 +34,13 @@
          bar, the exclusion note - is context for reading it rather than a way
          in. On a phone that was three screens of preamble before the first bar.
          They follow it now, in the same order. -->
+    <!-- No heading over this. „Podział na partie" stopped being true when the
+         chart gained a województwo and a szpital split, and the card below
+         titles itself with whichever one is showing - so the h2 was a line of
+         vertical space spent restating the card underneath it. The toggle it
+         used to share a row with stays: it is the one control above everything
+         it scopes, and the chart and the hospitals below change together. -->
     <div class="d-flex align-center flex-wrap ga-3 mb-1">
-      <h2 class="text-h6 mb-0">Podział na partie</h2>
-      <v-spacer />
-      <!-- One control, above everything it scopes: the chart and the list of
-           hospitals below it change together. -->
       <v-btn-toggle
         v-model="group"
         density="compact"
@@ -229,7 +218,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { mdiArrowRight, mdiScaleBalance } from "@mdi/js";
+import { mdiScaleBalance } from "@mdi/js";
 import {
   boardGroupLabels,
   boardGroupShortLabels,
