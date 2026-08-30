@@ -1,5 +1,17 @@
 <template>
-  <v-alert type="info" variant="tonal" class="mb-4" :icon="mdiAccountLock">
+  <!-- `color`, as the zrzutka alert on /eksploruj/tabela already does: with
+       `type="info"` alone Vuetify paints its own #2196f3 as the body text, and
+       on the 12% wash the tonal variant lays under it that is 2.74:1 - the
+       bold count and the icon with it. The type stays for the semantics; the
+       palette's info ink on the wash its own colour then lays measures
+       5.33:1. -->
+  <v-alert
+    type="info"
+    color="ink-info"
+    variant="tonal"
+    class="mb-4"
+    :icon="mdiAccountLock"
+  >
     <!-- Wraps rather than sits in one line: on a phone the button used to be
          pushed off the right edge by the text beside it, which is where the
          page's 5px of sideways scroll came from. -->

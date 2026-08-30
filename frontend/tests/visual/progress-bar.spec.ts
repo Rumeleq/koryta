@@ -74,9 +74,12 @@ test.describe("Postęp weryfikacji", () => {
 
   test("postep-weryfikacji-nowe", async ({ page }) => {
     test.setTimeout(120_000);
-    // The `hide-cta` variant. "Pomóż sprawdzać" leads to this very page, so
-    // the button is dropped here and the bar is a different shape for it -
-    // which is the reason this is a second shot rather than the same one.
+    // The card variant, which is the reason this is a second shot rather than
+    // the same one: /eksploruj/nowe gets the five-band outlined card, while
+    // /eksploruj/tabela gets the one-line band inside its query bar. The
+    // component draws no „Pomóż sprawdzać” at all any more - the only copy is
+    // the query bar's, on the other page - and the count below pins that, so
+    // a button cannot come back to a bar whose callers both hid it.
     await logIn(page, USERS.normal, "/eksploruj/nowe");
 
     const bar = await readyBar(page);

@@ -27,9 +27,15 @@
     />
     <v-card v-else class="ma-2" flat>
       <v-card-title class="text-wrap text-h5">
+        <!-- The drawer's title for every node that is not a person, and it
+             was `text-decoration-none text-primary`: the brand's pale sage on
+             the drawer's white is 1.85:1, against the 3:1 that `text-h5`'s
+             24px has to clear. The palette's sage ink is 6.43:1 there, and the
+             underline is back with it, because a reader who cannot tell sage
+             from grey has nothing else saying the title opens a page. -->
         <NuxtLink
           :to="generateEntityUrl(node.type, node.id, node.name)"
-          class="text-decoration-none text-primary"
+          class="text-ink-sage"
           target="_blank"
         >
           {{ node.name }}
