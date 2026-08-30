@@ -39,7 +39,9 @@
         <p class="text-caption text-medium-emphasis mb-1">{{ scaleNote }}</p>
 
         <div class="breakdown__row breakdown__row--head">
-          <div class="breakdown__label breakdown__caption">{{ dimensionLabel }}</div>
+          <div class="breakdown__label breakdown__caption">
+            {{ dimensionLabel }}
+          </div>
           <div class="breakdown__axis">
             <span
               v-for="tick in ticks"
@@ -52,8 +54,12 @@
             </span>
           </div>
           <div class="breakdown__caption text-right">znalezione</div>
-          <div class="breakdown__caption text-right">do sprawdzenia</div>
-          <div class="breakdown__caption">kolejka pracy</div>
+          <div class="breakdown__caption text-right breakdown__editorial">
+            do sprawdzenia
+          </div>
+          <div class="breakdown__caption breakdown__editorial">
+            kolejka pracy
+          </div>
         </div>
 
         <div
@@ -97,11 +103,11 @@
           <div class="breakdown__num breakdown__num--strong">
             {{ formatCount(row.seats) }}
           </div>
-          <div class="breakdown__num">
+          <div class="breakdown__num breakdown__editorial">
             {{ row.unreviewed === null ? "—" : formatCount(row.unreviewed) }}
           </div>
 
-          <div>
+          <div class="breakdown__editorial">
             <!-- Never a disabled control. A greyed-out button fails contrast
                  and tells a logged-out reader only that they cannot have it;
                  this is a live link that takes them to the thing they need to
@@ -185,7 +191,9 @@
                 {{ formatCount(row.seats) }}
               </td>
               <td class="text-right stats-numeric">
-                {{ row.unreviewed === null ? "—" : formatCount(row.unreviewed) }}
+                {{
+                  row.unreviewed === null ? "—" : formatCount(row.unreviewed)
+                }}
               </td>
               <td class="text-right stats-numeric">
                 {{ formatCount(row.total) }}
@@ -374,7 +382,10 @@ function segmentWidth(row: BreakdownRow, index: number): number {
   // can sum past the seat count. Scaling them to `seats` makes the double count
   // change the split inside the head rather than how long the head is.
   const scaleTo = total === 0 ? 0 : row.seats / total;
-  return Math.max(row.segments[index]!.seats * scaleTo * headUnit.value, minPct());
+  return Math.max(
+    row.segments[index]!.seats * scaleTo * headUnit.value,
+    minPct(),
+  );
 }
 
 function segmentStyle(row: BreakdownRow, index: number) {
@@ -423,7 +434,10 @@ const minWidthCost = computed(() => {
 });
 
 const legend = computed(() => {
-  const seen = new Map<string, { party: string; label: string; color: string }>();
+  const seen = new Map<
+    string,
+    { party: string; label: string; color: string }
+  >();
   for (const row of props.rows) {
     for (const seg of row.segments) {
       if (!seen.has(seg.party)) {
@@ -478,7 +492,9 @@ const paletteVars = computed(() => ({
 <style scoped>
 .breakdown__row {
   display: grid;
-  grid-template-columns: var(--bd-label, 190px) minmax(80px, 1fr) 74px 96px 132px;
+  grid-template-columns:
+    var(--bd-label, 190px) minmax(80px, 1fr)
+    74px 96px 132px;
   align-items: center;
   gap: 10px;
   padding: 4px 0;
@@ -678,7 +694,9 @@ const paletteVars = computed(() => ({
 
 @media (max-width: 959px) {
   .breakdown__row {
-    grid-template-columns: var(--bd-label, 120px) minmax(50px, 1fr) 56px 74px 116px;
+    grid-template-columns:
+      var(--bd-label, 120px) minmax(50px, 1fr)
+      56px 74px 116px;
     gap: 6px;
   }
 
@@ -690,6 +708,35 @@ const paletteVars = computed(() => ({
 
   .breakdown__label {
     font-size: 0.75rem;
+  }
+}
+
+/* Below `sm` the chart drops to what it is for: a name, a bar and the number
+   the bar draws.
+
+   Even at the tablet widths above, the five columns floor the row at 446px -
+   inside a card on a 375px phone there are about 310px to put it in, so the
+   page came out 130px wider than the screen and had to be zoomed out to read at
+   all. The two that go are the editorial pair: „do sprawdzenia” and the queue
+   button, which are how a logged-in editor picks their next batch of people to
+   review. That is not work anybody does on a phone, and the count is still
+   there in the table view for a reader who wants it. */
+@media (max-width: 599.98px) {
+  .breakdown__row {
+    /* 62px, not the 56px above: „znalezione” is one word and breaks to
+       „znalezion / e” in anything narrower. */
+    grid-template-columns: var(--bd-label, 108px) minmax(50px, 1fr) 62px;
+  }
+
+  /* Ten pixels back from the tablet width, spent on the lane. Two clamped
+     lines of a 140px column still carry enough of a hospital's name to tell it
+     from its neighbours, and the bars are what the row is for. */
+  .breakdown--wide-labels {
+    --bd-label: 140px;
+  }
+
+  .breakdown__editorial {
+    display: none;
   }
 }
 </style>

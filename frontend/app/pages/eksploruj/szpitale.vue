@@ -1,8 +1,13 @@
 <template>
-  <div class="pa-4">
+  <!-- The container this sits in already pads 16px, so `pa-4` spent a fifth of
+       a 375px screen on nothing before a word was read. Kept from `sm` up,
+       where there is room for it. -->
+  <div class="py-4 px-0 pa-sm-4">
     <div class="d-flex align-start flex-wrap ga-4 mb-6">
       <div class="flex-grow-1">
-        <h1 class="text-h4 mb-1">Rady nadzorcze szpitali publicznych</h1>
+        <h1 class="text-h5 text-sm-h4 mb-1">
+          Rady nadzorcze szpitali publicznych
+        </h1>
         <p class="text-body-2 text-medium-emphasis mb-0">
           Szpital prowadzony jako spółka ma radę nadzorczą, a zasiadanie w niej
           jest co do zasady odpłatne. Pokazujemy, z jakich partii są ludzie,
@@ -33,75 +38,15 @@
       variant="tonal"
       density="compact"
       class="mb-4"
-      text="Nie mamy jeszcze w bazie ani jednego miejsca w organie nadzoru szpitala publicznego. Liczby szpitali poniżej są prawdziwe, podziału na partie jeszcze nie ma."
+      text="Nie mamy jeszcze w bazie ani jednego miejsca w organie nadzoru szpitala publicznego. Liczby szpitali są prawdziwe, podziału na partie jeszcze nie ma."
     />
 
     <!-- ------------------------------------------------------------------ -->
-    <h2 class="text-h6 mb-3">W skrócie</h2>
-
-    <v-card variant="outlined" class="mb-4">
-      <v-card-text>
-        <v-skeleton-loader v-if="!stats" type="heading, text" />
-        <div v-else class="d-flex flex-wrap ga-8">
-          <StatsStatTile
-            v-for="tile in headlineTiles"
-            :key="tile.label"
-            v-bind="tile"
-          />
-        </div>
-      </v-card-text>
-    </v-card>
-
-    <v-card variant="outlined" class="mb-6">
-      <v-card-item>
-        <v-card-title class="text-subtitle-1 font-weight-medium">
-          Czym są nadzorowane szpitale publiczne
-        </v-card-title>
-        <v-card-subtitle class="text-wrap">
-          „Brak organu w KRS” to nie to samo co rada nadzorcza — rada społeczna
-          powstaje z ustawy i często nie trafia do rejestru.
-        </v-card-subtitle>
-      </v-card-item>
-      <v-card-text>
-        <v-skeleton-loader v-if="!stats" type="text@2" />
-        <StatsCompositionBar
-          v-else
-          :segments="segments"
-          summary="Podział szpitali publicznych według organu nadzoru wpisanego do KRS"
-        />
-      </v-card-text>
-    </v-card>
-
-    <!-- ------------------------------------------------------------------ -->
-    <!-- The exclusion, stated before the breakdown it applies to, because it
-         is the one thing a reader has to understand to read the numbers below.
-         It also has to be prominent for a second reason: a rada społeczna is
-         the body actually filled with radni and officials, so a reader who
-         notices it was dropped and finds no explanation would reasonably read
-         the omission as cherry-picking rather than as the fairness choice it
-         is. -->
-    <v-alert
-      type="info"
-      variant="tonal"
-      density="comfortable"
-      class="mb-4"
-      :icon="mdiScaleBalance"
-    >
-      <p class="mb-2">
-        <strong>Rada społeczna to nie rada nadzorcza.</strong> Rada społeczna
-        jest organem opiniodawczo-doradczym samodzielnego publicznego zakładu
-        opieki zdrowotnej. Ustawa o działalności leczniczej nie przewiduje dla
-        jej członków ani wynagrodzenia, ani diety — jedynie rekompensatę
-        utraconych zarobków, jeżeli pracodawca udzielił członkowi na czas
-        posiedzenia bezpłatnego zwolnienia z obowiązków pracowniczych (art. 48
-        ust. 9-10). Dlatego tych miejsc nie wliczamy do zestawienia.
-      </p>
-      <p class="mb-0">
-        {{ exclusionSummary }} Przełącznik poniżej pokazuje, co dokładnie
-        zostało wyłączone.
-      </p>
-    </v-alert>
-
+    <!-- The chart opens the page. It is the answer somebody came here for, and
+         everything that used to sit above it - the five counts, the composition
+         bar, the exclusion note - is context for reading it rather than a way
+         in. On a phone that was three screens of preamble before the first bar.
+         They follow it now, in the same order. -->
     <div class="d-flex align-center flex-wrap ga-3 mb-1">
       <h2 class="text-h6 mb-0">Podział na partie</h2>
       <v-spacer />
@@ -128,7 +73,7 @@
       {{ boardGroupLabels[group] }}
     </p>
 
-    <v-row class="mb-6">
+    <v-row class="mb-4">
       <v-col cols="12">
         <StatsHospitalBreakdown
           v-model:dimension="breakdown"
@@ -141,6 +86,75 @@
         />
       </v-col>
     </v-row>
+
+    <!-- The exclusion, directly under the chart it applies to, because it is
+         the one thing a reader has to understand to read those numbers. It also
+         has to be prominent for a second reason: a rada społeczna is the body
+         actually filled with radni and officials, so a reader who notices it
+         was dropped and finds no explanation would reasonably read the omission
+         as cherry-picking rather than as the fairness choice it is. The switch
+         it points at is the one directly above the chart, which is why it now
+         says „nad wykresem” rather than „poniżej”. -->
+    <v-alert
+      type="info"
+      variant="tonal"
+      density="comfortable"
+      class="mb-6"
+      :icon="mdiScaleBalance"
+    >
+      <p class="mb-2">
+        <strong>Rada społeczna to nie rada nadzorcza.</strong> Rada społeczna
+        jest organem opiniodawczo-doradczym samodzielnego publicznego zakładu
+        opieki zdrowotnej. Ustawa o działalności leczniczej nie przewiduje dla
+        jej członków ani wynagrodzenia, ani diety — jedynie rekompensatę
+        utraconych zarobków, jeżeli pracodawca udzielił członkowi na czas
+        posiedzenia bezpłatnego zwolnienia z obowiązków pracowniczych (art. 48
+        ust. 9-10). Dlatego tych miejsc nie wliczamy do zestawienia.
+      </p>
+      <p class="mb-0">
+        {{ exclusionSummary }} Przełącznik nad wykresem pokazuje, co dokładnie
+        zostało wyłączone.
+      </p>
+    </v-alert>
+
+    <!-- ------------------------------------------------------------------ -->
+    <h2 class="text-h6 mb-3">W skrócie</h2>
+
+    <v-card variant="outlined" class="mb-4">
+      <v-card-text>
+        <v-skeleton-loader v-if="!stats" type="heading, text" />
+        <!-- A grid rather than a wrapping flex row: laid out by content the
+             five tiles put four on a line and orphan the fifth, and the widest
+             hint decided how much room every other tile got. -->
+        <div v-else class="stat-tiles">
+          <StatsStatTile
+            v-for="tile in headlineTiles"
+            :key="tile.label"
+            v-bind="tile"
+          />
+        </div>
+      </v-card-text>
+    </v-card>
+
+    <v-card variant="outlined" class="mb-6">
+      <v-card-item>
+        <v-card-title class="text-subtitle-1 font-weight-medium text-wrap">
+          Czym są nadzorowane szpitale publiczne
+        </v-card-title>
+        <v-card-subtitle class="text-wrap">
+          „Brak organu w KRS” to nie to samo co rada nadzorcza — rada społeczna
+          powstaje z ustawy i często nie trafia do rejestru.
+        </v-card-subtitle>
+      </v-card-item>
+      <v-card-text>
+        <v-skeleton-loader v-if="!stats" type="text@2" />
+        <StatsCompositionBar
+          v-else
+          :segments="segments"
+          summary="Podział szpitali publicznych według organu nadzoru wpisanego do KRS"
+        />
+      </v-card-text>
+    </v-card>
 
     <!-- ------------------------------------------------------------------ -->
     <h2 class="text-h6 mb-3">Jak liczymy</h2>
@@ -295,7 +309,7 @@ const headlineTiles = computed(() => {
   ];
 });
 
-/** Said in the alert above the switch, so the number a reader is asked to
+/** Said in the alert under the chart, so the number a reader is asked to
  * accept as excluded is on the page next to the reason for excluding it. */
 const exclusionSummary = computed(() => {
   const data = stats.value;
@@ -352,3 +366,13 @@ const emptyText = computed(() =>
     : "Nie mamy jeszcze w bazie żadnego miejsca w radzie społecznej.",
 );
 </script>
+
+<style scoped>
+/* Five headline numbers. `auto-fit` over a 150px floor gives two columns on a
+   phone and one row on a desktop, without a breakpoint deciding it. */
+.stat-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px 32px;
+}
+</style>
