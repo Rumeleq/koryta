@@ -21,6 +21,7 @@
  */
 
 import { categoryTitle } from "./companyCategories";
+import { longDate } from "./dates";
 
 /** A query value as it reaches us: from `route.query` (string, repeated
  * string, or null), from the api's `Query` type (numbers, already coerced), or
@@ -376,10 +377,19 @@ export function queryChips(
 
   const minEmploymentDate = values(query.minEmploymentDate)[0];
   if (minEmploymentDate !== undefined) {
+    // Written out in Polish, because this string is read as prose: on the rail
+    // it stands beside „Tylko szkice” and in the share card inside a sentence,
+    // where „od 2024-01-15” is the one machine-shaped thing on the page.
+    //
+    // The url is the only source for it and anybody can type into a url, so
+    // the fallback prints whatever arrived rather than `longDate`'s „brak
+    // daty”: a chip that has to be cleared must say which filter it is, and
+    // the reader who typed the value is the only one who can recognise it.
+    const spelled = longDate(minEmploymentDate, "") || minEmploymentDate;
     chips.push({
       key: "minEmploymentDate",
-      label: `Zatrudnieni od ${minEmploymentDate}`,
-      short: `od ${minEmploymentDate}`,
+      label: `Zatrudnieni od ${spelled}`,
+      short: `od ${spelled}`,
       admin: true,
       clears: ["minEmploymentDate"],
     });

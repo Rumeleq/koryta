@@ -156,9 +156,20 @@ describe("queryChips", () => {
       minVotes: true,
     });
     expect(chips.map((chip) => chip.label)).toContain("Min. 5 głosów");
+    // Spelled out, not the ISO day the url carries: the rail and the share
+    // sentence read this as prose, beside chips like „tylko szkice”.
     expect(chips.map((chip) => chip.label)).toContain(
-      "Zatrudnieni od 2021-03-01",
+      "Zatrudnieni od 1 marca 2021",
     );
+  });
+
+  it("prints an unparseable employment date as it arrived", () => {
+    // The value comes from the url and nothing validates it on the way in. A
+    // chip that answered „Zatrudnieni od brak daty” would name no filter, and
+    // this one is closable: the reader has to recognise what they are clearing.
+    const [chip] = queryChips({ minEmploymentDate: "wczoraj" });
+    expect(chip?.label).toBe("Zatrudnieni od wczoraj");
+    expect(chip?.short).toBe("od wczoraj");
   });
 
   it("counts several employers instead of naming one of them", () => {

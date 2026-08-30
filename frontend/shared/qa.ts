@@ -48,6 +48,101 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
  * before the list could be read at all. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "tabela-kontrast-i-kolory",
+    title:
+      "Tabela eksploracji: czytelne kolory zamiast bladej zieleni, i kolor tylko tam, gdzie coś znaczy",
+    description:
+      "Zieleń i róż serwisu to kolory tła, a były używane jako kolor pisma: " +
+      "nazwisko w tabeli, żeton filtru i przycisk „Pomóż sprawdzać” miały " +
+      "kontrast 1,85:1 przy wymaganych 4,5:1, plakietka „szkic” 2,37:1, a " +
+      "żeton Konfederacji czarny napis na granacie, czyli 1,29:1. Serwis ma " +
+      "teraz drugą połowę palety: ciemne odcienie do pisania i blade do tła, " +
+      "każdy zmierzony, więc każde zestawienie jest czytelne bez zgadywania. " +
+      "Przy okazji strona wzięła trochę wyglądu strony podmiotu: zielone tło " +
+      "pod nagłówkami kolumn, bladozieloną pigułkę z ikoną kalendarza na " +
+      "dacie ostatniego zatrudnienia („od marca 2021” zamiast surowego „od " +
+      "2019-03-01”) i nagłówki grup z licznikiem w panelu filtrów. Zieleni " +
+      "jest przy tym tyle, ile coś mówi: zniknął pasek przy lewej krawędzi " +
+      "paska filtrów i pasek przy lewej krawędzi każdego wiersza, bo " +
+      "powtórzone w dziesięciu wierszach nie oddzielały niczego od niczego; " +
+      "podświetlenie wiersza pod kursorem zostało, bo wskazuje ten jeden " +
+      "wiersz. Nazwisko jest ciemnozielone i pogrubione, ale bez " +
+      "podkreślenia - to nie jest odnośnik, tylko otwarcie panelu, więc " +
+      "podkreślenie pojawia się dopiero pod kursorem. Przycisk otwierający " +
+      "wyszukiwarki przestał być różowym kółkiem i jest znowu samą ikoną, " +
+      "ciemną zamiast bladoróżowej: wypełnienie robiło z pomocniczej akcji " +
+      "najgłośniejszy element wiersza, głośniejszy niż nazwisko obok. Kolor " +
+      "niesie teraz znaczenie: zielone żetony mówią, czego tabela dotyczy, " +
+      "niebieskie gdzie, szare zawężenia redakcyjne, bursztynowy „Tylko " +
+      "szkice” i zielony „Tylko opublikowane” w tym samym kolorze co " +
+      "plakietka na wierszach, które zostawiają - a ikonę ma z nich tylko " +
+      "żeton kategorii, bo tylko jego napis („Szpitale”) sam nie mówi, czego " +
+      "dotyczy.",
+    steps: [
+      "Wejdź na /eksploruj/tabela: nazwiska mają być ciemnozielone i pogrubione, a nie blade, i bez podkreślenia. Najedź kursorem na nazwisko - podkreślenie ma się pojawić dopiero wtedy.",
+      "Ustaw filtr kategorii firm: żeton na pasku ma mieć wypełnione tło, ikonę sektora z lewej, a napis ma być czytelny, a nie w kolorze tła żetonu.",
+      "Ustaw jeszcze filtr województwa i „Min. głosy”: te żetony mają być bez ikony, bo ich napisy („Region: ...”, „Min. 5 głosów”) same mówią, czego dotyczą. Ikonę ma tylko żeton kategorii.",
+      "Ustaw filtr województwa i filtr kategorii naraz: żeton województwa ma być niebieski, a kategorii zielony, i mają się różnić na pierwszy rzut oka.",
+      "Znajdź osobę z partią Konfederacja: napis na granatowym żetonie ma być biały, a nie czarny. PO ma mieć czarny napis na pomarańczowym, nie biały.",
+      "Pod firmami: data ma stać w bladozielonej pigułce z ikoną kalendarza i brzmieć „od <miesiąc słownie> <rok>”, na przykład „od marca 2021”. Nigdzie nie może być surowej daty w rodzaju „od 2019-03-01”.",
+      "Przesuń kursor po wierszach: wiersz ma się delikatnie podświetlać na zielono. Przy lewej krawędzi wiersza nie może stać zielony pasek - ani przy lewej krawędzi paska filtrów nad tabelą.",
+      "Na szerokim ekranie sprawdź przycisk otwierający wyszukiwarki obok nazwiska: ma to być sama ciemna ikona, bez różowego kółka pod spodem, i ma być mniej widoczny niż nazwisko, obok którego stoi.",
+      "Przewiń tabelę w dół na komputerze: nagłówki kolumn przyklejają się do góry i mają mieć bladozielone tło, przez które nie prześwitują przejeżdżające pod nimi wiersze.",
+      "Zaloguj się i ustaw „Widoczność: Tylko szkice”: żeton filtru ma być bursztynowy, w tym samym kolorze co plakietki „szkic” przy nazwiskach. Po przełączeniu na „Tylko opublikowane” żeton ma być zielony.",
+      "Zalogowany sprawdź kolumnę „Twój głos”: po oddaniu głosu na plus liczba i strzałka mają być ciemnozielone, a nie jasne, i tak samo czerwone na minus.",
+      "Otwórz „Filtry”: nad każdą grupą ma być mała etykieta („Osoba i podmiot”, „Weryfikacja”, „Więcej filtrów”), a po prawej liczba ustawionych w niej filtrów, na przykład „2 filtry”. Grupa, w której nic nie ustawiono, nie ma liczby.",
+      "W „Więcej filtrów” wybierz kilka partii: żetony w polu wyboru mają mieć kolory partii, te same co przy nazwiskach w tabeli. Wybierz partię, dla której serwis nie ma koloru (np. Razem): ma być szara z czytelnym napisem, a nie ciemna.",
+      "Kliknij przycisk udostępniania: zdanie opisujące widok ma stać na bladozielonym tle z ikoną filtru, a oba przyciski kopiowania mają mieć ikony.",
+      "Ustaw filtr województwa i nie ustawiaj żadnej firmy: pod tabelą pojawia się apel o zrzutkę. Jego tekst ma być czytelny i ciemny, a nie pomarańczowy na pomarańczowym tle.",
+      "Wyloguj się i wejdź na /eksploruj/tabela: nad tabelą stoi niebieski baner „Zaloguj się...”. Jego tekst, pogrubiona liczba i ikona mają być ciemnoniebieskie, a nie blade.",
+      "Kliknij nazwisko i w panelu sprawdź przycisk „Zaproponuj zmianę”: napis ma być ciemnobursztynowy na jasnym tle, a nie pomarańczowy na pomarańczowym. Po wysłaniu zmiany odnośnik „Podgląd zmiany” w potwierdzeniu ma być podkreślony i w tym samym ciemnym niebieskim co zdanie obok.",
+      "Otwórz „Filtry” i wybierz cokolwiek w polu z listą: nazwa pola, która przeskakuje nad wybraną wartość, ma być czytelną szarością, a nie bladoszara.",
+      "Zmruż oczy albo ustaw w systemie skalę szarości i przejrzyj całą stronę: nigdzie nie może zostać napisu, który znika z tła. To jest test, który zgłoszenie opisywało.",
+    ],
+    link: "/eksploruj/tabela",
+    area: "public",
+  },
+  {
+    id: "tabela-kolory-partii-i-szkic",
+    title:
+      "Tabela eksploracji: kolory partii, krótszy podpis pod firmami, „szkic” przy nazwisku",
+    description:
+      "Cztery poprawki po przeglądzie scalonych kolumn. Żetony partii mają " +
+      "kolory partii - rysuje je ten sam komponent co profile, szuflada i " +
+      "statystyki, więc ta sama partia nie jest już szara w tabeli, a " +
+      "kolorowa wszędzie indziej; partia, dla której serwis nie ma koloru, " +
+      "dostaje szarą plakietkę zamiast gołego tekstu. Podpis pod firmami " +
+      "stracił etykietę „Ostatnie zatrudnienie:” i datę dzienną: są dwie " +
+      "ikony, kalendarz z miesiącem i rokiem („od marca 2021”) oraz teczka ze " +
+      "stażem („11 lat pracy”), każda z opisem po najechaniu. Staż jest " +
+      "zaokrąglony do pełnych lat, bo wcześniej wychodziło „12.4 lat pracy”: " +
+      "z kropką zamiast przecinka i z „lat” tam, gdzie po ułamku powinno stać " +
+      "„roku”. Staż krótszy niż rok pisze się jako „poniżej roku”, a nie „0 " +
+      "lat pracy”, i to samo zaokrąglenie obowiązuje teraz w kolumnie „Lata " +
+      "pracy” na /eksploruj/nowe, gdzie do tej pory wciąż stała liczba z " +
+      "kropką. " +
+      "Dymek przy przycisku wyszukiwarek pojawia się po 0,2 sekundy " +
+      "zamiast po dwóch - ostrzeżenie, że kliknięcie otwiera naraz wiele " +
+      "kart, nie miało dotąd szans się pokazać. Kolumna „Widoczność” " +
+      "zniknęła: nieopublikowana osoba ma plakietkę „szkic” przy nazwisku, " +
+      "przy opublikowanej nie ma nic, bo to ona jest regułą, a sortowanie po " +
+      "statusie zostało w menu sortowania na pasku.",
+    steps: [
+      "Wejdź na /eksploruj/tabela: żetony partii przy nazwiskach mają mieć kolory partii - PiS granatowy z białym napisem, PO pomarańczowy - takie same jak na stronie osoby.",
+      "Znajdź osobę z partią, dla której serwis nie ma koloru (np. Razem): ma mieć szarą plakietkę, a nie sam napis na białym tle.",
+      "Pod firmami mają być dwa podpisy z ikonami: kalendarz z „od <miesiąc słownie> <rok>” i teczka z „N lat pracy”. W samym wierszu nie może być już napisu „Ostatnie zatrudnienie:”, daty w rodzaju 2021-03-01 ani liczby z kropką („12.4 lat pracy”) - „Ostatnie zatrudnienie” zostaje tylko jako nazwa sortowania w menu.",
+      "Najedź kursorem na każdy z tych podpisów - przeglądarka ma pokazać, co dana ikona znaczy: początek ostatniego zatrudnienia i łączny staż.",
+      "Najedź na przycisk wyszukiwarek obok nazwiska (ikona otwierania w nowej karcie): dymek „Otwiera wiele kart wyszukiwania jednocześnie...” ma się pokazać od razu, a nie po dwóch sekundach nieruchomego kursora.",
+      "Zaloguj się i ustaw „Widoczność: Tylko szkice”: kolumny „Widoczność” nie ma, a przy każdym nazwisku stoi mała plakietka „szkic”. Po przełączeniu na „Tylko opublikowane” nie ma żadnej plakietki - i tak ma być.",
+      "Zalogowany otwórz menu sortowania na pasku: ma tam nadal być „Status”. Wybierz je - tabela ma się przeładować i nie może być pusta. Wylogowany tej pozycji nie ma.",
+      "Otwórz zalogowany link /eksploruj/tabela?sortBy=visibility&sortDesc=true - lista ma się załadować, mimo że nie ma już nagłówka, w który dałoby się kliknąć.",
+      "Zwęź okno do 390px: oba podpisy pod firmami mają się zmieścić bez poziomego przewijania, a długa nazwa partii ma zostać ucięta wielokropkiem, zamiast rozpychać kolumnę z nazwiskiem.",
+      "Zaloguj się i otwórz /eksploruj/nowe: w kolumnie „Lata pracy” ma stać sama liczba całkowita („12”), nigdzie nie może być kropki ani części dziesiętnej. Klikaj „Następna osoba” kilka razy - osoba z krótkim stażem ma mieć „poniżej roku”, a osoba bez znanego zatrudnienia pustą komórkę, nie „0”.",
+    ],
+    link: "/eksploruj/tabela",
+    area: "public",
+  },
+  {
     id: "tabela-pasek-zapytania",
     title: "Tabela eksploracji: jeden pasek zamiast ekranu filtrów",
     description:
@@ -60,19 +155,19 @@ export const QA_ITEMS: QaItem[] = [
       "pod nim drugą linijkę z postępem sprawdzania, swoim wkładem i " +
       "skrótami do czterech najczęściej używanych filtrów weryfikacji. " +
       "Kolumny są scalone: „Firmy” niosą datę ostatniego zatrudnienia i " +
-      "staż („od 2021-03-01 · 11 lat pracy”), „Oceny” liczbę notatek, a " +
+      "staż („od marca 2021” i „11 lat pracy”), „Oceny” liczbę notatek, a " +
       "„Lata pracy” i „Notatki” przeniosły się do menu sortowania w " +
       "nagłówkach tych kolumn - obie liczby są więc nadal w wierszu, po " +
       "którym się sortuje. Kolumna „Eksploruj” " +
-      "zniknęła - lupa robiła to samo co kliknięcie w nazwisko, a różowy " +
-      "przycisk wyszukiwarek stoi teraz obok nazwiska. Baner logowania, " +
+      "zniknęła - lupa robiła to samo co kliknięcie w nazwisko, a przycisk " +
+      "wyszukiwarek stoi teraz obok nazwiska. Baner logowania, " +
       "apel o zrzutkę i lista wybranych firm są pod tabelą.",
     steps: [
       "Wejdź na /eksploruj/tabela wylogowany: nad tabelą ma być tylko jeden pasek z nagłówkiem „Powiązania osób i spółek publicznych”, a pierwsze nazwisko widoczne bez przewijania.",
       "Kliknij „Filtry”, wybierz kategorię i zamknij panel - na pasku ma przybyć żeton z nazwą kategorii, a licznik przy przycisku ma pokazać „Filtry (1)”.",
       "Kliknij x na tym żetonie: filtr znika z paska i z adresu strony, a liczba osób obok się zmienia.",
       "Ustaw kilka filtrów naraz i sprawdź, że żetony zawijają się do drugiej linijki zamiast chować się poza ekranem; potem kliknij „Wyczyść” - mają zniknąć wszystkie za jednym razem.",
-      "Kliknij nagłówek kolumny „Firmy”, a potem otwórz jego menu i wybierz sortowanie po latach pracy - tabela ma się przeładować i nie może być pusta, a pod firmami ma stać podpis „Ostatnie zatrudnienie: <data> · N lat pracy”, czyli liczba, po której właśnie posortowałeś.",
+      "Kliknij nagłówek kolumny „Firmy”, a potem otwórz jego menu i wybierz sortowanie po latach pracy - tabela ma się przeładować i nie może być pusta, a pod firmami mają stać dwa podpisy z ikonami: „od marca 2021” i „N lat pracy”, czyli liczba, po której właśnie posortowałeś.",
       "To samo w kolumnie „Oceny”: menu ma dawać sortowanie po sumie ocen i po liczbie notatek, a pod sumą ocen ma być podpis „N notatek”. Wiersz bez notatek ma zostać jednolinijkowy.",
       "Sprawdź przycisk sortowania na pasku: na świeżo otwartej tabeli ma pisać „Sortowanie” bez strzałki, a po wybraniu sortowania skróconą nazwę („Zatrudnienie”, „Oceny”, „Notatki”) i strzałkę kierunku.",
       "Otwórz ręcznie stary link /eksploruj/tabela?sortBy=latestEmploymentStart&sortDesc=true - tabela ma się wypełnić danymi, a nie pokazać „Brak danych”.",
@@ -174,7 +269,7 @@ export const QA_ITEMS: QaItem[] = [
       "Sprawdź kolumnę „Firmy”: mają w niej być plakietki firm, a pod nimi data ostatniego zatrudnienia. Plakietki wyborów stoją na komputerze w osobnej kolumnie „Wybory”, a poniżej 960 px wracają do tej samej komórki.",
       "Najedź na plakietkę firmy i na plakietkę wyborów - dymki z pełną nazwą firmy oraz z okręgiem, województwem i komitetem mają działać jak wcześniej.",
       "Zwęź okno poniżej 960 px albo wejdź z telefonu - kolumny mają być dwie, nazwa partii ma się mieścić w całości albo być ucięta dopiero na szerokości kolumny, a tabeli nie da się przewinąć w bok.",
-      "Nadal na wąskim ekranie: pod firmami ma być „od <data> · N lat pracy”, bez pełnego podpisu „Ostatnie zatrudnienie” - na te lata nie ma tu osobnej kolumny.",
+      "Nadal na wąskim ekranie: pod firmami mają być lata pracy, bo osobnej kolumny na nie tu nie ma - od czasu kolorów partii jako dwa podpisy z ikonami, „od marca 2021” i „N lat pracy”, a nie jeden „od <data> · N lat pracy”.",
       "Kliknij nagłówek „Firmy” - tabela ma się posortować, a w adresie ma się pojawić sortBy=latestEmploymentStart.",
       "Zalogowany wejdź na /eksploruj/tabela?sortBy=latestEmploymentStart&sortDesc=true - lista ma się załadować (nie może być pusta), a strzałka sortowania ma stać przy „Firmach”.",
       "Kliknij nazwisko - w szufladzie mają być te same partie, firmy i wybory, w pełnej postaci.",
@@ -207,7 +302,7 @@ export const QA_ITEMS: QaItem[] = [
       "Pod nazwiskiem osoby ma być drobny podpis „Suma ocen: N” - ta sama liczba, która wcześniej stała w kolumnie „Głosy łącznie”.",
       "Przełącz kolejność na „Najwyżej oceniane” i klikaj „Następna osoba”: „Suma ocen” pod nazwiskiem ma maleć albo zostawać taka sama, nigdy rosnąć. To potwierdza, że liczba pod nazwiskiem jest tą, po której sortuje się kolejka.",
       "Przewiń w dół do sekcji „Notatki”: są tam notatki tej osoby, także cudze, w całości - dlatego licznik notatek nie jest już potrzebny w tabeli.",
-      "Wejdź na /eksploruj/tabela: kolumna „Widoczność” jest tam nadal (dla zalogowanego), a na szerokim ekranie pod nazwiskiem nie ma „Sumy ocen”. Po pasku zapytania nie ma tam już kolumn „Notatki” ani „Głosy łącznie” - liczba ocen stoi w kolumnie „Oceny”, a na telefonie wraca jako podpis pod nazwiskiem.",
+      "Wejdź na /eksploruj/tabela: na szerokim ekranie pod nazwiskiem nie ma „Sumy ocen”. Po pasku zapytania nie ma tam już kolumn „Notatki” ani „Głosy łącznie” - liczba ocen stoi w kolumnie „Oceny”, a na telefonie wraca jako podpis pod nazwiskiem. Kolumny „Widoczność” nie ma tam już wcale - od czasu kolorów partii zalogowany dostaje w jej miejsce plakietkę „szkic” przy nazwisku.",
       "Zwęź okno do szerokości telefonu i wróć na /eksploruj/nowe: jeśli tabela się nie mieści, ma się przewijać w poziomie wewnątrz karty, a sama strona nie ma jechać w bok.",
     ],
     link: "/eksploruj/nowe",

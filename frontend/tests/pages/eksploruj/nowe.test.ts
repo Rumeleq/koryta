@@ -255,6 +255,62 @@ describe("/eksploruj/nowe", () => {
     expect(keys).not.toContain("visibility");
   });
 
+  /** The „Lata pracy” column, drawn by Vuetify itself.
+   *
+   * explore/Table.vue has no `item.experience` slot and suppresses its own
+   * rounded caption on a page that declares this column, so the header's
+   * `value` function is the only thing between the row and the raw figure
+   * `shared/stats.ts` computes. Rendered through a real data table rather than
+   * called directly: a Vuetify release that stopped consulting `value` would
+   * put „12.4” back on the page and pass a test that only called the function.
+   */
+  async function experienceCell(
+    headers: Record<string, unknown>[],
+    experience: number,
+  ) {
+    const table = mount(
+      {
+        props: ["headers", "items"],
+        // `mobile` off: below 1280px Vuetify prints the column title into the
+        // cell as well, which is the width happy-dom reports.
+        template: `<v-data-table-server
+          :headers="headers"
+          :items="items"
+          :items-length="items.length"
+          :mobile="false"
+          hide-default-footer
+        />`,
+      },
+      {
+        props: {
+          headers,
+          items: [{ id: "person-1", name: "Testowa Osoba", experience }],
+        },
+        global: { plugins: [vuetify] },
+      },
+    );
+    await flushPromises();
+
+    const cells = table.findAll("tbody td");
+    expect(cells).toHaveLength(headers.length);
+    return cells[2]!.text();
+  }
+
+  it("prints whole years in the „Lata pracy” column, not 12.4", async () => {
+    const wrapper = await mountPage();
+    const headers = wrapper
+      .findComponent({ name: "ExploreTable" })
+      .props("headers") as Record<string, unknown>[];
+
+    expect(await experienceCell(headers, 12.4)).toBe("12");
+    expect(await experienceCell(headers, 1.6)).toBe("2");
+    // Rounding on its own would answer four months of work with „0”, a row
+    // saying this person has never worked anywhere.
+    expect(await experienceCell(headers, 0.4)).toBe("poniżej roku");
+    // Nothing known, nothing printed - „0” would be a claim.
+    expect(await experienceCell(headers, 0)).toBe("");
+  });
+
   /** "Widoczność" used to be pushed onto the list for anybody signed in, and
    * this page is behind the auth middleware - so every reader had it. */
   it("does not bring Widoczność back for a signed-in reader", async () => {
@@ -285,6 +341,18 @@ describe("/eksploruj/nowe", () => {
     expect(
       wrapper.findComponent({ name: "ExploreTable" }).props("scoreWithName"),
     ).toBe(true);
+  });
+
+  /** /eksploruj/tabela replaced its „Widoczność” column with a „szkic” badge
+   * in the name cell, in the shared table both pages mount. This queue
+   * hardcodes `visibility: "private"`, so that badge would be on every row it
+   * ever draws - which is the column it deleted, one word shorter. */
+  it("does not take the draft badge instead", async () => {
+    const wrapper = await mountPage();
+
+    expect(
+      wrapper.findComponent({ name: "ExploreTable" }).props("draftWithName"),
+    ).toBe(false);
   });
 
   /** The queue is where a wrongly merged person is most likely to be caught, so
