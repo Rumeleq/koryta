@@ -14,7 +14,13 @@ import {
   findEdgeMatches,
 } from "~~/server/utils/edges";
 import { electionPositions } from "~~/shared/misc";
-import type { Edge, Article, Person, ElectionPosition } from "~~/shared/model";
+import type {
+  Edge,
+  Article,
+  Person,
+  ElectionPosition,
+  NodeType,
+} from "~~/shared/model";
 import { pageIsPublic } from "~~/shared/model";
 import {
   personRequestSchema,
@@ -60,7 +66,7 @@ export default defineEventHandler(async (event) => {
     // The document, not just its id: the update below needs the visibility
     // stored on it, and this query has already read it - asking again would be
     // a second read of every person in the payload.
-    const personDoc = await lookupNodeDoc(ctx, "name", body.name);
+    const personDoc = await lookupPersonDoc(ctx, body);
     let personId: string | undefined = personDoc?.id;
     if (!personId) {
       const personRef = db.collection("nodes").doc();
@@ -560,18 +566,72 @@ async function lookupNode(
   return (await lookupNodeDoc(ctx, field, value))?.id;
 }
 
-/** The stored node itself, for callers that need more of it than its id. */
+/** The stored node itself, for callers that need more of it than its id.
+ *
+ * `type` is part of every lookup because a name is not unique across kinds: an
+ * article titled "Pawe\u0142 Obermeyer" - his facebook page - is stored beside the
+ * person of that name, and an equality query with `limit(1)` and no ordering
+ * would hand back whichever of them Firestore reached first. Four such pairs
+ * were live when this was written, and matching one of them would have written
+ * a person's parties onto an article.
+ */
 async function lookupNodeDoc(
   ctx: Context,
   field: string,
   value: string,
+  type?: NodeType,
 ): Promise<FirebaseFirestore.DocumentSnapshot | undefined> {
-  const snap = await ctx.db
-    .collection("nodes")
-    .where(field, "==", value)
-    .limit(1)
-    .get();
+  let query = ctx.db.collection("nodes").where(field, "==", value);
+  if (type) query = query.where("type", "==", type);
+  const snap = await query.limit(1).get();
   return snap.empty ? undefined : snap.docs[0];
+}
+
+/** The person this payload is about, if the site already has them.
+ *
+ * The name is not the identity and never was. The pipeline picks it out of a
+ * `list_distinct` whose order is a hash, so the same human is "Andrzej
+ * Golimont" one run and "Andrzej Marcin Golimont" the next; matching on it
+ * exactly filed 170 people under two pages each, and matching on it loosely
+ * would file two Micha\u0142 Nowaks under one. `rejestrIo` is the identity - one
+ * register entry is one human - and the payload has carried it all along.
+ *
+ * So, in order:
+ *
+ * 1. The register entry, where the payload names one. Exact, and enough: two
+ *    spellings of one entry are one person whatever they are called.
+ * 2. Failing that, the name - but only onto a page that has *no* register entry
+ *    of its own. 880 people predate the pipeline sending one, and refusing to
+ *    match them would give every one of them a second page on the next run. The
+ *    match adopts the entry, so it happens once per person.
+ * 3. A page whose register entry is a *different* one is not a match, however
+ *    the two are spelled. That is the whole of the collapse bug: it is what
+ *    used to put two strangers who share a name on one page, and let the second
+ *    of them overwrite the first's `rejestrIo` on the way in.
+ *
+ * A payload with no `rejestrIo` at all still matches by name alone. Nothing
+ * else identifies it, and the pipelines that send one are not the only callers.
+ */
+async function lookupPersonDoc(
+  ctx: Context,
+  body: PersonRequest,
+): Promise<FirebaseFirestore.DocumentSnapshot | undefined> {
+  if (body.rejestrIo) {
+    const byRegister = await lookupNodeDoc(
+      ctx,
+      "rejestrIo",
+      body.rejestrIo,
+      "person",
+    );
+    if (byRegister) return byRegister;
+  }
+
+  const byName = await lookupNodeDoc(ctx, "name", body.name, "person");
+  if (!byName) return undefined;
+
+  const storedRegister = byName.data()?.rejestrIo;
+  if (!body.rejestrIo || !storedRegister) return byName;
+  return storedRegister === body.rejestrIo ? byName : undefined;
 }
 
 /** The edge recording this fact, creating it if the database has no such edge.

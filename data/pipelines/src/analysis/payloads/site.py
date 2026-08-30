@@ -239,7 +239,11 @@ class SiteSnapshot:
     """
 
     def __init__(self, nodes: pd.DataFrame, edges: pd.DataFrame) -> None:
+        #: People by their rejestr.io link, which is what identifies them. See
+        #: `person_for`.
         self.people: dict[str, dict] = {}
+        #: People by name, for the ones the site has no register link for.
+        self.people_by_name: dict[str, dict] = {}
         self.companies: dict[str, str] = {}
         #: The same companies as `self.companies`, whole rather than by id.
         #: `CompaniesPayloads` compares fields; the person payload only ever
@@ -258,11 +262,19 @@ class SiteSnapshot:
                 continue
             self.node_ids.add(node_id)
             node_type = node.get("type")
-            if node_type == "person" and "name" in node:
-                # `limit(1)` on an equality query: with two nodes of one name
-                # the ingest takes whichever Firestore hands it first, and so
-                # do we. Keeping the first is at least stable across runs.
-                self.people.setdefault(str(node["name"]), node)
+            if node_type == "person":
+                register = field(node, "rejestrIo")
+                if register is not None:
+                    self.people.setdefault(str(register), node)
+                if "name" in node:
+                    # `limit(1)` on an equality query: with two nodes of one
+                    # name the ingest takes whichever Firestore hands it first,
+                    # and so do we. Keeping the first is at least stable across
+                    # runs. 170 names identify two people each, so this is not
+                    # hypothetical - but it only decides the fallback now, and
+                    # the fallback only fires for somebody with no register
+                    # link at all.
+                    self.people_by_name.setdefault(str(node["name"]), node)
             elif node_type == "place" and "krsNumber" in node:
                 self.companies.setdefault(str(node["krsNumber"]), node_id)
                 self.company_nodes.setdefault(str(node["krsNumber"]), node)
@@ -289,6 +301,36 @@ class SiteSnapshot:
             KorytaEdges(date).read_or_process(ctx),
         )
 
+    def person_for(self, payload: typing.Mapping[str, typing.Any]) -> dict | None:
+        """The stored person this payload would land on, or None for a new one.
+
+        Mirrors `lookupPersonDoc` in `frontend/server/api/ingest/person.post.ts`
+        exactly, and has to: this filter exists to predict what an upload would
+        write, and a filter that identifies people differently from the ingest
+        predicts the wrong page. It would drop a payload as a no-op against a
+        node the upload was never going to touch.
+
+        The register link first, because that is the identity - the name is not,
+        and matching on it exactly is what filed 170 people under two pages
+        each. The name only as a fallback, and only onto somebody the site has
+        no register link for, because a page carrying a *different* link is a
+        different human however the two are spelled.
+        """
+        register = field(payload, "rejestrIo")
+        if register is not None:
+            stored = self.people.get(str(register))
+            if stored is not None:
+                return stored
+
+        by_name = self.people_by_name.get(str(payload.get("name")))
+        if by_name is None:
+            return None
+
+        stored_register = field(by_name, "rejestrIo")
+        if register is None or stored_register is None:
+            return by_name
+        return by_name if str(stored_register) == str(register) else None
+
     def changes(self, payload: typing.Mapping[str, typing.Any]) -> list[str]:
         """What uploading this payload would write. Empty means it is a no-op.
 
@@ -296,7 +338,7 @@ class SiteSnapshot:
         what tell a reader whether a run is 300 new people or 3000 candidacies
         waiting on a committee.
         """
-        stored = self.people.get(str(payload.get("name")))
+        stored = self.person_for(payload)
         if stored is None:
             return [NEW_PERSON]
 
