@@ -82,6 +82,42 @@ describe("OmniSearch", () => {
     await input.setValue("Person");
   });
 
+  it("keeps a hit whose middle name sits between the words typed", async () => {
+    // Vuetify filters the menu again on the client, and its own filter wants
+    // the query to appear in the title as one substring - which threw away the
+    // result the server had just been taught to find. Two of every five people
+    // in the database carry a middle name, so this was the whole bug on its
+    // own. Read off the prop rather than the rendered menu: the menu lives in
+    // a teleport that only exists once the field is focused, and what is worth
+    // pinning here is which filter the field was handed.
+    const wrapper = mount(
+      defineComponent({
+        render() {
+          return h(Suspense, null, {
+            default: () => h(OmniSearch),
+            fallback: () => h("div", "fallback"),
+          });
+        },
+      }),
+      { global: { plugins: [vuetify, router] } },
+    );
+
+    await flushPromises();
+
+    const filter = wrapper
+      .findComponent({ name: "VAutocomplete" })
+      .props("customFilter") as (value: string, query: string) => boolean;
+
+    expect(filter("Andrzej Józef Namysło", "Andrzej Namysło")).toBe(true);
+    expect(filter("Andrzej Józef Namysło", "Andrzej N")).toBe(true);
+    // Still narrows the party rows, which never go near the server.
+    expect(filter("PO", "PO")).toBe(true);
+    expect(filter("PiS", "PO")).toBe(false);
+    expect(filter("Anna Nowak", "Andrzej Namysło")).toBe(false);
+
+    wrapper.unmount();
+  });
+
   it.skip("redirects to place for 'rect' nodes", async () => {
     // Spy on router push
     const pushSpy = vi.spyOn(router, "push");

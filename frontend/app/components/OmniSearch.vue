@@ -18,6 +18,7 @@
       density="comfortable"
       :hide-details="true"
       :menu-icon="mdiMagnify"
+      :custom-filter="matchesTypedWords"
       clearable
       :loading="loading"
       single-line
@@ -82,6 +83,7 @@ import {
   mdiMapMarkerRadiusOutline,
 } from "@mdi/js";
 import { parties } from "~~/shared/misc";
+import { nameMatchesTokens, searchTokens } from "~~/shared/search";
 import { generateEntityUrl } from "~/composables/slugs";
 import { omniSearchTarget } from "~/composables/omniSearch";
 import type { NodeType } from "~~/shared/model";
@@ -152,6 +154,26 @@ const onNodeCreated = () => {
   search.value = null;
   nodeGroupPicked.value = null;
   autocompleteFocus.value = false;
+};
+
+/** Which of the items on the menu survive what has been typed.
+ *
+ * Vuetify filters the list again on the client, and its own filter wants the
+ * query to appear in the title as one substring - which threw away every hit
+ * `/api/search` had just gone out of its way to find, "Andrzej Namysło" being
+ * nowhere inside "Andrzej Józef Namysło". Matching each typed word against a
+ * different word of the title is the rule the server now searches by, so the
+ * two agree on what a hit is.
+ *
+ * The substring test stays as the first branch: the parties and „Lista
+ * wszystkich osób” are client-side entries that never go near the server, and
+ * they were being narrowed by exactly that rule.
+ */
+const matchesTypedWords = (title: string, query: string) => {
+  const typed = query.trim();
+  if (!typed) return true;
+  if (title.toLowerCase().includes(typed.toLowerCase())) return true;
+  return nameMatchesTokens(title, searchTokens(typed));
 };
 
 type ListItem = {
