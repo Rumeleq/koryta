@@ -221,7 +221,7 @@ def test_a_repeated_row_is_a_second_fact_the_site_may_not_have():
     `findEdgeOrCreate` reads a repeat as a second fact rather than a duplicate,
     so the second row goes looking for a second stored edge and does not find
     one here. What it does when there *are* two is
-    `test_a_repeated_row_is_kept_even_when_both_spells_are_stored`.
+    `test_a_repeated_row_matches_the_second_stored_spell`.
     """
     snapshot = SiteSnapshot(nodes(), edges(STORED_EMPLOYMENT))
 
@@ -230,21 +230,36 @@ def test_a_repeated_row_is_a_second_fact_the_site_may_not_have():
     ]
 
 
-def test_a_repeated_row_is_kept_even_when_both_spells_are_stored():
-    """Mirroring an ingest that would write here, rather than being right.
+def test_a_repeated_row_matches_the_second_stored_spell():
+    """Two rows saying one thing, two stored edges saying it: nothing to write.
 
-    `findEdgeOrCreate` takes `same.filter(unclaimed)[occurrence]`, and claiming
-    a match already removes it from that list - so the second of two
-    indistinguishable rows looks for index 1 of a one-element list, misses, and
-    creates a third edge. The site grows by one per run for as long as that
-    holds, and a filter that called this a no-op would hide it.
+    This used to assert the opposite, mirroring an ingest that would have
+    written a third edge here - `findEdgeOrCreate` counted a same-identity
+    claim twice, once through `occurrence` and once by filtering it out, so the
+    second row looked for index 1 of a one-element list and missed. Round-
+    tripping the 31 August export found 826 groups on the site that a re-upload
+    would have grown that way. The ingest now counts it once and so does this.
     """
     stored_twice = edges(
         STORED_EMPLOYMENT, dict(STORED_EMPLOYMENT, id="edge-employed-2")
     )
 
+    assert (
+        SiteSnapshot(nodes(), stored_twice).changes(
+            payload(companies=[EMPLOYMENT, EMPLOYMENT])
+        )
+        == []
+    )
+
+
+def test_a_third_repeated_row_is_still_a_fact_the_site_lacks():
+    """The collection settles at max(rows, stored), never below it."""
+    stored_twice = edges(
+        STORED_EMPLOYMENT, dict(STORED_EMPLOYMENT, id="edge-employed-2")
+    )
+
     assert SiteSnapshot(nodes(), stored_twice).changes(
-        payload(companies=[EMPLOYMENT, EMPLOYMENT])
+        payload(companies=[EMPLOYMENT, EMPLOYMENT, EMPLOYMENT])
     ) == [NEW_EMPLOYMENT]
 
 

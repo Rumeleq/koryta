@@ -492,6 +492,86 @@ describe("api/ingest/person", () => {
       expect(targets).toEqual(["stored-0", "stored-1"]);
     });
 
+    it("matches two repeated rows onto the two edges already stored", async () => {
+      // Two indistinguishable bids and two stored candidacies saying the same:
+      // both rows have a document to land on and nothing should be written.
+      //
+      // The claim used to be counted twice - once by `occurrence`, once by
+      // filtering out what this request had taken - so the second row found
+      // nothing and wrote a third candidacy. Round-tripping the 31 August
+      // export found 826 such groups across 605 people, each of which a
+      // re-upload would have grown.
+      personWithStoredEdges([storedCandidacy, storedCandidacy]);
+      mockReadBody.mockResolvedValue({
+        name: "Test Person",
+        parties: [],
+        companies: [],
+        elections: [
+          { election_type: "Samorząd", teryt: "1465", election_year: "2024" },
+          { election_type: "Samorząd", teryt: "1465", election_year: "2024" },
+        ],
+      });
+      // Both rows read the region and the siblings for themselves.
+      mockGet.mockResolvedValueOnce({
+        empty: false,
+        docs: [{ ref: { id: "teryt1465" }, id: "teryt1465" }],
+      });
+      mockGet.mockResolvedValueOnce({
+        empty: false,
+        docs: [storedCandidacy, storedCandidacy].map((edge, index) => ({
+          id: `stored-${index}`,
+          data: () => edge,
+        })),
+      });
+
+      const result = await handler({} as any);
+
+      expect(createRevisionTransaction).not.toHaveBeenCalled();
+      expect(proposeRevisionTransaction).not.toHaveBeenCalled();
+      expect(result.elections!.map((e) => e.edgeId)).toEqual([
+        "stored-0",
+        "stored-1",
+      ]);
+    });
+
+    it("still writes the row the site has no edge for", async () => {
+      // The other half of the same rule: the collection settles at
+      // max(rows, stored), so a third row against two stored edges is a third
+      // candidacy rather than a silent drop.
+      personWithStoredEdges([storedCandidacy, storedCandidacy]);
+      mockReadBody.mockResolvedValue({
+        name: "Test Person",
+        parties: [],
+        companies: [],
+        elections: [
+          { election_type: "Samorząd", teryt: "1465", election_year: "2024" },
+          { election_type: "Samorząd", teryt: "1465", election_year: "2024" },
+          { election_type: "Samorząd", teryt: "1465", election_year: "2024" },
+        ],
+      });
+      for (let row = 1; row < 3; row++) {
+        mockGet.mockResolvedValueOnce({
+          empty: false,
+          docs: [{ ref: { id: "teryt1465" }, id: "teryt1465" }],
+        });
+        mockGet.mockResolvedValueOnce({
+          empty: false,
+          docs: [storedCandidacy, storedCandidacy].map((edge, index) => ({
+            id: `stored-${index}`,
+            data: () => edge,
+          })),
+        });
+      }
+
+      const result = await handler({} as any);
+
+      expect(createRevisionTransaction).toHaveBeenCalledTimes(1);
+      const edgeIds = result.elections!.map((e) => e.edgeId);
+      expect(edgeIds.slice(0, 2)).toEqual(["stored-0", "stored-1"]);
+      expect(edgeIds[2]).not.toBe("stored-0");
+      expect(edgeIds[2]).not.toBe("stored-1");
+    });
+
     it("does not let a bare row re-take the candidacy it just enriched", async () => {
       // The query cannot see the uncommitted batch, so the enriched edge still
       // reads back bare - and a row carrying no committee matches it exactly.

@@ -723,7 +723,10 @@ class _EdgeMatcher:
     def __init__(self, snapshot: SiteSnapshot) -> None:
         self.snapshot = snapshot
         self.occurrences: typing.Counter[tuple] = Counter()
-        self.claimed: set[str] = set()
+        #: Stored edges a row has taken, and the `edge_identity` of the row
+        #: that took each. The identity, not just the id, for the reason
+        #: `claimedEdgeIds` carries it in `person.post.ts`.
+        self.claimed: dict[str, tuple] = {}
 
     def place(self, edge: Edge) -> str:
         """Whether the site already says this: "same", "enriches" or "new"."""
@@ -749,14 +752,24 @@ class _EdgeMatcher:
                 case "same":
                     same.append(stored)
 
-        unclaimed = [s for s in same if str(s.get("id")) not in self.claimed]
+        # The n-th row of this identity onto the n-th stored edge that says it,
+        # out of those no *other* identity has taken. Both halves, and for the
+        # two different collisions `findEdgeOrCreate` names: another row's claim
+        # excludes an edge, an earlier row of this same identity is already
+        # counted by `occurrence`. Subtracting the second twice is what let the
+        # ingest write a duplicate.
+        unclaimed = [
+            stored
+            for stored in same
+            if self.claimed.get(str(stored.get("id")), identity) == identity
+        ]
         if occurrence < len(unclaimed):
-            self.claimed.add(str(unclaimed[occurrence].get("id")))
+            self.claimed[str(unclaimed[occurrence].get("id"))] = identity
             return "same"
 
         for candidate in enrichable:
             if str(candidate.get("id")) not in self.claimed:
-                self.claimed.add(str(candidate.get("id")))
+                self.claimed[str(candidate.get("id"))] = identity
                 return "enriches"
 
         return "new"
