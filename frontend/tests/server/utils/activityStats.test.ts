@@ -2,10 +2,12 @@ import { describe, it, expect } from "vitest";
 import {
   aggregateActivity,
   daysBetween,
+  isAutomatedUid,
   isPipelineUid,
   utcDay,
   type ActivityEvent,
 } from "../../../server/utils/activityStats";
+import { isMigrationUid } from "../../../shared/stats";
 
 const WINDOW = { since: "2026-07-30", until: "2026-08-01" };
 
@@ -61,6 +63,29 @@ describe("isPipelineUid", () => {
   it("leaves people alone", () => {
     expect(isPipelineUid("aB3xYz")).toBe(false);
     expect(isPipelineUid(null)).toBe(false);
+  });
+});
+
+describe("isMigrationUid", () => {
+  it("matches what a migration script signs its writes with", () => {
+    expect(isMigrationUid("migration:merge-duplicate-people")).toBe(true);
+    expect(isMigrationUid("migration:apply-company-categories")).toBe(true);
+  });
+
+  it("leaves people alone", () => {
+    // A Firebase uid is 28 alphanumerics; the colon is what makes the prefix
+    // unambiguous, so a name that merely starts with the word is not one.
+    expect(isMigrationUid("migrationHelper")).toBe(false);
+    expect(isMigrationUid("aB3xYz")).toBe(false);
+    expect(isMigrationUid(null)).toBe(false);
+  });
+});
+
+describe("isAutomatedUid", () => {
+  it("covers both kinds of robot", () => {
+    expect(isAutomatedUid("pipeline-pagerank")).toBe(true);
+    expect(isAutomatedUid("migration:merge-duplicate-people")).toBe(true);
+    expect(isAutomatedUid("aB3xYz")).toBe(false);
   });
 });
 
@@ -154,6 +179,32 @@ describe("aggregateActivity", () => {
 
     expect(result.totals.revision).toBe(1);
     expect(result.contributors).toHaveLength(1);
+  });
+
+  it("drops a migration script's writes", () => {
+    // `merge-duplicate-people` files a revision per collapsed relation and an
+    // audit entry per merged page, all in one run - 1,081 revisions on
+    // 2026-08-31 in production. None of it is a day somebody had.
+    const result = aggregateActivity(
+      [
+        event(
+          "migration:merge-duplicate-people",
+          "revision",
+          "2026-07-31T08:00:00.000Z",
+        ),
+        event(
+          "migration:merge-duplicate-people",
+          "adminDecision",
+          "2026-07-31T08:00:01.000Z",
+        ),
+        event("u1", "revision", "2026-07-31T08:00:00.000Z"),
+      ],
+      WINDOW,
+    );
+
+    expect(result.totals.revision).toBe(1);
+    expect(result.totals.adminDecision).toBe(0);
+    expect(result.contributors.map((c) => c.uid)).toEqual(["u1"]);
   });
 
   it("drops events outside the window instead of clamping them in", () => {

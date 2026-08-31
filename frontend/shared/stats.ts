@@ -104,6 +104,38 @@ export function isPipelineUid(uid: string | undefined | null): boolean {
   return !!uid && uid.includes("pipeline");
 }
 
+/** Whether a write was made by a one-time migration script rather than by a
+ * person.
+ *
+ * Every script under `scripts/migrate/` that files revisions or audit entries
+ * signs them `migration:<script-name>` - see `AUTHOR` in
+ * `merge-duplicate-people.ts` and its neighbours. Matching on the prefix is
+ * safe for the same reason `isPipelineUid` matches on a substring: a Firebase
+ * uid is 28 random alphanumerics and cannot contain a colon.
+ *
+ * The signature is deliberate and worth keeping. A merge, a category backfill
+ * or a date repair is a change somebody has to be able to trace, and the uid is
+ * what says which run made it - so these writes are attributed, not anonymous.
+ * What they are not is somebody's afternoon: one run of
+ * `merge-duplicate-people` files a revision per collapsed relation and an audit
+ * entry per merged page, all inside a few minutes - 1,081 revisions on
+ * 2026-08-31, against 160 for the second-busiest human in the whole export.
+ */
+export function isMigrationUid(uid: string | undefined | null): boolean {
+  return !!uid && uid.startsWith("migration:");
+}
+
+/** Whether a uid is one the site writes under itself, rather than a person.
+ *
+ * The union of the two, for the places that are counting *work people did* and
+ * have no reason to tell one kind of robot from the other. The vote aggregate
+ * is not one of them: it needs the pipeline's verdicts specifically, which is
+ * why it still asks `isPipelineUid`.
+ */
+export function isAutomatedUid(uid: string | undefined | null): boolean {
+  return isPipelineUid(uid) || isMigrationUid(uid);
+}
+
 /**
  * The vote aggregate stored on a node: what people said, plus the pipeline's
  * best guess.

@@ -260,7 +260,7 @@ describe("ensureDailyRollups", () => {
   it("reads a stored day instead of counting it again", async () => {
     const db = fakeDb({
       "activityDaily/2026-08-19": {
-        version: 1,
+        version: 2,
         date: "2026-08-19",
         totals: { nodeVote: 4 },
         truncated: [],
@@ -327,7 +327,7 @@ describe("ensureDailyRollups", () => {
     // 20th for nothing.
     const db = fakeDb({
       "activityDaily/2026-08-20": {
-        version: 1,
+        version: 2,
         date: "2026-08-20",
         totals: {},
         contributors: {},
@@ -355,12 +355,13 @@ describe("ensureDailyRollups", () => {
   });
 
   it("recounts a day that was stored under an older counting rule", async () => {
-    // The rule changed - article nodes and bulk edge publications stopped
-    // counting - so a day counted under the old one has to be thrown away, or
-    // the fix would only ever apply to days nobody had looked at yet.
+    // The rule changed - article nodes, bulk edge publications and the
+    // migration scripts stopped counting - so a day counted under the old one
+    // has to be thrown away, or the fix would only ever apply to days nobody
+    // had looked at yet.
     const db = fakeDb({
       "activityDaily/2026-08-19": {
-        version: 0,
+        version: 1,
         date: "2026-08-19",
         totals: { revision: 999 },
         contributors: {},

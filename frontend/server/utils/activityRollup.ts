@@ -37,8 +37,8 @@ export type DailyRollup = {
   /** `YYYY-MM-DD`, UTC. Also the document id. */
   date: string;
   totals: ActivityCounts;
-  /** Per contributor, for the day. Pipeline uids are already filtered out by
-   * `aggregateActivity`, so nothing in here is a robot. */
+  /** Per contributor, for the day. Pipeline and migration uids are already
+   * filtered out by `aggregateActivity`, so nothing in here is a robot. */
   contributors: Record<
     string,
     { counts: ActivityCounts; lastActiveAt: string }
@@ -56,8 +56,9 @@ export type DailyRollup = {
  * different version is recomputed and overwritten.
  *
  * 1: excludes automatic revisions and article-node bookkeeping.
+ * 2: excludes the `migration:*` scripts as well as the pipeline.
  */
-const ROLLUP_VERSION = 1;
+const ROLLUP_VERSION = 2;
 
 const COLLECTION = "activityDaily";
 
@@ -122,7 +123,7 @@ export function dayEndIso(day: string): string {
  *
  * Goes through `aggregateActivity` rather than counting here, so a stored day
  * and a live one are produced by the same code - including which uids are
- * dropped as pipelines and how a note's several sources are counted.
+ * dropped as robots and how a note's several sources are counted.
  */
 export function rollupForDay(
   date: string,

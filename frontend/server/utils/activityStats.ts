@@ -4,7 +4,7 @@ import {
   type ActivityCounts,
   type ActivityKind,
 } from "~~/shared/activity";
-import { isPipelineUid } from "~~/shared/stats";
+import { isAutomatedUid, isPipelineUid } from "~~/shared/stats";
 
 /** One thing a human did, normalized out of whichever collection recorded it.
  *
@@ -44,12 +44,15 @@ export type ActivityAggregate = {
   contributors: ContributorAggregate[];
 };
 
-/** Writes the pipeline makes on a person's behalf. They dwarf everything a
- * human does and would turn the page into a chart of one robot's day.
+/** Writes the site makes on a person's behalf - the scoring pipeline's, and a
+ * migration script's. They dwarf everything a human does and would turn the
+ * page into a chart of one robot's day: `migration:merge-duplicate-people` filed
+ * 1,081 revisions on 2026-08-31 in the minutes one run took, more than every
+ * human revision in the export bar the owner's.
  *
  * Defined next to the vote aggregate that has to draw the same line, and
  * re-exported here because the activity page drew it first. */
-export { isPipelineUid };
+export { isAutomatedUid, isPipelineUid };
 
 /** The UTC day an instant falls on, or null if it cannot be read as one. */
 export function utcDay(at: string | null | undefined): string | null {
@@ -96,7 +99,7 @@ export function aggregateActivity(
   const totals = emptyActivityCounts();
 
   for (const event of events) {
-    if (isPipelineUid(event.uid)) continue;
+    if (isAutomatedUid(event.uid)) continue;
     const day = utcDay(event.at);
     if (!day || !inWindow.has(day)) continue;
 
