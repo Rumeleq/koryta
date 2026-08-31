@@ -41,9 +41,13 @@ vi.mock("h3", () => ({
 }));
 
 /** A node as `parseNodeDoc` will see it coming back from Firestore. */
-const doc = (id: string, name: string) => ({
+const doc = (
+  id: string,
+  name: string,
+  extra: Record<string, unknown> = {},
+) => ({
   id,
-  data: () => ({ name, type: "person", published: true }),
+  data: () => ({ name, type: "person", published: true, ...extra }),
 });
 
 /** The docs each `array-contains` chunk answers with, so a test can describe
@@ -152,5 +156,39 @@ describe("/api/search", () => {
     respondWith({ "": [doc("a1", "Anna Nowak")] });
 
     expect(await search("")).toHaveLength(1);
+  });
+
+  it("does not offer a page that was merged away as a duplicate", async () => {
+    // A tombstone keeps its `nameChunksLower` - nothing clears them, and the
+    // trigger only rewrites them when the name changes - so the index goes on
+    // answering with the name it had. Offering it sends the reader to a
+    // redirect, and puts the duplicate back in front of them under the very
+    // name the merge was meant to stop showing twice.
+    respondWith({
+      "roman ludwiczuk": [
+        doc("dup", "Roman Ludwiczuk", {
+          deleted: true,
+          merged_into: "keep",
+          published: false,
+        }),
+        doc("keep", "Roman Ludwiczuk"),
+      ],
+    });
+
+    expect((await search("Roman Ludwiczuk")).map((r: any) => r.id)).toEqual([
+      "keep",
+    ]);
+  });
+
+  it("still offers a page nobody has published yet", async () => {
+    // The signed-in reader may have created it a moment ago; only a removal
+    // takes a page out of the index, not a draft.
+    respondWith({
+      "anna nowak": [doc("draft", "Anna Nowak", { published: false })],
+    });
+
+    expect((await search("Anna Nowak")).map((r: any) => r.id)).toEqual([
+      "draft",
+    ]);
   });
 });
