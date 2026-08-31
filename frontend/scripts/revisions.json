@@ -97,7 +97,7 @@
   "rev_edge_4": {
     "source_id": "10",
     "target_id": "2",
-    "type": "owns",
+    "type": "seat",
     "data": {},
     "update_time": "2024-06-15T10:00:00Z",
     "update_user": "user@koryta.pl"

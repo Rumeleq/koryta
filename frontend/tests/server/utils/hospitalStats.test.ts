@@ -524,7 +524,10 @@ describe("buildHospitalStats: by województwo", () => {
 });
 
 describe("buildHospitalStats: parties that stand for the same thing", () => {
-  const paid = place("h", { supervisoryOrgan: "rada_nadzorcza", regionTeryt: "14" });
+  const paid = place("h", {
+    supervisoryOrgan: "rada_nadzorcza",
+    regionTeryt: "14",
+  });
 
   it("counts SLD under Nowa Lewica, so the two share one bar", () => {
     // The site paints both #D40E20, which made them two bars nobody could tell

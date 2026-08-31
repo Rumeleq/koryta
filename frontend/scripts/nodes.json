@@ -157,13 +157,15 @@
           "experienceMonths": 0,
           "latestEmploymentStart": null,
           "targetNodeIds": ["2"],
-          "currentlyEmployed": false
+          "currentlyEmployed": false,
+          "seatNodeIds": ["2"]
         },
         "approved": {
           "experienceMonths": 0,
           "latestEmploymentStart": null,
           "targetNodeIds": ["2"],
-          "currentlyEmployed": false
+          "currentlyEmployed": false,
+          "seatNodeIds": ["2"]
         }
       }
     }

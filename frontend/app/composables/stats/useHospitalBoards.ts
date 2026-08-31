@@ -8,11 +8,7 @@ import type {
   SupervisoryGroup,
 } from "~~/server/api/stats/hospitals.get";
 import { supervisoryOrganLabel } from "~~/shared/companyOrgans";
-import {
-  partyAliasesOf,
-  partyColors,
-  partyMergedLabels,
-} from "~~/shared/misc";
+import { partyAliasesOf, partyColors, partyMergedLabels } from "~~/shared/misc";
 import { categorical, ink } from "~/utils/chartTheme";
 import { generateEntityUrl } from "~/composables/slugs";
 import { polishCounting } from "~/composables/polish";
@@ -403,32 +399,37 @@ export function breakdownRows(
   }
 
   if (dimension === "hospital") {
-    return (group.rows ?? [])
-      // A hospital with neither a reviewed seat nor a backlog says nothing at
-      // all. One with only a backlog is the whole point of the page.
-      .filter(
-        (row: CachedHospitalRow) => row.seats > 0 || (row.unreviewed ?? 0) > 0,
-      )
-      .map((row: CachedHospitalRow) => {
-        const unreviewed = row.unreviewed ?? 0;
-        const total = row.seats + unreviewed;
-        return {
-          key: row.id,
-          label: row.name,
-          meta: supervisoryOrganLabel(row.supervisoryOrgan),
-          seats: row.seats,
-          unreviewed,
-          total,
-          share: total === 0 ? null : row.seats / total,
-          segments: (row.byParty ?? []).map((entry) => ({
-            ...partyDisplay(entry.party),
-            seats: entry.seats,
-          })),
-          to: hospitalQueueLink(row.id),
-          href: generateEntityUrl("place", row.id, row.name),
-        };
-      })
-      .sort((a, b) => b.total - a.total || a.label.localeCompare(b.label, "pl"));
+    return (
+      (group.rows ?? [])
+        // A hospital with neither a reviewed seat nor a backlog says nothing at
+        // all. One with only a backlog is the whole point of the page.
+        .filter(
+          (row: CachedHospitalRow) =>
+            row.seats > 0 || (row.unreviewed ?? 0) > 0,
+        )
+        .map((row: CachedHospitalRow) => {
+          const unreviewed = row.unreviewed ?? 0;
+          const total = row.seats + unreviewed;
+          return {
+            key: row.id,
+            label: row.name,
+            meta: supervisoryOrganLabel(row.supervisoryOrgan),
+            seats: row.seats,
+            unreviewed,
+            total,
+            share: total === 0 ? null : row.seats / total,
+            segments: (row.byParty ?? []).map((entry) => ({
+              ...partyDisplay(entry.party),
+              seats: entry.seats,
+            })),
+            to: hospitalQueueLink(row.id),
+            href: generateEntityUrl("place", row.id, row.name),
+          };
+        })
+        .sort(
+          (a, b) => b.total - a.total || a.label.localeCompare(b.label, "pl"),
+        )
+    );
   }
 
   return regionDisplayRows(group).map((row) => ({
@@ -497,7 +498,9 @@ export async function useHospitalBoards() {
     selected,
     partyRows: computed(() => partySeatRows(selected.value)),
     breakdown,
-    breakdownRows: computed(() => breakdownRows(selected.value, breakdown.value)),
+    breakdownRows: computed(() =>
+      breakdownRows(selected.value, breakdown.value),
+    ),
     segments: computed(() => supervisionSegments(data.value)),
     /** True once the response is in and there is not a single seat to show -
      * which is what the page looks like until the pipeline has re-submitted the

@@ -36,7 +36,22 @@ vi.mock("firebase-admin/firestore", () => {
         call.selects.push(...fields);
         return query;
       },
-      get: async () => ({ docs: name === "nodes" ? nodeDocs : edgeDocs }),
+      // The recorded `where`s are applied rather than ignored. Both the
+      // employment lookup and the seat lookup read `edges`, so a mock that
+      // answered every edges query with every edge handed the seat lookup an
+      // employment edge - and the handler then went off to read the region
+      // behind a person, a document no fixture here has anything to say about.
+      get: async () => ({
+        docs: (name === "nodes" ? nodeDocs : edgeDocs).filter((doc) => {
+          const data = doc.data() as Record<string, unknown>;
+          return call.wheres.every(([field, op, value]) => {
+            const held = data[field as string];
+            if (op === "==") return held === value;
+            if (op === "in") return (value as unknown[]).includes(held);
+            throw new Error(`the mock does not know the "${op}" operator`);
+          });
+        }),
+      }),
     };
     return query;
   };
@@ -74,11 +89,16 @@ beforeEach(() => {
   nodeDocs.length = 0;
   edgeDocs.length = 0;
   personDocs.length = 0;
+  // A `DocumentSnapshot`, not a bag with the fields on it: the handler reads
+  // the region documents through `snap.get(field)`, which is how a `fieldMask`
+  // read is meant to be unpacked, and a mock without it threw rather than
+  // answering `undefined` for a document that carries no `teryt`.
   mockGetAll.mockImplementation(async () =>
     personDocs.map((data) => ({
       id: data.id as string,
       exists: true,
       data: () => data,
+      get: (field: string) => data[field],
     })),
   );
 });
@@ -98,6 +118,7 @@ describe("/api/stats/hospitals", () => {
       {
         id: "h1",
         data: () => ({
+          type: "place",
           name: "Szpital Powiatowy sp. z o.o.",
           categories: ["szpitale"],
           isPublic: true,
@@ -108,6 +129,7 @@ describe("/api/stats/hospitals", () => {
       {
         id: "w1",
         data: () => ({
+          type: "place",
           name: "Wodociągi",
           categories: ["wodociagi"],
           isPublic: true,
@@ -118,6 +140,7 @@ describe("/api/stats/hospitals", () => {
     edgeDocs.push({
       id: "e1",
       data: () => ({
+        type: "employed",
         source: "p1",
         target: "h1",
         name: "Rada Nadzorcza",
@@ -174,6 +197,7 @@ describe("/api/stats/hospitals", () => {
       id: "h1",
       // Published and tagged, but nothing says the public sector owns it.
       data: () => ({
+        type: "place",
         name: "Prywatna klinika",
         categories: ["szpitale"],
         published: true,
