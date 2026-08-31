@@ -57,6 +57,9 @@ export type AuditEntry = {
     into: string;
     moved: string[];
     collapsed: string[];
+    /** Relations of the surviving page that were filled in from the
+     * duplicate's poorer copy of the same fact, rather than left beside it. */
+    enriched?: string[];
   };
 };
 

@@ -72,9 +72,21 @@ export default defineEventHandler(async (event): Promise<NodesMerged> => {
   // Re-read as one map so `applyNodeMerge` writes from what it planned over,
   // rather than reading every edge a second time.
   const storedEdges = new Map<string, Record<string, unknown>>();
-  if (plan.edges.length > 0) {
+  // Both ends of every verdict: the relation being moved, and - for an
+  // `enriched` one - the survivor's relation that is about to learn from it,
+  // which `applyNodeMerge` has to read before it can write the fuller version.
+  const edgeIds = [
+    ...new Set(
+      plan.edges.flatMap((edge) =>
+        edge.disposition === "enriched" && edge.duplicate_of
+          ? [edge.edge_id, edge.duplicate_of]
+          : [edge.edge_id],
+      ),
+    ),
+  ];
+  if (edgeIds.length > 0) {
     const docs = await db.getAll(
-      ...plan.edges.map((edge) => db.collection("edges").doc(edge.edge_id)),
+      ...edgeIds.map((id) => db.collection("edges").doc(id)),
     );
     for (const doc of docs) {
       if (doc.exists) storedEdges.set(doc.id, doc.data() ?? {});
