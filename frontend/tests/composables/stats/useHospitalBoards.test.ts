@@ -272,7 +272,13 @@ describe("regionDisplayRows", () => {
   it("paints the party segments and leaves the backlog a bare number", () => {
     const [display] = regionDisplayRows(group({ byRegion: [row()] }));
     expect(display!.segments).toEqual([
-      { party: "PO", label: "PO", color: partyColors.PO, known: true, seats: 6 },
+      {
+        party: "PO",
+        label: "PO",
+        color: partyColors.PO,
+        known: true,
+        seats: 6,
+      },
     ]);
     // Nothing on the row describes the 86 beyond their count.
     expect(Object.keys(display!)).not.toContain("unreviewedByParty");
@@ -296,7 +302,6 @@ describe("regionDisplayRows", () => {
     expect(display!.total).toBe(16);
   });
 });
-
 
 describe("breakdownRows", () => {
   const region = {
@@ -339,20 +344,36 @@ describe("breakdownRows", () => {
 
   it("splits a województwo by party and counts the rest", () => {
     const [row] = breakdownRows(group({ byRegion: [region] }), "region");
-    expect(row).toMatchObject({ key: "14", label: "mazowieckie", seats: 16, unreviewed: 86, total: 102 });
+    expect(row).toMatchObject({
+      key: "14",
+      label: "mazowieckie",
+      seats: 16,
+      unreviewed: 86,
+      total: 102,
+    });
     expect(row!.segments.map((s) => s.party)).toEqual(["PO"]);
   });
 
   it("splits a hospital the same way, and links to its own page", () => {
     const [row] = breakdownRows(group({ rows: [hospital] }), "hospital");
-    expect(row).toMatchObject({ key: "abc", label: "Szpital Miejski", seats: 3, unreviewed: 7, total: 10 });
+    expect(row).toMatchObject({
+      key: "abc",
+      label: "Szpital Miejski",
+      seats: 3,
+      unreviewed: 7,
+      total: 10,
+    });
     expect(row!.href).toContain("abc");
     expect(row!.to).toContain("place=abc");
   });
 
   it("keeps a hospital that has only a backlog - that is the work", () => {
     const rows = breakdownRows(
-      group({ rows: [{ ...hospital, seats: 0, unreviewed: 4, parties: [], byParty: [] }] }),
+      group({
+        rows: [
+          { ...hospital, seats: 0, unreviewed: 4, parties: [], byParty: [] },
+        ],
+      }),
       "hospital",
     );
     expect(rows).toHaveLength(1);
@@ -361,7 +382,11 @@ describe("breakdownRows", () => {
 
   it("drops a hospital with neither, which says nothing at all", () => {
     const rows = breakdownRows(
-      group({ rows: [{ ...hospital, seats: 0, unreviewed: 0, parties: [], byParty: [] }] }),
+      group({
+        rows: [
+          { ...hospital, seats: 0, unreviewed: 0, parties: [], byParty: [] },
+        ],
+      }),
       "hospital",
     );
     expect(rows).toEqual([]);

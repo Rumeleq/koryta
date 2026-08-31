@@ -91,9 +91,15 @@ test.describe("Kategoryzacja notatek", () => {
     const second = await card.locator(".note-text").innerText();
     await page.getByText("Nie da się ocenić tutaj").click();
 
-    await expect(page.getByText("skategoryzowane")).toBeVisible({
-      timeout: 15000,
-    });
+    // Gone from the queue, rather than the queue being empty. The seed carries
+    // a note of its own with three untyped sources - added for the picture the
+    // notes section takes - so „Wszystkie notatki skategoryzowane!" is a state
+    // this spec can no longer reach, and waiting for it only ever timed out
+    // against a queue that was working exactly as intended.
+    await expect(page.getByText(second.trim(), { exact: false })).toHaveCount(
+      0,
+      { timeout: 15000 },
+    );
     await expect
       .poll(
         async () => {
@@ -109,11 +115,16 @@ test.describe("Kategoryzacja notatek", () => {
       .toBe(true);
 
     // A reload starts a fresh queue: neither entry may come back, because one
-    // is classified and the other is waiting for the table view.
+    // is classified and the other is waiting for the table view. What is left
+    // in the queue is the seed's own notes, so the card is still there - it
+    // just must not be showing either of these two again.
     await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(page.getByText("skategoryzowane")).toBeVisible({
-      timeout: 30000,
-    });
+    await expect(card).toBeVisible({ timeout: 30000 });
+    for (const judged of [first, second]) {
+      await expect(page.getByText(judged.trim(), { exact: false })).toHaveCount(
+        0,
+      );
+    }
 
     // And the table names the deferral rather than showing it as untriaged.
     await page.goto("/admin/notatki?adminType=deferred", {

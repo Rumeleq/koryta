@@ -63,8 +63,17 @@ test("a signed in reader gets the cards, two to a row", async ({ page }) => {
 
   // The flag stays (a single write); the vote buttons do not (a subscription
   // each, and this section mounts every card at once).
+  //
+  // Either label, because both are that one control: `extraction_person_match`
+  // runs first, flags `seed-open-party` and takes it back, and the taking back
+  // is a trigger's job behind a 60s response cache. Pinning the unflagged
+  // wording made this spec a clock - it passed only while the specs ahead of it
+  // were slow enough for the cache to lapse, and started failing the moment
+  // they were fixed and the suite got faster.
   await expect(
-    cards.first().getByRole("button", { name: /To nie ta osoba/ }),
+    cards.first().getByRole("button", {
+      name: /To nie ta osoba|Zgłoszono złe dopasowanie/,
+    }),
   ).toBeVisible();
   await expect(section.locator(".extraction-actions")).toHaveCount(0);
 

@@ -384,16 +384,13 @@ export function buildHospitalStats(input: {
     // A Set, and canonicalised before it: somebody whose node carries both
     // "SLD" and "Nowa Lewica" holds ONE seat and must add one to the merged
     // key, not two. See `partyAliases`.
-    parties.set(
-      person.id,
-      [
-        ...new Set(
-          asArray<string>(person.parties)
-            .filter((party) => !!party)
-            .map(canonicalParty),
-        ),
-      ],
-    );
+    parties.set(person.id, [
+      ...new Set(
+        asArray<string>(person.parties)
+          .filter((party) => !!party)
+          .map(canonicalParty),
+      ),
+    ]);
   }
 
   const groups = {
