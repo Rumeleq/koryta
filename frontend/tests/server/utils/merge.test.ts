@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Firestore, WriteBatch } from "firebase-admin/firestore";
 import {
   applyNodeMerge,
+  carriedFields,
   countDispositions,
   mergeRefusal,
   planEdgeMoves,
@@ -627,5 +628,86 @@ describe("applyNodeMerge", () => {
     );
 
     expect(updates.map((call) => call[0])).toEqual(["nodes/dup"]);
+  });
+});
+
+describe("carriedFields", () => {
+  it("unions the parties rather than keeping the survivor's half", () => {
+    // The case that made this necessary. "Paweł Jerzy Obermeyer" was created in
+    // June with one party; "Paweł Obermeyer" got the August upload with three.
+    // Whichever survives, the page should end up with all of them.
+    expect(
+      carriedFields(
+        { parties: ["PSL"], type: "person" },
+        { parties: ["PSL", "Polska 2050", "SLD"], type: "person" },
+      ),
+    ).toEqual({});
+
+    expect(
+      carriedFields(
+        { parties: ["PSL", "Polska 2050", "SLD"], type: "person" },
+        { parties: ["PSL"], type: "person" },
+      ),
+    ).toEqual({ parties: ["PSL", "Polska 2050", "SLD"] });
+  });
+
+  it("reads a party list stored as a numbered-key map", () => {
+    // Nodes written through `sanitizeFirestoreData` before 2026-07-28 hold
+    // `{"0": "PiS"}` where an array belongs, and `array-contains` matches
+    // nothing against a map without raising - so a plain spread would silently
+    // drop the parties this exists to save.
+    expect(
+      carriedFields(
+        { parties: { 0: "PiS", 1: "PSL" }, type: "person" },
+        { parties: ["PiS"], type: "person" },
+      ),
+    ).toEqual({ parties: ["PSL", "PiS"].sort() });
+  });
+
+  it("fills in a field the survivor has nothing for", () => {
+    expect(
+      carriedFields(
+        {
+          wikipedia: "https://pl.wikipedia.org/wiki/X",
+          birthDate: "1965-04-01",
+        },
+        { birthDate: "1965-04-01" },
+      ),
+    ).toEqual({ wikipedia: "https://pl.wikipedia.org/wiki/X" });
+  });
+
+  it("never overwrites something the survivor already says", () => {
+    // A merge is not the place to overrule whoever entered the stored value.
+    expect(
+      carriedFields(
+        { content: "z duplikatu", wikipedia: "https://example.test/dup" },
+        { content: "z ocalałej", wikipedia: "https://example.test/keep" },
+      ),
+    ).toEqual({});
+  });
+
+  it("does not carry the name, which would undo the choice of survivor", () => {
+    expect(
+      carriedFields(
+        { name: "Andrzej Marcin Golimont" },
+        { name: "Andrzej Golimont" },
+      ),
+    ).toEqual({});
+  });
+
+  it("does not carry the bookkeeping a page owns", () => {
+    expect(
+      carriedFields(
+        {
+          published: true,
+          revision_id: "r1",
+          stats: { notesCount: 3 },
+          votes: { interesting: 5 },
+          deleted: true,
+          nameChunksLower: ["a"],
+        },
+        {},
+      ),
+    ).toEqual({});
   });
 });

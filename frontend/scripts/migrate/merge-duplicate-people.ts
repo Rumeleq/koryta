@@ -174,6 +174,19 @@ type Candidate = {
   relations: number;
 };
 
+/** How much of a name the page carries, for choosing between two spellings.
+ *
+ * Characters rather than words, so it prefers a fuller surname as well as a
+ * middle name - "Malgorzata Pietrzak Sikorska" over "Malgorzata Sikorska" as
+ * much as "Andrzej Marcin Golimont" over "Andrzej Golimont". Only ever reached
+ * when the two pages know the same number of fields, so it is breaking a tie
+ * rather than outweighing anything.
+ */
+function nameLength(doc: QueryDocumentSnapshot): number {
+  const name = doc.data().name;
+  return typeof name === "string" ? name.trim().length : 0;
+}
+
 /** The page to keep, in the order `dedupe-edges.ts` keeps a copy of an edge,
  * read across to a page:
  *
@@ -184,20 +197,29 @@ type Candidate = {
  *   2. an approved revision (`revision_id`) — the survivor inherits the
  *      relations either way, but a page with a revision behind it has a history
  *      to hang the merge off and an admin can un-approve back past it.
- *   3. more relations — the merge moves the loser's relations onto the winner,
- *      and every move is a write and a trigger. Keeping the busier page is the
- *      same answer for less work, and it is the page whose url is likelier to
- *      have been linked to.
- *   4. more non-empty fields — the fields are not merged, only the relations
- *      are, so whatever the loser knows and the winner does not is lost to the
- *      page (it stays in the loser's document and its revisions). Keeping the
- *      fuller page loses least. This is the step that prefers the fuller name:
- *      "Andrzej Marcin Golimont" and "Andrzej Golimont" differ in the `name`
- *      field's contents and not in whether it is set, so it only decides here
- *      by way of the party lists and birth dates that came with it.
- *   5. the lexically smaller id — arbitrary, and stable, which is the point: a
+ *   3. more non-empty fields — ahead of the relation count, because relations
+ *      are moved and fields are not. Whatever the loser knows and the winner
+ *      does not is off the live page after the merge; a relation on the wrong
+ *      page is only a write away from the right one. Losing least is the more
+ *      important of the two, so it is asked first.
+ *   4. the longer name, where the two know the same number of fields — the
+ *      count above measures whether `name` is set, and both pages always have
+ *      one, so on its own it cannot tell "Andrzej Marcin Golimont" from
+ *      "Andrzej Golimont". Length can, and the fuller one carries the middle
+ *      name the register recorded. It settles what would otherwise be a coin
+ *      toss for a third of the batch.
+ *   5. more relations — the same end state for fewer writes and fewer
+ *      `onEdgeWritten` invocations, and the page whose url is likelier to have
+ *      been linked to.
+ *   6. the lexically smaller id — arbitrary, and stable, which is the point: a
  *      dry run has to name the same survivor the real run will, or reading the
  *      dry run proves nothing.
+ *
+ * Note that this decides which page *survives*, not what it ends up called: an
+ * existing page is never renamed by an upload, so preferring the longer name
+ * here keeps the register's fuller spelling, while `canonical_name` in the
+ * pipeline gives a *new* page the shorter one. The two are about different
+ * pages and do not have to agree.
  */
 function pickSurvivor(group: Candidate[]): Candidate {
   const published = group.filter((c) => pageIsPublic(c.doc.data()));
@@ -207,11 +229,15 @@ function pickSurvivor(group: Candidate[]): Candidate {
   const candidates = approved.length > 0 ? approved : pool;
 
   return candidates.reduce((best, c) => {
+    const known = informativeness(c.doc) - informativeness(best.doc);
+    if (known !== 0) return known > 0 ? c : best;
+
+    const named = nameLength(c.doc) - nameLength(best.doc);
+    if (named !== 0) return named > 0 ? c : best;
+
     if (c.relations !== best.relations) {
       return c.relations > best.relations ? c : best;
     }
-    const diff = informativeness(c.doc) - informativeness(best.doc);
-    if (diff !== 0) return diff > 0 ? c : best;
     return c.doc.id < best.doc.id ? c : best;
   });
 }
@@ -225,7 +251,8 @@ function pickSurvivor(group: Candidate[]): Candidate {
  */
 function mergeWrites(plan: MergePlan): number {
   const { moved, review, collapsed, self } = plan.counts;
-  return moved + review + 2 * (collapsed + self) + 2;
+  const carrying = Object.keys(plan.carried).length > 0 ? 2 : 0;
+  return moved + review + 2 * (collapsed + self) + 2 + carrying;
 }
 
 function emptyCounts(): Record<MergeDisposition, number> {
@@ -397,6 +424,25 @@ async function migrate() {
         `${counts.review} to review, ${counts.self} self`,
     );
   }
+  const carrying = merges.filter(
+    (plan) => Object.keys(plan.carried).length > 0,
+  );
+  if (carrying.length > 0) {
+    const byField = new Map<string, number>();
+    for (const plan of carrying) {
+      for (const field of Object.keys(plan.carried)) {
+        byField.set(field, (byField.get(field) ?? 0) + 1);
+      }
+    }
+    console.log(
+      `  ${carrying.length} merge(s) carry a field the surviving page did ` +
+        `not have: ` +
+        [...byField.entries()]
+          .sort(([a], [b]) => (a < b ? -1 : 1))
+          .map(([field, count]) => `${field} x${count}`)
+          .join(", "),
+    );
+  }
   if (totals.review > 0) {
     console.log(
       `  The ${totals.review} to review are kept, not collapsed: for their ` +
@@ -450,8 +496,23 @@ async function migrate() {
     }
 
     const storedEdges = await readStoredEdges(db, fresh);
+    // Re-read with the plan rather than from the loop above: `fresh` was made
+    // against the database as it is now, and an earlier merge in this same
+    // group may have just carried fields onto this survivor.
+    const survivorDoc = await db
+      .collection("nodes")
+      .doc(fresh.survivor_id)
+      .get();
     const batch = db.batch();
-    applyNodeMerge(db, batch, { uid: AUTHOR }, fresh, REASON, storedEdges);
+    applyNodeMerge(
+      db,
+      batch,
+      { uid: AUTHOR },
+      fresh,
+      REASON,
+      storedEdges,
+      survivorDoc.data(),
+    );
     await batch.commit();
 
     done++;
