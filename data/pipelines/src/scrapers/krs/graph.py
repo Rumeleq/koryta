@@ -22,6 +22,8 @@ IGNORED_PARENT = {
     "KRS_RECEIVER",  # The company is probably liquidated
     "KRS_GENERAL_PARTNER",  # The company is probably liquidated
     "KRS_RESTRUCTURIZATOR",  # The company is probably liquidated
+    "KRS_CREATED",  # this company has created the other company
+    "KRS_ACQUIRED",  # todo I'm not sure
 }
 
 
