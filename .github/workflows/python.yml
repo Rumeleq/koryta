@@ -12,6 +12,8 @@ on:
 
 permissions:
   contents: read
+  checks: write
+  pull-requests: write
 
 # uv reads requires-python from pyproject.toml and fetches the interpreter
 # itself, so there is no setup-python step. `--locked` installs exactly what
