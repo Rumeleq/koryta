@@ -3,16 +3,9 @@ import type {
   Firestore,
   WriteBatch,
 } from "firebase-admin/firestore";
-import {
-  edgeIdentity,
-  edgeSemantics,
-  type EdgeLike,
-} from "~~/server/utils/edges";
-import {
-  createRevisionTransaction,
-  withoutInternalFields,
-} from "~~/server/utils/revisions";
-import { recordAudit } from "~~/server/utils/audit";
+import { edgeIdentity, edgeSemantics, type EdgeLike } from "./edges";
+import { createRevisionTransaction, withoutInternalFields } from "./revisions";
+import { recordAudit } from "./audit";
 
 /** What becomes of one relation when the page it hangs off is merged away.
  *

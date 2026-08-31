@@ -5,8 +5,8 @@ import type {
   WriteBatch,
 } from "firebase-admin/firestore";
 import type { Edge, Node, Revision } from "~~/shared/model";
-import { pageIsPublic, revisionCollection } from "~~/shared/model";
-import { recordAudit } from "~~/server/utils/audit";
+import { pageIsPublic, revisionCollection } from "../../shared/model";
+import { recordAudit } from "./audit";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 
 export interface BatchResult {

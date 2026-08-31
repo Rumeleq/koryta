@@ -72,21 +72,11 @@ import { pageIsPublic } from "../../shared/model";
  * way in once the cache turns over.
  *
  * Usage (against the running dev:prod-data emulator):
- *   npx tsx --tsconfig .nuxt/tsconfig.server.json \
- *     scripts/migrate/merge-duplicate-people.ts                  # dry run
- *   npx tsx --tsconfig .nuxt/tsconfig.server.json \
- *     scripts/migrate/merge-duplicate-people.ts --limit 10 --commit
+ *   npx tsx scripts/migrate/merge-duplicate-people.ts                # dry run
+ *   npx tsx scripts/migrate/merge-duplicate-people.ts --limit 10 --commit
  * Against production:
- *   npx tsx --tsconfig .nuxt/tsconfig.server.json \
- *     scripts/migrate/merge-duplicate-people.ts --prod --commit
- *
- * The `--tsconfig` is not decoration. `server/utils/merge.ts` imports its
- * neighbours through the `~~/` alias, which plain tsx cannot resolve; that is
- * the reason `apply-company-categories.ts` copies `INTERNAL_FIELDS` instead of
- * importing it. Pointing tsx at Nuxt's generated server tsconfig teaches it the
- * alias, which is cheaper than keeping a second copy of the merge logic in a
- * script - a second copy is the one thing this migration must not have.
- * `.nuxt/` is written by `nuxt prepare`, which `npm install` runs.
+ *   npx tsx scripts/migrate/merge-duplicate-people.ts --prod         # dry run
+ *   npx tsx scripts/migrate/merge-duplicate-people.ts --prod --commit
  */
 
 const isProd = process.argv.includes("--prod");
