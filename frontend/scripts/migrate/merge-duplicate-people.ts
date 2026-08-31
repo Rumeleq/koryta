@@ -252,9 +252,19 @@ function pickSurvivor(group: Candidate[]): Candidate {
 function mergeWrites(plan: MergePlan): number {
   const { moved, review, collapsed, enriched, self } = plan.counts;
   const carrying = Object.keys(plan.carried).length > 0 ? 2 : 0;
+  // A re-filed vote is a write and a delete.
+  const voting = 2 * plan.votes.length;
   // An enriched relation costs four: the revision and edge that fill in the
   // survivor's copy, and the revision and edge that retire this one.
-  return moved + review + 2 * (collapsed + self) + 4 * enriched + 2 + carrying;
+  return (
+    moved +
+    review +
+    2 * (collapsed + self) +
+    4 * enriched +
+    2 +
+    carrying +
+    voting
+  );
 }
 
 function emptyCounts(): Record<MergeDisposition, number> {
@@ -428,6 +438,14 @@ async function migrate() {
         `${counts.review} to review, ${counts.self} self`,
     );
   }
+  const voteTotal = merges.reduce((n, plan) => n + plan.votes.length, 0);
+  if (voteTotal > 0) {
+    console.log(
+      `  ${voteTotal} human vote(s) re-filed onto the surviving page. A vote ` +
+        `by somebody who had already voted there stays on the duplicate, ` +
+        `and a scoring model's is left for the next run to recreate.`,
+    );
+  }
   const carrying = merges.filter(
     (plan) => Object.keys(plan.carried).length > 0,
   );
@@ -507,6 +525,16 @@ async function migrate() {
       .collection("nodes")
       .doc(fresh.survivor_id)
       .get();
+    const storedVotes = new Map<string, Record<string, unknown>>();
+    if (fresh.votes.length > 0) {
+      const voteDocs = await db.getAll(
+        ...fresh.votes.map((vote) => db.collection("votes").doc(vote.from_id)),
+      );
+      for (const doc of voteDocs) {
+        if (doc.exists) storedVotes.set(doc.id, doc.data() ?? {});
+      }
+    }
+
     const batch = db.batch();
     applyNodeMerge(
       db,
@@ -516,6 +544,7 @@ async function migrate() {
       REASON,
       storedEdges,
       survivorDoc.data(),
+      storedVotes,
     );
     await batch.commit();
 

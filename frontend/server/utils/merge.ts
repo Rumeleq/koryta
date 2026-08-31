@@ -18,6 +18,7 @@ import { recordAudit } from "./audit";
 // where there is no auto-import and a missing one is a ReferenceError at
 // runtime that typecheck cannot see.
 import { asArray } from "../../shared/model";
+import { isPipelineUid } from "../../shared/stats";
 
 /** What becomes of one relation when the page it hangs off is merged away.
  *
@@ -37,6 +38,14 @@ import { asArray } from "../../shared/model";
  * - `self`: both ends were the duplicate, so the merge would leave the survivor
  *   pointing at itself. Removed; a loop is not a fact about anybody.
  */
+export type MergeVoteMove = {
+  /** The vote document on the duplicate, which is deleted once it is re-filed. */
+  from_id: string;
+  /** `${survivor}_${uid}`, the id the same vote takes on the surviving page. */
+  to_id: string;
+  user: string;
+};
+
 export type MergeDisposition =
   "moved" | "collapsed" | "enriched" | "review" | "self";
 
@@ -62,6 +71,9 @@ export type MergePlan = {
   survivor_name?: string;
   edges: MergeEdgePlan[];
   counts: Record<MergeDisposition, number>;
+  /** Human votes on the duplicate that the survivor has none of, by the id the
+   * moved document takes. See `votesToMove`. */
+  votes: MergeVoteMove[];
   /** What the duplicate knows and the survivor does not, to be written onto the
    * survivor rather than left on the tombstone. See `carriedFields`. */
   carried: Record<string, unknown>;
@@ -128,6 +140,51 @@ function remapped(
     source: stored.source === duplicateId ? survivorId : stored.source,
     target: stored.target === duplicateId ? survivorId : stored.target,
   } as EdgeLike;
+}
+
+/** Every vote cast on a node, as `votesToMove` reads them. */
+export async function nodeVotes(
+  db: Firestore,
+  nodeId: string,
+): Promise<{ id: string; user: string; data: Record<string, unknown> }[]> {
+  const snap = await db.collection("votes").where("nodeId", "==", nodeId).get();
+  return snap.docs.map((doc) => ({
+    id: doc.id,
+    user: String(doc.data().userUid ?? ""),
+    data: doc.data(),
+  }));
+}
+
+/** The votes worth re-filing onto the survivor, and only those.
+ *
+ * Human votes only. A model's vote is regenerated every scoring run and there
+ * are six models; on the 171 pairs stored on 2026-08-31 they account for 535 of
+ * the 565 votes, and carrying them would put a stale score on the survivor that
+ * the next run overwrites anyway - while briefly making `stats.votes.models`
+ * read as two models' worth of one. The 30 human votes are the ones nothing
+ * regenerates.
+ *
+ * A vote already cast by that person on the survivor stops the move. The
+ * document id is `${nodeId}_${userUid}`, so the two would collide, and the
+ * vote on the page that survives is the one to keep: it is about the page the
+ * reader will actually see. The duplicate's is left where it is rather than
+ * deleted, so the record of what they thought is still readable on the
+ * tombstone.
+ */
+export function votesToMove(
+  duplicateVotes: { id: string; user: string }[],
+  survivorVotes: { user: string }[],
+  survivorId: string,
+): MergeVoteMove[] {
+  const alreadyVoted = new Set(survivorVotes.map((v) => v.user));
+  return duplicateVotes
+    .filter((v) => !isPipelineUid(v.user))
+    .filter((v) => !alreadyVoted.has(v.user))
+    .map((v) => ({
+      from_id: v.id,
+      to_id: `${survivorId}_${v.user}`,
+      user: v.user,
+    }));
 }
 
 /** Fields the merge moves across, and how.
@@ -307,9 +364,16 @@ export function planEdgeMoves(
           role,
           disposition: "enriched",
           duplicate_of: match.id,
+          // Both sides stripped. `next` is the stored document as it was read,
+          // so it still carries `revision_id` - a real DocumentReference, which
+          // `enrichedEdge` would copy across because the stripped survivor
+          // lacks one. `sanitizeFirestoreData` then walks it, and a
+          // DocumentReference holds its Firestore instance, which holds every
+          // reference made from it: "RangeError: Maximum call stack size
+          // exceeded" out of `sanitizeValue`, which has no cycle guard.
           enriches_into: enrichedEdge(
             withoutInternalFields(match.stored as Record<string, unknown>),
-            next,
+            withoutInternalFields(next as Record<string, unknown>) as EdgeLike,
           ),
         });
         continue;
@@ -361,10 +425,13 @@ export async function planNodeMerge(
     db.collection("nodes").doc(survivorId),
   );
 
-  const [duplicateEdges, survivorEdges] = await Promise.all([
-    edgesTouching(db, duplicateId),
-    edgesTouching(db, survivorId),
-  ]);
+  const [duplicateEdges, survivorEdges, duplicateVotes, survivorVotes] =
+    await Promise.all([
+      edgesTouching(db, duplicateId),
+      edgesTouching(db, survivorId),
+      nodeVotes(db, duplicateId),
+      nodeVotes(db, survivorId),
+    ]);
 
   const edges = planEdgeMoves(
     duplicateEdges,
@@ -380,6 +447,7 @@ export async function planNodeMerge(
     survivor_name: survivorDoc?.data()?.name as string | undefined,
     edges,
     counts: countDispositions(edges),
+    votes: votesToMove(duplicateVotes, survivorVotes, survivorId),
     carried: carriedFields(
       duplicateDoc?.data() ?? {},
       survivorDoc?.data() ?? {},
@@ -442,6 +510,8 @@ export function applyNodeMerge(
    * - a revision is written with `set`, so it has to state the whole document.
    * Omitted by a caller with nothing to carry. */
   storedSurvivor?: Record<string, unknown>,
+  /** The duplicate's vote documents by id, for the human ones being re-filed. */
+  storedVotes?: Map<string, Record<string, unknown>>,
 ): void {
   const moved: string[] = [];
   const collapsed: string[] = [];
@@ -523,6 +593,21 @@ export function applyNodeMerge(
       { ...withoutInternalFields(storedSurvivor), ...plan.carried },
       { stored: storedSurvivor, approve: true },
     );
+  }
+
+  // Each human vote re-filed under the survivor's id and removed from the
+  // duplicate's. A vote document is `${nodeId}_${userUid}` and carries `nodeId`
+  // in its body, so both have to change; a plain update would leave the id
+  // disagreeing with the field and the next vote by that person would write a
+  // second document.
+  for (const vote of plan.votes) {
+    const stored = storedVotes?.get(vote.from_id);
+    if (!stored) continue;
+    batch.set(db.collection("votes").doc(vote.to_id), {
+      ...stored,
+      nodeId: plan.survivor_id,
+    });
+    batch.delete(db.collection("votes").doc(vote.from_id));
   }
 
   // The duplicate keeps its document, and keeps pointing at the survivor. Its
