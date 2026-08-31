@@ -72,4 +72,20 @@ test.describe("OmniSearch", () => {
       ignoreCase: true,
     });
   });
+
+  test("finds a name with a word typed over", async ({ page }) => {
+    // „Wojewódzki Zakład Testowy” has a word in the middle that nobody
+    // searching for it would type, the way two of every five people in the
+    // database have a middle name. No chunk of the index spans it, so this
+    // found nothing at all until the endpoint learned to match the typed words
+    // against the name one at a time - and Vuetify's own filter, which wants
+    // the query as one substring of the title, threw the hit away again.
+    const item = page
+      .locator(".v-list-item", { hasText: "Wojewódzki Zakład Testowy" })
+      .first();
+    await omniSearchFor(page, "Wojewódzki Testowy", item);
+
+    await item.click();
+    await expect(page).toHaveURL(/.*\/instytucja\/.+/);
+  });
 });
