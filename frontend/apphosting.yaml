@@ -72,6 +72,18 @@ env:
       - BUILD
       - RUNTIME
 
+  # What tells sentry.server.config.ts that it is running on a deployed backend
+  # rather than on somebody's laptop. There is no request to read a hostname off
+  # at init time, and nothing else in the environment separates a deployed nitro
+  # from `nuxt preview` — `dev:build` runs preview outside the cross-env that
+  # sets USE_EMULATORS, so it looks like production to NODE_ENV too. Set here
+  # for both backends; a new one that omits it simply does not report.
+  - variable: SENTRY_ENABLED
+    value: "true"
+    availability:
+      - BUILD
+      - RUNTIME
+
   # Who /rozszerzenie hands a Firebase id token to. Pinned by the `key` field in
   # extension/manifest.json rather than assigned by Chrome from the unpacked
   # folder's path, so it is the same id on every machine and can be written down
