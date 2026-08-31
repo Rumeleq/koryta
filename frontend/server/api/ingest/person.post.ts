@@ -13,6 +13,7 @@ import {
   enrichedEdge,
   findEdgeMatches,
 } from "~~/server/utils/edges";
+import { resolveMergedNode } from "~~/server/utils/merge";
 import { electionPositions } from "~~/shared/misc";
 import type {
   Edge,
@@ -598,24 +599,40 @@ async function lookupNodeDoc(
  *
  * So, in order:
  *
- * 1. The register entry, where the payload names one. Exact, and enough: two
- *    spellings of one entry are one person whatever they are called.
- * 2. Failing that, the name - but only onto a page that has *no* register entry
+ * 1. `korytaId`, where the payload carries one: the page's own id, read
+ *    directly. `people_merged` sends it only where it matched a page without
+ *    having to choose between two, so it is not a guess this has to second-
+ *    guess - and it is the one identifier that works for the 868 people with no
+ *    register entry at all. Followed through `merged_into`, because a page
+ *    merged away since the export the pipeline read is not a page to write to.
+ * 2. The register entry. Exact, and enough: two spellings of one entry are one
+ *    person whatever they are called.
+ * 3. Failing that, the name - but only onto a page that has *no* register entry
  *    of its own. 880 people predate the pipeline sending one, and refusing to
  *    match them would give every one of them a second page on the next run. The
  *    match adopts the entry, so it happens once per person.
- * 3. A page whose register entry is a *different* one is not a match, however
+ * 4. A page whose register entry is a *different* one is not a match, however
  *    the two are spelled. That is the whole of the collapse bug: it is what
  *    used to put two strangers who share a name on one page, and let the second
  *    of them overwrite the first's `rejestrIo` on the way in.
  *
- * A payload with no `rejestrIo` at all still matches by name alone. Nothing
- * else identifies it, and the pipelines that send one are not the only callers.
+ * A payload with neither id still matches by name alone. Nothing else
+ * identifies it, and the pipelines are not the only callers.
  */
 async function lookupPersonDoc(
   ctx: Context,
   body: PersonRequest,
 ): Promise<FirebaseFirestore.DocumentSnapshot | undefined> {
+  if (body.korytaId) {
+    const { snapshot } = await resolveMergedNode(ctx.db, body.korytaId);
+    // Type-checked like every other lookup here: an id that has come to name a
+    // company since the export would otherwise take a person's parties.
+    if (snapshot?.exists && snapshot.data()?.type === "person") return snapshot;
+    console.info(
+      `[ingest] korytaId ${body.korytaId} names no person; falling back`,
+    );
+  }
+
   if (body.rejestrIo) {
     const byRegister = await lookupNodeDoc(
       ctx,

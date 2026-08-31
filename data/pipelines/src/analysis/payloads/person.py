@@ -89,6 +89,7 @@ class PeoplePayloads(Pipeline[Person]):
                     "parties",
                     "wikipedia_url",
                     "rejestrIo",
+                    "korytaId",
                 ]
             )
         )
@@ -157,12 +158,19 @@ class PeoplePayloads(Pipeline[Person]):
                 return None
             return val
 
+        def get_name(key):
+            """`get_scalar`, except that a list is settled by `canonical_name`."""
+            val = row.get(key)
+            if isinstance(val, (list, np.ndarray)):
+                return canonical_name(val)
+            return val
+
         name = (
-            get_scalar("name")
-            or get_scalar("full_name")
-            or get_scalar("fullname")
-            or get_scalar("krs_name")
-            or get_scalar("base_full_name")
+            get_name("name")
+            or get_name("full_name")
+            or get_name("fullname")
+            or get_name("krs_name")
+            or get_name("base_full_name")
             or "Unknown Payload"
         )
 
@@ -184,6 +192,15 @@ class PeoplePayloads(Pipeline[Person]):
         rejestr_id = one_register_entry(row["rejestrio_id"])
         rejestrIo = f"https://rejestr.io/osoby/{rejestr_id}"
 
+        # The page this person is already on, where `people_merged` could say so
+        # without guessing. It is the site's own primary key, so the ingest can
+        # match on it outright instead of inferring identity from a name or even
+        # from the register link - which 868 pages do not carry.
+        koryta_id = get_scalar("koryta_id")
+        if isinstance(koryta_id, float) and math.isnan(koryta_id):
+            koryta_id = None
+        koryta_id = str(koryta_id) if koryta_id else None
+
         return Person(
             name=name,
             content=content,
@@ -193,6 +210,7 @@ class PeoplePayloads(Pipeline[Person]):
             parties=party,
             wikipedia=wikipedia_url,
             rejestrIo=rejestrIo,
+            korytaId=koryta_id,
             autoapprove=count > 0,
         )
 
@@ -346,6 +364,36 @@ def unmapped_committees(elections: list[Election]) -> list[str]:
         for election in elections
         if election.committee and not parties_of_committee(election.committee)
     ]
+
+
+def canonical_name(values: typing.Sequence) -> str | None:
+    """One name for a person whose sources spell them several ways.
+
+    `full_name` is a `list_distinct` aggregate, so a person the register wrote
+    down twice arrives with both spellings and duckdb hands them over in hash
+    order - which changes when a crawl is added. Taking the first of that was
+    how one man became "Andrzej Golimont" one run and "Andrzej Marcin Golimont"
+    the next, and so how he became two pages. 7,026 register ids carry two
+    spellings differing by exactly that middle name.
+
+    Ordered rather than picked, and by what makes a readable page rather than by
+    the string alone:
+
+    1. fewest words - the short form, which is what the press, PKW and
+       Wikipedia use, and what somebody searching types;
+    2. not written in capitals - the register shouts about 14 of these
+       ("GRZEGORZ GWOZDZ"), and a bare sort would prefer the shouting because
+       capitals sort first;
+    3. lexical, so the tie has an answer at all.
+
+    An existing page is never renamed by an upload - `updatedPerson` does not
+    touch `name` - so this decides what a *new* page is called, and settles it
+    the same way every run.
+    """
+    names = [str(value).strip() for value in values if str(value).strip()]
+    if not names:
+        return None
+    return min(names, key=lambda name: (len(name.split()), name.isupper(), name))
 
 
 #: How many collapsed rows to name in the run report.

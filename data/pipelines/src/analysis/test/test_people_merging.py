@@ -92,6 +92,34 @@ def article(name: str, birth_iso8601: str) -> dict:
     }
 
 
+KORYTA_COLUMNS = [
+    "first_name",
+    "last_name",
+    "tail_name",
+    "rejestrio_id",
+    "koryta_id",
+    "full_name",
+]
+
+
+def koryta_person(full_name: str, koryta_id: str, rejestrio_id: str = "") -> dict:
+    """One person node already on the site, as `PeopleKorytaMerged` leaves it."""
+    words = full_name.split()
+    return {
+        "first_name": words[0].lower(),
+        "last_name": words[-1].lower(),
+        "tail_name": " ".join(words[1:]).lower(),
+        "rejestrio_id": rejestrio_id,
+        "koryta_id": koryta_id,
+        "full_name": full_name,
+    }
+
+
+def no_koryta() -> pd.DataFrame:
+    """A site with nobody on it, for the joins that are not about the site."""
+    return pd.DataFrame(columns=KORYTA_COLUMNS)
+
+
 def match_pkw(ctx, krs: list[dict], pkw: list[dict]) -> pd.DataFrame:
     """Run the merge over nothing but KRS and PKW.
 
@@ -114,6 +142,7 @@ def match_pkw(ctx, krs: list[dict], pkw: list[dict]) -> pd.DataFrame:
             ]
         ),
         pd.DataFrame(pkw),
+        no_koryta(),
         pd.DataFrame(columns=["last_name", "teryt", "count"]),
         pd.DataFrame(columns=["first_name", "p"]),
     )
@@ -158,6 +187,7 @@ def match(ctx, krs: list[dict], articles: list[dict]) -> pd.DataFrame:
                 "elections",
             ]
         ),
+        no_koryta(),
         pd.DataFrame(columns=["last_name", "teryt", "count"]),
         pd.DataFrame(columns=["first_name", "p"]),
     )
@@ -359,3 +389,192 @@ def test_a_namesake_the_first_name_rules_out_leaves_one_match(ctx):
     )
 
     assert list(result["wiki_name"]) == ["Dariusz Popławski (wicewojewoda)"]
+
+
+def match_koryta(ctx, krs: list[dict], koryta: list[dict]) -> pd.DataFrame:
+    """Run the merge over KRS and the site's own pages."""
+    return people_merged(
+        ctx,
+        pd.DataFrame(krs),
+        pd.DataFrame(
+            columns=[
+                "first_name",
+                "last_name",
+                "birth_year",
+                "birth_date",
+                "full_name",
+                "source",
+                "is_polityk",
+                "wiki_score",
+            ]
+        ),
+        pd.DataFrame(
+            columns=[
+                "first_name",
+                "last_name",
+                "second_name",
+                "birth_year",
+                "full_name",
+                "teryt_wojewodztwo",
+                "teryt_powiat",
+                "elections",
+            ]
+        ),
+        pd.DataFrame(koryta, columns=KORYTA_COLUMNS),
+        pd.DataFrame(columns=["last_name", "teryt", "count"]),
+        pd.DataFrame(columns=["first_name", "p"]),
+    )
+
+
+def test_the_register_id_finds_the_page_whatever_it_is_called(ctx):
+    """The point of carrying the id at all.
+
+    The page is named with a middle name and the payload is not, which is the
+    170-duplicate case. The register id is the same, so it is the same man.
+    """
+    result = match_koryta(
+        ctx,
+        [krs_person("andrzej", "golimont", "1965-04-01")],
+        [koryta_person("Andrzej Marcin Golimont", "node-1", rejestrio_id="1")],
+    )
+
+    assert list(result["koryta_id"]) == ["node-1"]
+
+
+def test_a_page_whose_register_id_is_somebody_elses_is_not_this_person(ctx):
+    """The collapse case, refused.
+
+    Same name, different register entry: two strangers. Matching them would put
+    one man's posts on the other's page - worse than leaving him without one.
+    """
+    result = match_koryta(
+        ctx,
+        [krs_person("michal", "nowak", "1961-02-03")],
+        [koryta_person("Michal Nowak", "node-1", rejestrio_id="999")],
+    )
+
+    assert list(result["koryta_id"]) == [None]
+
+
+def test_a_page_with_no_register_link_is_still_found_by_name(ctx):
+    """868 pages carry no register link, and the name is all there is."""
+    result = match_koryta(
+        ctx,
+        [krs_person("halina", "czapla", "1958-07-07")],
+        [koryta_person("Halina Czapla", "node-1")],
+    )
+
+    assert list(result["koryta_id"]) == ["node-1"]
+
+
+def test_a_page_whose_register_link_is_null_is_still_found_by_name(ctx):
+    """The stored field is absent, not empty, for a page nobody has linked.
+
+    Worth its own case because SQL answers NULL to both `= ''` and `!= ''`, so
+    a join written the obvious way drops these rows off both sides of its OR
+    and loses precisely the people the name fallback is for.
+    """
+    result = match_koryta(
+        ctx,
+        [krs_person("halina", "czapla", "1958-07-07")],
+        [koryta_person("Halina Czapla", "node-1", rejestrio_id=None)],
+    )
+
+    assert list(result["koryta_id"]) == ["node-1"]
+
+
+def test_a_page_named_with_a_middle_name_is_found_by_name_too(ctx):
+    """The old join read everything after the first word as the surname, so
+    "Andrzej Marcin Golimont" looked like a Mr "Marcin Golimont" and matched
+    nobody - losing exactly the people this is for."""
+    result = match_koryta(
+        ctx,
+        [krs_person("andrzej", "golimont", "1965-04-01")],
+        [koryta_person("Andrzej Marcin Golimont", "node-1")],
+    )
+
+    assert list(result["koryta_id"]) == ["node-1"]
+
+
+def test_a_double_surname_written_with_a_space_is_still_found(ctx):
+    """The register keeps "Pietrzak Sikorska" whole in `last_name`, so the
+    surname is the tail of the page's name rather than its last word."""
+    result = match_koryta(
+        ctx,
+        [krs_person("malgorzata", "pietrzak sikorska", "1970-01-01")],
+        [koryta_person("Malgorzata Pietrzak Sikorska", "node-1")],
+    )
+
+    assert list(result["koryta_id"]) == ["node-1"]
+
+
+def test_two_pages_a_name_cannot_choose_between_decide_nothing(ctx):
+    """The id is written to, not merely reported, so an ambiguous match is a
+    page overwritten with somebody else's career. Same refusal `wiki_match`
+    makes for the milder harm of a wrong biography."""
+    result = match_koryta(
+        ctx,
+        [krs_person("jan", "kowalski", "1960-05-05")],
+        [
+            koryta_person("Jan Kowalski", "node-1"),
+            koryta_person("Jan Kowalski", "node-2"),
+        ],
+    )
+
+    assert list(result["koryta_id"]) == [None]
+
+
+def test_the_register_id_wins_over_a_second_page_that_only_matches_by_name(ctx):
+    """A duplicate not yet merged should not make the real page unreachable."""
+    result = match_koryta(
+        ctx,
+        [krs_person("andrzej", "golimont", "1965-04-01")],
+        [
+            koryta_person("Andrzej Golimont", "node-real", rejestrio_id="1"),
+            koryta_person("Andrzej Golimont", "node-dup"),
+        ],
+    )
+
+    assert list(result["koryta_id"]) == ["node-real"]
+
+
+def test_one_page_two_namesakes_gives_neither_of_them_the_id(ctx):
+    """The hazard the other way round, and the one that bites on real data.
+
+    Refusing where a person matches two pages is not enough: a page can be the
+    only candidate for several *different* people. Against the 2026-08-29 export
+    87 pages were, one of them reached by six Jerzy Kaczmareks born between 1943
+    and 1968. Handing all six the same id would write six careers onto one page
+    - a collapse, which is worse than the duplicate the id is here to prevent.
+    """
+    result = match_koryta(
+        ctx,
+        [
+            krs_person("jerzy", "kaczmarek", "1943-01-01"),
+            krs_person("jerzy", "kaczmarek", "1968-01-01"),
+        ],
+        [koryta_person("Jerzy Kaczmarek", "node-1")],
+    )
+
+    assert set(result["koryta_id"]) == {None}
+
+
+def test_two_krs_rows_carrying_one_register_id_both_reach_the_page(ctx):
+    """And the exemption that has to go with it.
+
+    `create_people_table` groups on the birth year, so one register entry filed
+    under two dates comes out as two rows. Both carry the same register id, so
+    both are the same man and both belong on his one page - 7 pages on the site
+    are reached that way. Refusing here, the way a shared name is refused, would
+    strand him instead.
+    """
+    result = match_koryta(
+        ctx,
+        [
+            krs_person("marcin", "adamczyk", "1970-01-01"),
+            krs_person("marcin", "adamczyk", "1985-01-01"),
+        ],
+        [koryta_person("Marcin Adamczyk", "node-1", rejestrio_id="1")],
+    )
+
+    assert list(result["koryta_id"]) == ["node-1", "node-1"]

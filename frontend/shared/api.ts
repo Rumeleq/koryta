@@ -173,6 +173,14 @@ export const personRequestSchema = z.object({
 
   wikipedia: z.string().optional(),
   rejestrIo: z.string().optional(),
+  /** The node id of the page the pipeline believes this person already has.
+   *
+   * The site's own key, and the only identifier in this payload that cannot be
+   * two people: a name is a guess and 868 people have no register link. Sent
+   * only where `people_merged` matched a page without having to choose - by
+   * register id, or by a name that fitted exactly one page - so the ingest may
+   * take it at its word. See `lookupPersonDoc`. */
+  korytaId: z.string().optional(),
   parties: z.array(z.string()).optional(),
   sources: z.array(z.string()).optional(),
   companies: z.array(employmentRequestSchema),
@@ -186,6 +194,7 @@ export type PersonRequest = {
 
   wikipedia?: string;
   rejestrIo?: string;
+  korytaId?: string;
   parties?: Array<string>;
   sources?: Array<string>;
   companies: Array<EmploymentRequest>;
