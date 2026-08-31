@@ -2,6 +2,7 @@ import math
 
 import pandas as pd
 
+from analysis.people_koryta_merged import PeopleKorytaMerged
 from analysis.people_krs_merged import PeopleKRSMerged
 from analysis.people_pkw_merged import PeoplePKWMerged
 from analysis.people_wiki_merged import PeopleWikiMerged
@@ -67,7 +68,7 @@ class PeopleMerged(Pipeline):
     people_krs: PeopleKRSMerged
     people_wiki: PeopleWikiMerged
     people_pkw: PeoplePKWMerged
-    # people_koryta: PeopleKorytaMerged
+    people_koryta: PeopleKorytaMerged
     names_count_by_region: NamesCountByRegion
     first_name_freq: FirstNameFreq
 
@@ -77,6 +78,7 @@ class PeopleMerged(Pipeline):
             self.people_krs.read_or_process(ctx),
             self.people_wiki.read_or_process(ctx),
             self.people_pkw.read_or_process(ctx),
+            self.people_koryta.read_or_process(ctx),
             self.names_count_by_region.read_or_process(ctx),
             self.first_name_freq.read_or_process(ctx),
         )
@@ -87,6 +89,7 @@ def people_merged(
     krs_people,  # noqa: F841
     wiki_people,  # noqa: F841
     pkw_people,  # noqa: F841
+    koryta_people,  # noqa: F841
     names_count_by_region_table,  # noqa: F841
     first_name_freq_table,  # noqa: F841
 ):
@@ -95,11 +98,6 @@ def people_merged(
         "unique_probability",
         unique_probability,
         null_handling="special",  # type: ignore
-    )
-
-    # TODO koryta_people = people_koryta_merged.process(ctx)
-    koryta_people = pd.DataFrame(  # noqa: F841
-        data=[{"first_name": "empty", "last_name": "empty", "full_name": "empty"}]
     )
 
     print("--- Imported table sizes ---")
@@ -263,14 +261,79 @@ def people_merged(
         FROM krs_pkw kp
         LEFT JOIN wiki_match w USING (krs_row)
     ),
+    koryta_candidates AS (
+        -- Every page this person could already be, and how it was reached.
+        --
+        -- The register id is an identity and a name is not, so the two are kept
+        -- apart rather than or-ed into one similarity score: 170 pages shared a
+        -- register id with another page and 36 had had a second person's
+        -- written over them, all of it because a name was being treated as
+        -- though it identified somebody.
+        SELECT
+            kpw.krs_row,
+            ko.koryta_id,
+            ko.full_name as koryta_name,
+            coalesce(ko.rejestrio_id, '') != ''
+                AND list_contains(kpw.rejestrio_id, ko.rejestrio_id) as by_register
+        FROM krs_pkw_wiki kpw
+        JOIN koryta_people ko ON (
+            (coalesce(ko.rejestrio_id, '') != ''
+                AND list_contains(kpw.rejestrio_id, ko.rejestrio_id))
+            OR (
+                -- Only for a page carrying no register link at all - 868 of
+                -- them. Where the page has one and it is somebody else's, that
+                -- is a different person however alike the two are spelled, and
+                -- letting the name overrule it is the mistake being undone.
+                --
+                -- Coalesced on both sides of the OR: an unlinked page stores
+                -- NULL, and SQL answers NULL to `= ''` and to `!= ''` alike, so
+                -- without this such a page satisfies neither branch and drops
+                -- out of the join altogether - losing exactly the people the
+                -- name fallback is here for.
+                coalesce(ko.rejestrio_id, '') = ''
+                AND jaro_winkler_similarity(kpw.base_first_name, ko.first_name) > 0.95
+                AND (
+                    jaro_winkler_similarity(kpw.base_last_name, ko.last_name) > 0.95
+                    OR jaro_winkler_similarity(kpw.base_last_name, ko.tail_name) > 0.95
+                )
+            )
+        )
+    ),
+    koryta_match AS (
+        -- The register tier if this person reached one, the name tier
+        -- otherwise, and in either case only where exactly one page fits.
+        --
+        -- Two pages a name cannot choose between are two pages this must not
+        -- choose between: the id travels into the payload and the ingest writes
+        -- to whatever it names, so a wrong one does not make a duplicate, it
+        -- overwrites somebody. Same judgement, and the same shape, as
+        -- `wiki_match` above - which refuses for the milder reason that it
+        -- would hang the wrong biography on a page.
+        --
+        -- Unique BOTH ways for a name match, which one-page-per-person is not.
+        -- Measured against the 2026-08-29 export: 87 pages were each the only
+        -- candidate for several different people at once - six Jerzy
+        -- Kaczmareks, born between 1943 and 1968, all reaching the one page of
+        -- that name, and a "Tomasz Zielinski" page reaching a Tomasz Dzielinski
+        -- as well. Sending the id for all six would have written six careers
+        -- onto one page: not a duplicate but a collapse, and the very thing the
+        -- register id was carried to stop.
+        --
+        -- The register tier is exempt, and has to be. Two KRS rows carrying one
+        -- register id are one human whom `create_people_table` split in two, so
+        -- both belong on the one page - which is the answer, not the hazard.
+        SELECT * FROM koryta_candidates
+        QUALIFY by_register = bool_or(by_register) OVER (PARTITION BY krs_row)
+            AND count(*) OVER (PARTITION BY krs_row, by_register) = 1
+            AND (by_register OR count(*) OVER (PARTITION BY koryta_id) = 1)
+    ),
     all_sources AS (
         SELECT
             kpw.*,
-            ko.full_name as koryta_name,
+            km.koryta_id,
+            km.koryta_name,
         FROM krs_pkw_wiki kpw
-        LEFT JOIN koryta_people ko
-            ON jaro_winkler_similarity(kpw.base_last_name, ko.last_name) > 0.95
-            AND jaro_winkler_similarity(kpw.base_first_name, ko.first_name) > 0.95
+        LEFT JOIN koryta_match km USING (krs_row)
     ),
     scored AS (
         SELECT

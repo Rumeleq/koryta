@@ -983,6 +983,13 @@ describe("api/ingest/person, one register entry is one human", () => {
       id: id ?? "new-doc-id",
       parent: nodesParent,
       ref: mockRef,
+      // `lookupPersonDoc` reads a `korytaId` straight off the document rather
+      // than querying for it, and follows `merged_into` from there.
+      get: async () => ({
+        id: id ?? "new-doc-id",
+        exists: id !== undefined && nodes[id] !== undefined,
+        data: () => (id === undefined ? undefined : nodes[id]),
+      }),
     }));
     mockWhere.mockImplementation((field: string, _op: string, value: unknown) =>
       fakeQuery([[field, value]]),
@@ -1095,5 +1102,83 @@ describe("api/ingest/person, one register entry is one human", () => {
     expect(result.person).toBe("created");
     expect(revisionTargetId()).toBe("new-doc-id");
     expect(revisionTargetId()).not.toBe("artykul");
+  });
+
+  it("matches the page the pipeline named, whatever it is called there", async () => {
+    // 868 people have no register entry, so the node id is the only identifier
+    // that reaches all of them. The pipeline sends it only where it matched a
+    // page without having to choose between two.
+    nodes.halina = {
+      type: "person",
+      name: "HALINA CZAPLA",
+      parties: [],
+    };
+    payload({ name: "Halina Anna Czapla", korytaId: "halina" });
+
+    const result = await handler({} as any);
+
+    expect(result.personId).toBe("halina");
+    expect(createRevisionTransaction).not.toHaveBeenCalled();
+  });
+
+  it("follows a page merged away since the export the pipeline read", async () => {
+    // The pipeline reads a nightly dump, so it can name a page an admin merged
+    // this morning. Writing to the tombstone would put the payload somewhere
+    // nobody can reach.
+    nodes.duplicate = {
+      type: "person",
+      name: "Andrzej Marcin Golimont",
+      deleted: true,
+      merged_into: "survivor",
+    };
+    nodes.survivor = {
+      type: "person",
+      name: "Andrzej Golimont",
+      rejestrIo: "383093",
+      parties: [],
+    };
+    payload({ name: "Andrzej Golimont", korytaId: "duplicate" });
+
+    const result = await handler({} as any);
+
+    expect(result.personId).toBe("survivor");
+  });
+
+  it("ignores a korytaId that has come to name something other than a person", async () => {
+    nodes.article = { type: "article", name: "Paweł Obermeyer" };
+    nodes.pawel = {
+      type: "person",
+      name: "Paweł Obermeyer",
+      rejestrIo: "1956879",
+      parties: [],
+    };
+    payload({
+      name: "Paweł Obermeyer",
+      korytaId: "article",
+      rejestrIo: "1956879",
+    });
+
+    const result = await handler({} as any);
+
+    expect(result.personId).toBe("pawel");
+  });
+
+  it("falls back to the register entry when the korytaId names nothing", async () => {
+    // A page deleted since the export, or an id from a stale run.
+    nodes.pawel = {
+      type: "person",
+      name: "Paweł Obermeyer",
+      rejestrIo: "1956879",
+      parties: [],
+    };
+    payload({
+      name: "Paweł Obermeyer",
+      korytaId: "gone",
+      rejestrIo: "1956879",
+    });
+
+    const result = await handler({} as any);
+
+    expect(result.personId).toBe("pawel");
   });
 });

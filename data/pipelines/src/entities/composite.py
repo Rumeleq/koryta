@@ -53,6 +53,10 @@ class Person:
     parties: list[str] | None = None
     wikipedia: str | None = None
     rejestrIo: str | None = None
+    #: The node id of the page this person is already on, where the pipeline
+    #: could work it out. The site's own key, so the ingest does not have to
+    #: infer who this is - see `lookupPersonDoc`.
+    korytaId: str | None = None
     autoapprove: bool = False
 
 

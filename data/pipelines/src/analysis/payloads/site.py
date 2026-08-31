@@ -242,6 +242,8 @@ class SiteSnapshot:
         #: People by their rejestr.io link, which is what identifies them. See
         #: `person_for`.
         self.people: dict[str, dict] = {}
+        #: People by node id, for a payload that already knows which page it is.
+        self.people_by_id: dict[str, dict] = {}
         #: People by name, for the ones the site has no register link for.
         self.people_by_name: dict[str, dict] = {}
         self.companies: dict[str, str] = {}
@@ -263,6 +265,7 @@ class SiteSnapshot:
             self.node_ids.add(node_id)
             node_type = node.get("type")
             if node_type == "person":
+                self.people_by_id[node_id] = node
                 register = field(node, "rejestrIo")
                 if register is not None:
                     self.people.setdefault(str(register), node)
@@ -310,12 +313,20 @@ class SiteSnapshot:
         predicts the wrong page. It would drop a payload as a no-op against a
         node the upload was never going to touch.
 
-        The register link first, because that is the identity - the name is not,
-        and matching on it exactly is what filed 170 people under two pages
-        each. The name only as a fallback, and only onto somebody the site has
-        no register link for, because a page carrying a *different* link is a
-        different human however the two are spelled.
+        The node id first where the payload carries one, because that is the
+        page and there is nothing left to work out. Then the register link,
+        because that is the identity - the name is not, and matching on it
+        exactly is what filed 170 people under two pages each. The name only as
+        a fallback, and only onto somebody the site has no register link for,
+        because a page carrying a *different* link is a different human however
+        the two are spelled.
         """
+        koryta_id = field(payload, "korytaId")
+        if koryta_id is not None:
+            stored = self.people_by_id.get(str(koryta_id))
+            if stored is not None:
+                return stored
+
         register = field(payload, "rejestrIo")
         if register is not None:
             stored = self.people.get(str(register))

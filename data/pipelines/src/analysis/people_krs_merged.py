@@ -25,7 +25,24 @@ def people_krs_merged(ctx: Context, krs_data: pd.DataFrame):
         SELECT
             lower(first_name) as first_name,
             lower(last_name) as last_name,
-            CAST(NULL AS VARCHAR) as second_name,
+            -- The register knows the middle name; it is `drugie_imiona` in the
+            -- response and `scrapers/krs/list.py` has always captured it. This
+            -- used to be `CAST(NULL AS VARCHAR)`, which threw it away and left
+            -- `create_people_table` to work it out by subtracting the first and
+            -- last name from `full_name` - a guess, and made against a column
+            -- that is not one value per person.
+            --
+            -- An empty `drugie_imiona` means "no middle name" and is trusted as
+            -- such rather than coalesced back into the guess. Of the 180,330
+            -- rows crawled, 85,581 carry one; of the 94,749 that do not, every
+            -- single one whose `full_name` still runs to three words has a
+            -- two-word `last_name` - a double surname, not a middle name the
+            -- register forgot. Nothing is left for the guess to add.
+            --
+            -- NULL is still NULL, and still derives: that is a field the
+            -- response did not have at all, which is not the same answer as an
+            -- empty one.
+            lower(trim(second_names)) as second_name,
             CAST(SUBSTRING(CAST(birth_date AS VARCHAR), 1, 4) AS INTEGER) as birth_year,
             CAST(birth_date AS VARCHAR) as birth_date,
             employed_start,

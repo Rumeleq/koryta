@@ -13,7 +13,11 @@ import pandas as pd
 import pytest
 
 from analysis.payloads import PeoplePayloads
-from analysis.payloads.person import collapsed_people, one_register_entry
+from analysis.payloads.person import (
+    canonical_name,
+    collapsed_people,
+    one_register_entry,
+)
 from analysis.payloads.site import (
     ENRICHED_CANDIDACY,
     MISSING_COMPANY,
@@ -489,3 +493,32 @@ class TestOneRegisterEntry:
 
         assert dict(collapsed_people) == {"383093, 1956879": 1}
         collapsed_people.clear()
+
+
+class TestCanonicalName:
+    """Which spelling a person whose sources disagree gets called on the site."""
+
+    def test_the_middle_name_is_left_out(self):
+        assert (
+            canonical_name(["Andrzej Marcin Golimont", "Andrzej Golimont"])
+            == "Andrzej Golimont"
+        )
+
+    def test_the_choice_does_not_depend_on_the_order_it_arrives_in(self):
+        """`full_name` is a `list_distinct`, so the order is a hash."""
+        assert canonical_name(["Andrzej Golimont", "Andrzej Marcin Golimont"]) == (
+            canonical_name(["Andrzej Marcin Golimont", "Andrzej Golimont"])
+        )
+
+    def test_the_register_shouting_does_not_win(self):
+        """A bare sort would take the capitals, which sort first."""
+        assert (
+            canonical_name(["GRZEGORZ GWOZDZ", "Grzegorz Gwozdz"]) == "Grzegorz Gwozdz"
+        )
+
+    def test_a_single_spelling_is_left_alone(self):
+        assert canonical_name(["Teresa Maria Bogiel"]) == "Teresa Maria Bogiel"
+
+    def test_nothing_to_choose_from_is_no_name(self):
+        assert canonical_name([]) is None
+        assert canonical_name(["", "   "]) is None
