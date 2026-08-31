@@ -41,7 +41,18 @@
           </v-btn-toggle>
         </div>
 
-        <p class="text-caption text-medium-emphasis mb-1">{{ scaleNote }}</p>
+        <!-- Two of everything the narrow scale changes, chosen by a media
+             query rather than by a breakpoint composable: `useDisplay()` would
+             have the server render one and the browser swap to the other, which
+             is a hydration mismatch on every bar and every number below. -->
+        <p class="text-caption text-medium-emphasis mb-1 breakdown__wide-only">
+          {{ scaleNote }}
+        </p>
+        <p
+          class="text-caption text-medium-emphasis mb-1 breakdown__narrow-only"
+        >
+          {{ narrowScaleNote }}
+        </p>
 
         <div class="breakdown__row breakdown__row--head">
           <div class="breakdown__label breakdown__caption">
@@ -50,8 +61,17 @@
           <div class="breakdown__axis">
             <span
               v-for="tick in ticks"
-              :key="tick.at"
-              class="breakdown__tick"
+              :key="`wide-${tick.at}`"
+              class="breakdown__tick breakdown__wide-only"
+              :class="{ 'breakdown__tick--first': tick.at === 0 }"
+              :style="{ left: `${tick.at}%` }"
+            >
+              {{ formatCount(tick.value) }}
+            </span>
+            <span
+              v-for="tick in narrowTicks"
+              :key="`narrow-${tick.at}`"
+              class="breakdown__tick breakdown__narrow-only"
               :class="{ 'breakdown__tick--first': tick.at === 0 }"
               :style="{ left: `${tick.at}%` }"
             >
@@ -153,8 +173,8 @@
             {{ party.label }}
           </span>
           <template v-if="hasBacklog">
-            <span class="breakdown__legend-sep">|</span>
-            <span>
+            <span class="breakdown__legend-sep breakdown__wide-only">|</span>
+            <span class="breakdown__wide-only">
               <i class="breakdown__swatch breakdown__swatch--track" />
               osoby z rejestru, jeszcze niesprawdzone — sama liczba
             </span>
@@ -166,10 +186,20 @@
             Kolor pojawia się wyłącznie tam, gdzie redakcja sprawdziła i
             opublikowała miejsce.
           </strong>
-          {{ backlogNote }}
+          <span class="breakdown__wide-only">{{ backlogNote }}</span>
+          <span class="breakdown__narrow-only">{{ narrowBacklogNote }}</span>
         </p>
-        <p v-if="minWidthCost" class="text-caption text-medium-emphasis mb-0">
+        <p
+          v-if="minWidthCost"
+          class="text-caption text-medium-emphasis mb-0 breakdown__wide-only"
+        >
           {{ minWidthCost }}
+        </p>
+        <p
+          v-if="narrowMinWidthCost"
+          class="text-caption text-medium-emphasis mb-0 breakdown__narrow-only"
+        >
+          {{ narrowMinWidthCost }}
         </p>
       </div>
     </template>
@@ -342,29 +372,63 @@ const shown = computed(() =>
 );
 const hidden = computed(() => Math.max(sorted.value.length - PAGE, 0));
 
+/** The axis this chart is drawn against, and the one a phone is drawn against.
+ *
+ * TWO SCALES, ONE OF WHICH IS NOT A RESCALE OF ROWS. `axisMax` runs to the
+ * longest row's `total`, which is what makes the coloured head the honest small
+ * fraction of the register it is. A phone does not draw the backlog at all -
+ * the tail and the "do sprawdzenia" column are the editors' half of this chart
+ * and there is no room for them - and against a scale sized for a tail that is
+ * not there, every bar would sit in a lane that is mostly unexplained blank.
+ * So the narrow layout measures against the longest row's *found* seats.
+ *
+ * Every row still shares one scale and none is scaled against itself, which is
+ * the property that lets the rows be compared. What the narrow scale gives up
+ * is the comparison against the register - and that comparison is exactly what
+ * a phone is no longer showing.
+ */
 const axisMax = computed(() =>
   Math.max(1, ...props.rows.map((row) => row.total)),
 );
+const narrowAxisMax = computed(() =>
+  Math.max(1, ...props.rows.map((row) => row.seats)),
+);
 
-const tickStep = computed(() => {
-  const raw = axisMax.value / 5;
+function tickStepFor(max: number): number {
+  const raw = max / 5;
   const pow = Math.pow(10, Math.floor(Math.log10(Math.max(raw, 1))));
   return [1, 2, 2.5, 5, 10].map((m) => m * pow).find((s) => s >= raw) ?? pow;
-});
+}
 
-const ticks = computed(() => {
+function ticksFor(max: number) {
+  const step = tickStepFor(max);
   const out: { value: number; at: number }[] = [];
-  for (let v = 0; v <= axisMax.value; v += tickStep.value) {
-    out.push({ value: v, at: (v / axisMax.value) * 100 });
+  for (let v = 0; v <= max; v += step) {
+    out.push({ value: v, at: (v / max) * 100 });
   }
   return out;
-});
+}
+
+const ticks = computed(() => ticksFor(axisMax.value));
+const narrowTicks = computed(() => ticksFor(narrowAxisMax.value));
 
 const scaleNote = computed(
   () =>
     `Skala wspólna dla wszystkich wierszy: od 0 do ${formatCount(axisMax.value)} ${
       hasBacklog.value ? "miejsc znanych z KRS" : "sprawdzonych miejsc"
-    }, podziałka co ${formatCount(tickStep.value)}. Żaden wiersz nie jest przeskalowany osobno.`,
+    }, podziałka co ${formatCount(tickStepFor(axisMax.value))}. Żaden wiersz nie jest przeskalowany osobno.`,
+);
+
+/** Said instead of the above on a phone, and it has to say what changed: the
+ * scale is a different one, and the reason is that the thing the wider scale
+ * measured against is not drawn here. */
+const narrowScaleNote = computed(
+  () =>
+    `Skala wspólna dla wszystkich wierszy: od 0 do ${formatCount(narrowAxisMax.value)} sprawdzonych miejsc, podziałka co ${formatCount(tickStepFor(narrowAxisMax.value))}. Żaden wiersz nie jest przeskalowany osobno.${
+      hasBacklog.value
+        ? " Na wąskim ekranie nie rysujemy zaległości z rejestru, więc i skala kończy się na tym, co sprawdzone."
+        : ""
+    }`,
 );
 
 const backlogNote = computed(() =>
@@ -373,45 +437,68 @@ const backlogNote = computed(() =>
     : "Podział na partie nie ma szarego ogona: nie wiemy, do jakiej partii należą niesprawdzone osoby, i nie zgadujemy. Zaległość widać w podziale na województwo albo szpital.",
 );
 
+const narrowBacklogNote = computed(() =>
+  hasBacklog.value
+    ? "Zaległości — osób z rejestru, których nikt jeszcze nie sprawdził — na wąskim ekranie nie pokazujemy; są w tym samym wykresie na szerszym."
+    : backlogNote.value,
+);
+
 const attributions = (row: BreakdownRow) =>
   row.segments.reduce((sum, seg) => sum + seg.seats, 0);
 
-/** Percent of the lane one seat occupies. */
-const headUnit = computed(() => 100 / axisMax.value);
+/** Percent of the lane one seat occupies, on a given scale. */
+const headUnit = (max: number) => 100 / max;
 
 const minPct = () => (MIN_SEGMENT_PX / ASSUMED_LANE_PX) * 100;
 
-function segmentWidth(row: BreakdownRow, index: number): number {
+function segmentWidth(row: BreakdownRow, index: number, max: number): number {
   const total = attributions(row);
   // A published person with two parties is counted under both, so the segments
   // can sum past the seat count. Scaling them to `seats` makes the double count
   // change the split inside the head rather than how long the head is.
   const scaleTo = total === 0 ? 0 : row.seats / total;
   return Math.max(
-    row.segments[index]!.seats * scaleTo * headUnit.value,
+    row.segments[index]!.seats * scaleTo * headUnit(max),
     minPct(),
   );
 }
 
-function segmentStyle(row: BreakdownRow, index: number) {
+function segmentLeft(row: BreakdownRow, index: number, max: number): number {
   let left = 0;
-  for (let i = 0; i < index; i += 1) left += segmentWidth(row, i);
+  for (let i = 0; i < index; i += 1) left += segmentWidth(row, i, max);
+  return left;
+}
+
+/** Both geometries at once, as custom properties the stylesheet picks between.
+ *
+ * The alternative was a `useDisplay()` breakpoint, which the server renders at
+ * its own assumed width and the browser then corrects - a hydration mismatch on
+ * every bar and every line of the note above them. A media query choosing
+ * between two variables the server and the browser both emit identically has
+ * neither problem. */
+function segmentStyle(row: BreakdownRow, index: number) {
   return {
-    left: `${left}%`,
-    width: `${segmentWidth(row, index)}%`,
+    "--seg-left": `${segmentLeft(row, index, axisMax.value)}%`,
+    "--seg-width": `${segmentWidth(row, index, axisMax.value)}%`,
+    "--seg-left-narrow": `${segmentLeft(row, index, narrowAxisMax.value)}%`,
+    "--seg-width-narrow": `${segmentWidth(row, index, narrowAxisMax.value)}%`,
     backgroundColor: row.segments[index]!.color,
   };
 }
 
 function paintedHeadPct(row: BreakdownRow): number {
-  return row.segments.reduce((sum, _seg, i) => sum + segmentWidth(row, i), 0);
+  return row.segments.reduce(
+    (sum, _seg, i) => sum + segmentWidth(row, i, axisMax.value),
+    0,
+  );
 }
 
 /** The backlog stripe, or null where there is none.
  *
  * It starts at the head's PAINTED end, so a segment widened by the minimum
  * width shortens the tail rather than being painted over by it, and the row's
- * total length stays true. */
+ * total length stays true. Only ever the wide geometry: below `sm` the stylesheet
+ * does not draw this at all. */
 function trackStyle(row: BreakdownRow) {
   if (!row.unreviewed) return null;
   const left = paintedHeadPct(row);
@@ -421,22 +508,31 @@ function trackStyle(row: BreakdownRow) {
   return { left: `${left}%`, width: `${width}%` };
 }
 
-const minWidthCost = computed(() => {
+/** What the 5px floor cost, on one scale.
+ *
+ * Reported per scale rather than once, because it is a count of seats and the
+ * narrow scale converts a percentage into a different number of them. Printing
+ * the wide figure under the narrow chart would be quoting a correction that
+ * chart did not make. */
+function minWidthCostOn(max: number): string {
   let widened = 0;
   let seats = 0;
   for (const row of props.rows) {
     const total = attributions(row);
     const scaleTo = total === 0 ? 0 : row.seats / total;
     for (const seg of row.segments) {
-      const truePct = seg.seats * scaleTo * headUnit.value;
+      const truePct = seg.seats * scaleTo * headUnit(max);
       if (truePct >= minPct()) continue;
       widened += 1;
-      seats += ((minPct() - truePct) / 100) * axisMax.value;
+      seats += ((minPct() - truePct) / 100) * max;
     }
   }
   if (widened === 0) return "";
-  return `Korekta minimalnej szerokości (${MIN_SEGMENT_PX} px na segment, pokryta z szarego ogona tego samego wiersza, więc długość żadnego wiersza się nie zmienia): ${polishCounting(widened, "segment", "segmenty", "segmentów")}, razem +${seats.toFixed(1)} miejsca z ${formatCount(axisMax.value)}.`;
-});
+  return `Korekta minimalnej szerokości (${MIN_SEGMENT_PX} px na segment, pokryta z szarego ogona tego samego wiersza, więc długość żadnego wiersza się nie zmienia): ${polishCounting(widened, "segment", "segmenty", "segmentów")}, razem +${seats.toFixed(1)} miejsca z ${formatCount(max)}.`;
+}
+
+const minWidthCost = computed(() => minWidthCostOn(axisMax.value));
+const narrowMinWidthCost = computed(() => minWidthCostOn(narrowAxisMax.value));
 
 const legend = computed(() => {
   const seen = new Map<
@@ -611,6 +707,8 @@ const paletteVars = computed(() => ({
   position: absolute;
   top: 2px;
   height: 20px;
+  left: var(--seg-left);
+  width: var(--seg-width);
 }
 
 .breakdown__track {
@@ -693,6 +791,21 @@ const paletteVars = computed(() => ({
   overflow-x: auto;
 }
 
+/* The two-variant switch. Neither class ever SETS a display value in the
+   breakpoint where its element is showing, so every element keeps whatever
+   display it would otherwise have had - `.breakdown__legend span` is an
+   inline-flex, the notes are blocks, and a shared `display: block` would break
+   both.
+
+   Qualified by `.breakdown` for weight, not for scope: `.breakdown__legend
+   span` is (0,1,1) and beat a bare (0,1,0) class, so the legend kept its grey
+   swatch on a phone after the tail it belongs to had gone. */
+@media (min-width: 600px) {
+  .breakdown .breakdown__narrow-only {
+    display: none;
+  }
+}
+
 .stats-numeric {
   font-variant-numeric: tabular-nums;
 }
@@ -745,8 +858,23 @@ const paletteVars = computed(() => ({
     --bd-label: 140px;
   }
 
-  .breakdown__editorial {
+  .breakdown .breakdown__editorial,
+  .breakdown .breakdown__wide-only {
     display: none;
+  }
+
+  /* The grey tail goes with them. It is the same editorial half of the chart
+     as the column and the button - what an editor still has to get through -
+     and on a phone it was most of the row's ink saying so. The bars are
+     redrawn on `narrowAxisMax` so they use the lane the tail has given back
+     rather than trailing off into space that is no longer explained. */
+  .breakdown__track {
+    display: none;
+  }
+
+  .breakdown__seg {
+    left: var(--seg-left-narrow);
+    width: var(--seg-width-narrow);
   }
 }
 </style>
