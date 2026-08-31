@@ -1463,6 +1463,44 @@ def test_revisions_record_who_changed_what_and_when(revisions):
     )
 
 
+def test_every_revision_says_whether_a_person_made_it(revisions):
+    """`update_automatic` has to be on every revision, not only the true ones.
+
+    The flag separates what the pipelines file from what a person proposed, and
+    it was written *only when true* until 2026-08-21. Firestore matches no
+    filter against a field a document does not have, so while any revision is
+    missing it, "show me human work" cannot be a `where` and every reader has to
+    pull the collection and filter `!== true` in memory - /api/revisions/queue,
+    /api/revisions/mine and /api/admin/summary all say so in their comments.
+
+    That is not only slow, it is wrong at the edges. `collectActivityEvents`
+    caps each scan at 20,000 documents and marks the kind truncated when it hits
+    that, *before* the in-memory filter runs, so a day the ingest was busy on
+    reads as capped however little of it was human: 2026-08-29 held 23,532
+    revisions, 92 by a person, and /eksploruj/statystyki has shown "za duzo
+    zdarzen w tym okresie" for every window containing it ever since.
+    """
+    # 1768 revisions written before the flag was, in the export of
+    # 2026-08-31T02:00Z. `createRevisionTransaction` and `createProposalInBatch`
+    # in server/utils/revisions.ts now write it whichever way it goes, so this
+    # can only shrink; frontend/scripts/migrate/backfill-revision-automatic.ts
+    # takes it to zero.
+    FLAGLESS_REVISIONS = 0
+
+    flagless = [
+        revision["id"]
+        for revision in revisions
+        if not isinstance(revision.get("update_automatic"), bool)
+    ]
+
+    assert len(flagless) <= FLAGLESS_REVISIONS, (
+        f"{len(flagless)} revisions do not say whether a person or a pipeline "
+        f"made them, up from the {FLAGLESS_REVISIONS} written before the field "
+        f"existed - so something is writing a revision without the flag again. "
+        f"Sample IDs: {sample(flagless)}"
+    )
+
+
 # --------------------------------------------------------------------------- #
 # notes                                                                        #
 # --------------------------------------------------------------------------- #
