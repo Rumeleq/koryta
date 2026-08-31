@@ -250,13 +250,15 @@ function pickSurvivor(group: Candidate[]): Candidate {
  * entry are one each.
  */
 function mergeWrites(plan: MergePlan): number {
-  const { moved, review, collapsed, self } = plan.counts;
+  const { moved, review, collapsed, enriched, self } = plan.counts;
   const carrying = Object.keys(plan.carried).length > 0 ? 2 : 0;
-  return moved + review + 2 * (collapsed + self) + 2 + carrying;
+  // An enriched relation costs four: the revision and edge that fill in the
+  // survivor's copy, and the revision and edge that retire this one.
+  return moved + review + 2 * (collapsed + self) + 4 * enriched + 2 + carrying;
 }
 
 function emptyCounts(): Record<MergeDisposition, number> {
-  return { moved: 0, collapsed: 0, review: 0, self: 0 };
+  return { moved: 0, collapsed: 0, enriched: 0, review: 0, self: 0 };
 }
 
 /** Runs `task` over `items` a few at a time.
@@ -413,7 +415,8 @@ async function migrate() {
   console.log(
     `\n  ${merges.length} page(s) to merge across ${selected.length} group(s).\n` +
       `  ${edgeTotal} relation(s): ${totals.moved} moved, ` +
-      `${totals.collapsed} collapsed, ${totals.review} moved but identical ` +
+      `${totals.collapsed} collapsed, ${totals.enriched} folded into a ` +
+      `fuller copy the survivor already had, ${totals.review} moved but identical ` +
       `to one the survivor already holds, ${totals.self} self-pointing.`,
   );
   for (const [type, counts] of Object.entries(byType).sort(([a], [b]) =>
@@ -421,6 +424,7 @@ async function migrate() {
   )) {
     console.log(
       `    ${type}: ${counts.moved} moved, ${counts.collapsed} collapsed, ` +
+        `${counts.enriched} enriched, ` +
         `${counts.review} to review, ${counts.self} self`,
     );
   }
@@ -541,8 +545,20 @@ async function readStoredEdges(
   const stored = new Map<string, Record<string, unknown>>();
   if (plan.edges.length === 0) return stored;
 
+  // Both ends of every verdict: the relation being moved, and - for an
+  // `enriched` one - the survivor's relation that is about to learn from it,
+  // which `applyNodeMerge` has to read before it can write the fuller version.
+  const edgeIds = [
+    ...new Set(
+      plan.edges.flatMap((edge) =>
+        edge.disposition === "enriched" && edge.duplicate_of
+          ? [edge.edge_id, edge.duplicate_of]
+          : [edge.edge_id],
+      ),
+    ),
+  ];
   const docs = await db.getAll(
-    ...plan.edges.map((edge) => db.collection("edges").doc(edge.edge_id)),
+    ...edgeIds.map((id) => db.collection("edges").doc(id)),
   );
   for (const doc of docs) {
     if (doc.exists) stored.set(doc.id, doc.data() ?? {});

@@ -3,7 +3,14 @@ import type {
   Firestore,
   WriteBatch,
 } from "firebase-admin/firestore";
-import { edgeIdentity, edgeSemantics, type EdgeLike } from "./edges";
+import {
+  edgeIdentity,
+  edgeRelation,
+  edgeSemantics,
+  enrichedEdge,
+  meetsEnrichFloor,
+  type EdgeLike,
+} from "./edges";
 import { createRevisionTransaction, withoutInternalFields } from "./revisions";
 import { recordAudit } from "./audit";
 // Imported explicitly rather than left to Nuxt's auto-import: this module is
@@ -22,10 +29,16 @@ import { asArray } from "../../shared/model";
  *   identical fields are *not* evidence of one fact. Kept, and reported - see
  *   `identicalMeansSame` in `server/utils/edges.ts`, which is the same
  *   judgement `scripts/migrate/dedupe-edges.ts` makes.
+ * - `enriched`: the survivor states a poorer version of this - a candidacy with
+ *   no committee against one with it - so the two are one fact and the better
+ *   informed of them wins. The survivor's relation takes what this one knows and
+ *   this one goes. Only for an `enrichable` type, where a blank means "not known
+ *   yet" rather than "there was none".
  * - `self`: both ends were the duplicate, so the merge would leave the survivor
  *   pointing at itself. Removed; a loop is not a fact about anybody.
  */
-export type MergeDisposition = "moved" | "collapsed" | "review" | "self";
+export type MergeDisposition =
+  "moved" | "collapsed" | "enriched" | "review" | "self";
 
 export type MergeEdgePlan = {
   edge_id: string;
@@ -33,9 +46,12 @@ export type MergeEdgePlan = {
   disposition: MergeDisposition;
   /** Which end of the relation named the duplicate. */
   role: "source" | "target" | "both";
-  /** The survivor's relation that already says this, for a `collapsed` or
-   * `review` verdict. */
+  /** The survivor's relation that already says this, for a `collapsed`,
+   * `enriched` or `review` verdict. */
   duplicate_of?: string;
+  /** What the survivor's relation should say once this one's fields are folded
+   * into it. Only on an `enriched` verdict. */
+  enriches_into?: Record<string, unknown>;
 };
 
 export type MergePlan = {
@@ -182,11 +198,22 @@ export function planEdgeMoves(
   // type may legitimately assert one twice, so this counts rather than just
   // records.
   const held = new Map<string, string[]>();
+  //: The receiving page's relations by `(target, type)`, which is as close as
+  //: two can be without asserting the same thing - that is the set `enriches`
+  //: has to be searched over, because an edge that fills in a committee has a
+  //: different identity from the one it is filling in.
+  const byPair = new Map<string, { id: string; stored: EdgeLike }[]>();
+  const claimed = new Set<string>();
   for (const doc of destination) {
     const stored = doc.data();
     if (stored.deleted === true) continue;
     const identity = edgeIdentity(stored as EdgeLike);
     held.set(identity, [...(held.get(identity) ?? []), doc.id]);
+    const pair = `${stored.target}\u0000${stored.type}`;
+    byPair.set(pair, [
+      ...(byPair.get(pair) ?? []),
+      { id: doc.id, stored: stored as EdgeLike },
+    ]);
   }
 
   const edges: MergeEdgePlan[] = [];
@@ -243,7 +270,57 @@ export function planEdgeMoves(
       continue;
     }
 
+    // Nothing says exactly this, but the survivor may say a better-informed
+    // version of it. `TY8bMoaheJqzINdOTIoJ` held three candidacies with no
+    // party and no committee against the same three on `XGPwmZjJII22uoMWvZWz`
+    // with both, and identity alone cannot see that they are one fact: party
+    // and committee are discriminators, so the poorer copy hashes elsewhere and
+    // lands beside the richer one. This is the same question
+    // `findEdgeOrCreate` asks of an incoming payload row, asked of a relation
+    // arriving from the other page, and answered by the same function.
+    const { enrichable } = edgeSemantics(next.type);
+    if (enrichable) {
+      const candidates = (byPair.get(`${next.target}\u0000${next.type}`) ?? [])
+        .filter((c) => !claimed.has(c.id))
+        .filter((c) => meetsEnrichFloor(c.stored));
+      // Claimed one for one: two candidacies the survivor holds are two facts,
+      // and letting both of the duplicate's fold onto the first would lose one.
+      const match = candidates.find(
+        (c) => edgeRelation(c.stored, next) !== "conflict",
+      );
+      if (match) {
+        claimed.add(match.id);
+        const relation = edgeRelation(match.stored, next);
+        if (relation === "same") {
+          edges.push({
+            edge_id: doc.id,
+            type,
+            role,
+            disposition: "collapsed",
+            duplicate_of: match.id,
+          });
+          continue;
+        }
+        edges.push({
+          edge_id: doc.id,
+          type,
+          role,
+          disposition: "enriched",
+          duplicate_of: match.id,
+          enriches_into: enrichedEdge(
+            withoutInternalFields(match.stored as Record<string, unknown>),
+            next,
+          ),
+        });
+        continue;
+      }
+    }
+
     held.set(identity, [doc.id]);
+    byPair.set(`${next.target}\u0000${next.type}`, [
+      ...(byPair.get(`${next.target}\u0000${next.type}`) ?? []),
+      { id: doc.id, stored: next },
+    ]);
     edges.push({ edge_id: doc.id, type, role, disposition: "moved" });
   }
 
@@ -257,6 +334,7 @@ export function countDispositions(
   const counts: Record<MergeDisposition, number> = {
     moved: 0,
     collapsed: 0,
+    enriched: 0,
     review: 0,
     self: 0,
   };
@@ -367,6 +445,7 @@ export function applyNodeMerge(
 ): void {
   const moved: string[] = [];
   const collapsed: string[] = [];
+  const enriched: string[] = [];
 
   for (const edge of plan.edges) {
     const edgeRef = db.collection("edges").doc(edge.edge_id);
@@ -380,6 +459,25 @@ export function applyNodeMerge(
       batch.update(edgeRef, update);
       moved.push(edge.edge_id);
       continue;
+    }
+
+    // An enriched relation is two writes: the survivor's copy learns what this
+    // one knew, and this one goes the way a collapsed one does. Written as a
+    // revision, approved, because it changes what a relation asserts and that
+    // is the one thing revisions exist to record.
+    if (edge.disposition === "enriched" && edge.enriches_into) {
+      const target = storedEdges.get(edge.duplicate_of ?? "");
+      if (target) {
+        createRevisionTransaction(
+          db,
+          batch,
+          user,
+          db.collection("edges").doc(edge.duplicate_of!),
+          edge.enriches_into,
+          { stored: target, approve: true },
+        );
+        enriched.push(edge.duplicate_of!);
+      }
     }
 
     // `deleted` and `delete_reason` are withheld from `stored` so this revision
@@ -401,7 +499,9 @@ export function applyNodeMerge(
         delete_reason:
           edge.disposition === "self"
             ? `Scalenie stron: powiązanie prowadziło samo do siebie. ${reason}`
-            : `Scalenie stron: to samo mówi już powiązanie ${edge.duplicate_of}. ${reason}`,
+            : edge.disposition === "enriched"
+              ? `Scalenie stron: to samo, pełniej, mówi powiązanie ${edge.duplicate_of}. ${reason}`
+              : `Scalenie stron: to samo mówi już powiązanie ${edge.duplicate_of}. ${reason}`,
       },
       // An admin merging two pages *is* the review of what the merge removes.
       { stored: carried, approve: true, published: false },
@@ -445,7 +545,7 @@ export function applyNodeMerge(
       target_id: plan.duplicate_id,
       user: user.uid,
       reason,
-      merge: { into: plan.survivor_id, moved, collapsed },
+      merge: { into: plan.survivor_id, moved, collapsed, enriched },
     },
     batch,
   );

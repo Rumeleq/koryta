@@ -145,6 +145,7 @@ describe("planEdgeMoves", () => {
     expect(countDispositions(edges)).toEqual({
       moved: 0,
       collapsed: 0,
+      enriched: 0,
       review: 2,
       self: 0,
     });
@@ -254,6 +255,136 @@ describe("planEdgeMoves", () => {
 
     expect(edges.map((edge) => edge.edge_id)).toEqual(["d1", "d9"]);
   });
+
+  it("retires a candidacy the survivor already states more fully", async () => {
+    // The bug this was reported for. `TY8bMoaheJqzINdOTIoJ` held three
+    // candidacies with no party and no committee; `XGPwmZjJII22uoMWvZWz` held
+    // the same three with both. `party` and `committee` are discriminators, so
+    // the poorer copy hashes to a different identity and used to land beside
+    // the richer one - giving the merged page two of every candidacy, one of
+    // them blank.
+    const bare = {
+      type: "election",
+      source: "dup",
+      target: "teryt1465",
+      position: "Samorząd",
+      start_date: "2002-01-01",
+    };
+    const full = {
+      ...bare,
+      source: "keep",
+      party: "SLD",
+      committee: "Koalicyjny KW Sojusz Lewicy Demokratycznej",
+    };
+
+    const edges = planEdgeMoves(
+      [edgeDoc("bare", bare)],
+      [edgeDoc("full", full)],
+      "dup",
+      "keep",
+    );
+
+    expect(edges).toEqual([
+      {
+        edge_id: "bare",
+        type: "election",
+        role: "source",
+        disposition: "collapsed",
+        duplicate_of: "full",
+      },
+    ]);
+  });
+
+  it("fills in the survivor's candidacy from a fuller one arriving", async () => {
+    // The same fact the other way round, which the survivor rule makes
+    // possible: the page that knows more about the person is not always the
+    // page that knows more about a given candidacy.
+    const bare = {
+      type: "election",
+      source: "keep",
+      target: "teryt1465",
+      position: "Samorząd",
+      start_date: "2002-01-01",
+    };
+    const full = {
+      ...bare,
+      source: "dup",
+      party: "SLD",
+      committee: "Koalicyjny KW Sojusz Lewicy Demokratycznej",
+    };
+
+    const edges = planEdgeMoves(
+      [edgeDoc("full", full)],
+      [edgeDoc("bare", bare)],
+      "dup",
+      "keep",
+    );
+
+    expect(edges[0]?.disposition).toBe("enriched");
+    expect(edges[0]?.duplicate_of).toBe("bare");
+    expect(edges[0]?.enriches_into).toMatchObject({
+      party: "SLD",
+      committee: "Koalicyjny KW Sojusz Lewicy Demokratycznej",
+      start_date: "2002-01-01",
+    });
+  });
+
+  it("does not fold two of the duplicate's candidacies onto one of the survivor's", async () => {
+    // Two bare candidacies against one full one are still two facts. Claiming
+    // the survivor's copy one for one is what stops the second being silently
+    // absorbed by the first.
+    const bare = {
+      type: "election",
+      source: "dup",
+      target: "teryt1465",
+      position: "Samorząd",
+      start_date: "2002-01-01",
+    };
+    const full = {
+      ...bare,
+      source: "keep",
+      party: "SLD",
+      committee: "KW SLD",
+    };
+
+    const edges = planEdgeMoves(
+      [edgeDoc("bare1", bare), edgeDoc("bare2", bare)],
+      [edgeDoc("full", full)],
+      "dup",
+      "keep",
+    );
+
+    expect(edges.map((e) => e.disposition)).toEqual(["collapsed", "moved"]);
+  });
+
+  it("leaves a candidacy that contradicts the survivor's alone", async () => {
+    // A Sejm bid is not a better-informed Samorząd one, however much else lines
+    // up, so it moves across as its own fact.
+    const sejm = {
+      type: "election",
+      source: "dup",
+      target: "teryt1465",
+      position: "Sejm",
+      start_date: "2002-01-01",
+    };
+    const samorzad = {
+      type: "election",
+      source: "keep",
+      target: "teryt1465",
+      position: "Samorząd",
+      start_date: "2002-01-01",
+      party: "SLD",
+    };
+
+    const edges = planEdgeMoves(
+      [edgeDoc("sejm", sejm)],
+      [edgeDoc("samorzad", samorzad)],
+      "dup",
+      "keep",
+    );
+
+    expect(edges[0]?.disposition).toBe("moved");
+  });
 });
 
 describe("countDispositions", () => {
@@ -272,6 +403,7 @@ describe("countDispositions", () => {
     expect(countDispositions(edges)).toEqual({
       moved: 2,
       collapsed: 1,
+      enriched: 0,
       review: 0,
       self: 0,
     });

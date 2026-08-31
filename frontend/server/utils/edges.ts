@@ -298,7 +298,7 @@ export function edgeRelation(
 }
 
 /** Whether a stored edge is specific enough to be worth matching loosely. */
-function meetsEnrichFloor(stored: EdgeLike): boolean {
+export function meetsEnrichFloor(stored: EdgeLike): boolean {
   const required = ENRICH_FLOOR[String(stored.type)] ?? [];
   return required.every((name) => field(stored, name) !== null);
 }
