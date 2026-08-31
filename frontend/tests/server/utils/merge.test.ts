@@ -4,6 +4,7 @@ import {
   applyNodeMerge,
   carriedFields,
   countDispositions,
+  votesToMove,
   mergeRefusal,
   planEdgeMoves,
   resolveMergedNode,
@@ -619,6 +620,7 @@ describe("applyNodeMerge", () => {
   const plan: MergePlan = {
     duplicate_id: "dup",
     survivor_id: "surv",
+    votes: [],
     edges: [
       {
         edge_id: "out",
@@ -841,5 +843,55 @@ describe("carriedFields", () => {
         {},
       ),
     ).toEqual({});
+  });
+});
+
+describe("votesToMove", () => {
+  it("re-files a human vote the survivor has none of", () => {
+    expect(
+      votesToMove([{ id: "dup_alice", user: "alice" }], [], "keep"),
+    ).toEqual([{ from_id: "dup_alice", to_id: "keep_alice", user: "alice" }]);
+  });
+
+  it("leaves a model's vote for the next scoring run to recreate", () => {
+    // Six models account for 535 of the 565 votes on the 171 duplicate pages,
+    // and every one of them is rewritten on the next run. Carrying them would
+    // put a stale score on the survivor and briefly make `stats.votes.models`
+    // read as two models' worth of one.
+    expect(
+      votesToMove(
+        [
+          { id: "dup_pipeline-pagerank", user: "pipeline-pagerank" },
+          { id: "dup_pipeline", user: "pipeline" },
+        ],
+        [],
+        "keep",
+      ),
+    ).toEqual([]);
+  });
+
+  it("does not move a vote by somebody who already voted on the survivor", () => {
+    // The document id is `${nodeId}_${userUid}`, so the two would collide. The
+    // vote on the page that survives is the one about the page a reader sees.
+    expect(
+      votesToMove(
+        [{ id: "dup_alice", user: "alice" }],
+        [{ user: "alice" }],
+        "keep",
+      ),
+    ).toEqual([]);
+  });
+
+  it("moves the others when only one voter has voted twice", () => {
+    expect(
+      votesToMove(
+        [
+          { id: "dup_alice", user: "alice" },
+          { id: "dup_bob", user: "bob" },
+        ],
+        [{ user: "alice" }],
+        "keep",
+      ).map((v) => v.user),
+    ).toEqual(["bob"]);
   });
 });

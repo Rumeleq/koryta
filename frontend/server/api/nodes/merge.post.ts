@@ -93,6 +93,16 @@ export default defineEventHandler(async (event): Promise<NodesMerged> => {
     }
   }
 
+  const storedVotes = new Map<string, Record<string, unknown>>();
+  if (plan.votes.length > 0) {
+    const docs = await db.getAll(
+      ...plan.votes.map((vote) => db.collection("votes").doc(vote.from_id)),
+    );
+    for (const doc of docs) {
+      if (doc.exists) storedVotes.set(doc.id, doc.data() ?? {});
+    }
+  }
+
   const batch = db.batch();
   applyNodeMerge(
     db,
@@ -102,6 +112,7 @@ export default defineEventHandler(async (event): Promise<NodesMerged> => {
     body.reason,
     storedEdges,
     survivor.snapshot?.data(),
+    storedVotes,
   );
   await batch.commit();
 
