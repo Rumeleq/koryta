@@ -6,6 +6,11 @@ import type {
 import { edgeIdentity, edgeSemantics, type EdgeLike } from "./edges";
 import { createRevisionTransaction, withoutInternalFields } from "./revisions";
 import { recordAudit } from "./audit";
+// Imported explicitly rather than left to Nuxt's auto-import: this module is
+// also loaded by scripts/migrate/merge-duplicate-people.ts under plain tsx,
+// where there is no auto-import and a missing one is a ReferenceError at
+// runtime that typecheck cannot see.
+import { asArray } from "../../shared/model";
 
 /** What becomes of one relation when the page it hangs off is merged away.
  *
@@ -41,6 +46,9 @@ export type MergePlan = {
   survivor_name?: string;
   edges: MergeEdgePlan[];
   counts: Record<MergeDisposition, number>;
+  /** What the duplicate knows and the survivor does not, to be written onto the
+   * survivor rather than left on the tombstone. See `carriedFields`. */
+  carried: Record<string, unknown>;
 };
 
 /** How far `merged_into` is followed before the data is called broken.
@@ -104,6 +112,54 @@ function remapped(
     source: stored.source === duplicateId ? survivorId : stored.source,
     target: stored.target === duplicateId ? survivorId : stored.target,
   } as EdgeLike;
+}
+
+/** Fields the merge moves across, and how.
+ *
+ * Relations are re-pointed, so nothing about them depends on which page wins.
+ * Fields are not, and until they were carried the choice of survivor silently
+ * decided how much the site still knew: against the 171 duplicate pairs stored
+ * on 2026-08-31, 22 of them had party lists on the page that was about to
+ * become a tombstone, and reordering the survivor rule to prefer the fuller
+ * name took that to 71 - because the fuller name is usually the older page, and
+ * the newer one is where the recent upload put the parties. Carrying them makes
+ * the question moot rather than answering it better.
+ *
+ * `parties` is a set union, for the reason `updatedPerson` gives: two runs can
+ * each find a different half of somebody's career and neither is a correction
+ * of the other. Everything else is filled in only where the survivor has
+ * nothing, so the surviving page never has a value overwritten - a merge is not
+ * the place to overrule a reviewer.
+ *
+ * `name` is deliberately not carried. Which page survives *is* the decision
+ * about what it is called, and renaming it here would quietly undo the choice
+ * an admin just made in the dialog.
+ */
+export function carriedFields(
+  duplicate: Record<string, unknown>,
+  survivor: Record<string, unknown>,
+): Record<string, unknown> {
+  const carried: Record<string, unknown> = {};
+
+  const parties = [
+    ...new Set([
+      ...asArray<string>(survivor.parties as string[]),
+      ...asArray<string>(duplicate.parties as string[]),
+    ]),
+  ].sort();
+  if (parties.length > asArray<string>(survivor.parties as string[]).length) {
+    carried.parties = parties;
+  }
+
+  for (const [key, value] of Object.entries(withoutInternalFields(duplicate))) {
+    if (key === "parties" || key === "name" || key === "type") continue;
+    if (value === undefined || value === null || value === "") continue;
+    const held = survivor[key];
+    if (held === undefined || held === null || held === "")
+      carried[key] = value;
+  }
+
+  return carried;
 }
 
 /** Where each of `moving` ends up once its `fromId` end reads `toId` instead.
@@ -246,6 +302,10 @@ export async function planNodeMerge(
     survivor_name: survivorDoc?.data()?.name as string | undefined,
     edges,
     counts: countDispositions(edges),
+    carried: carriedFields(
+      duplicateDoc?.data() ?? {},
+      survivorDoc?.data() ?? {},
+    ),
   };
 }
 
@@ -300,6 +360,10 @@ export function applyNodeMerge(
   plan: MergePlan,
   reason: string,
   storedEdges: Map<string, Record<string, unknown>>,
+  /** The surviving node as stored, needed only to layer `plan.carried` over it
+   * - a revision is written with `set`, so it has to state the whole document.
+   * Omitted by a caller with nothing to carry. */
+  storedSurvivor?: Record<string, unknown>,
 ): void {
   const moved: string[] = [];
   const collapsed: string[] = [];
@@ -343,6 +407,22 @@ export function applyNodeMerge(
       { stored: carried, approve: true, published: false },
     );
     collapsed.push(edge.edge_id);
+  }
+
+  // What the duplicate knew and the survivor did not, written onto the survivor
+  // before the duplicate is put beyond reach. A revision rather than an update,
+  // because it changes what the page says and that is what revisions are for -
+  // and approved as it is written, on the same authority as the rest of the
+  // merge.
+  if (storedSurvivor && Object.keys(plan.carried).length > 0) {
+    createRevisionTransaction(
+      db,
+      batch,
+      user,
+      db.collection("nodes").doc(plan.survivor_id),
+      { ...withoutInternalFields(storedSurvivor), ...plan.carried },
+      { stored: storedSurvivor, approve: true },
+    );
   }
 
   // The duplicate keeps its document, and keeps pointing at the survivor. Its

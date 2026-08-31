@@ -82,7 +82,15 @@ export default defineEventHandler(async (event): Promise<NodesMerged> => {
   }
 
   const batch = db.batch();
-  applyNodeMerge(db, batch, user, plan, body.reason, storedEdges);
+  applyNodeMerge(
+    db,
+    batch,
+    user,
+    plan,
+    body.reason,
+    storedEdges,
+    survivor.snapshot?.data(),
+  );
   await batch.commit();
 
   // The entity and graph endpoints are cached per handler for six hours, so
