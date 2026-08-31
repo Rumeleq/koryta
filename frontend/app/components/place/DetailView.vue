@@ -100,6 +100,7 @@
           />
           <CardEmploymentHistory
             :edges="edges"
+            :company="company"
             :can-add="canAddRelations"
             :can-edit="canAddRelations"
             :can-remove="canRemoveRelations"
