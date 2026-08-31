@@ -10,7 +10,8 @@ import { ink } from "../../../app/utils/chartTheme";
 
 const row = (overrides: Partial<BreakdownRow> = {}): BreakdownRow => {
   const seats = overrides.seats ?? 16;
-  const unreviewed = overrides.unreviewed === undefined ? 86 : overrides.unreviewed;
+  const unreviewed =
+    overrides.unreviewed === undefined ? 86 : overrides.unreviewed;
   const total = seats + (unreviewed ?? 0);
   return {
     key: "14",
@@ -62,13 +63,25 @@ describe("StatsHospitalBreakdown: one chart, three splits", () => {
   it("keeps the chart/table toggle the card provides", async () => {
     const wrapper = await mount([row()]);
     expect(wrapper.find('[aria-label="Wykres"]').exists()).toBe(true);
-    expect(wrapper.find('[aria-label="Tabela z liczbami"]').exists()).toBe(true);
+    expect(wrapper.find('[aria-label="Tabela z liczbami"]').exists()).toBe(
+      true,
+    );
   });
 
   it("orders by most reviewed seats, not by most seats known", async () => {
     const wrapper = await mount([
-      row({ key: "a", label: "duże ale niesprawdzone", seats: 1, unreviewed: 200 }),
-      row({ key: "b", label: "mniejsze ale sprawdzone", seats: 9, unreviewed: 2 }),
+      row({
+        key: "a",
+        label: "duże ale niesprawdzone",
+        seats: 1,
+        unreviewed: 200,
+      }),
+      row({
+        key: "b",
+        label: "mniejsze ale sprawdzone",
+        seats: 9,
+        unreviewed: 2,
+      }),
     ]);
     const order = wrapper
       .findAll(".breakdown__row:not(.breakdown__row--head) .breakdown__label")
@@ -112,10 +125,20 @@ describe("StatsHospitalBreakdown: the backlog", () => {
   it("starts the tail where the widened head really ends", async () => {
     const wrapper = await mount([
       row({ key: "big", seats: 0, unreviewed: 900, segments: [] }),
-      row({ key: "tiny", seats: 1, unreviewed: 99, segments: [{ ...partyDisplay("PiS"), seats: 1 }] }),
+      row({
+        key: "tiny",
+        seats: 1,
+        unreviewed: 99,
+        segments: [{ ...partyDisplay("PiS"), seats: 1 }],
+      }),
     ]);
+    // Named exactly: since the phone geometry landed, a segment carries four
+    // percentages and `left:` would also match the tail of `--seg-left-narrow`.
     const pct = (s: string | undefined, prop: string) =>
-      Number(new RegExp(`${prop}:\\s*([\\d.]+)%`).exec(s ?? "")?.[1] ?? NaN);
+      Number(
+        new RegExp(`(?:^|[;\\s])${prop}:\\s*([\\d.]+)%`).exec(s ?? "")?.[1] ??
+          NaN,
+      );
     // Rows sort by reviewed seats, so the one-seat row leads; pick it by the
     // fact that it is the only one with a segment rather than by index.
     const r = wrapper
@@ -123,7 +146,10 @@ describe("StatsHospitalBreakdown: the backlog", () => {
       .find((n) => n.find(".breakdown__seg").exists())!;
     const seg = r.find(".breakdown__seg").attributes("style");
     const track = r.find(".breakdown__track").attributes("style");
-    expect(pct(track, "left")).toBeCloseTo(pct(seg, "left") + pct(seg, "width"), 5);
+    expect(pct(track, "left")).toBeCloseTo(
+      pct(seg, "--seg-left") + pct(seg, "--seg-width"),
+      5,
+    );
     // ...and the row still ends at its true total.
     expect(pct(track, "left") + pct(track, "width")).toBeCloseTo(
       (100 / 900) * 100,
@@ -132,10 +158,58 @@ describe("StatsHospitalBreakdown: the backlog", () => {
   });
 
   it("marks a row nobody has started", async () => {
-    const wrapper = await mount([row({ seats: 0, unreviewed: 44, segments: [] })]);
+    const wrapper = await mount([
+      row({ seats: 0, unreviewed: 44, segments: [] }),
+    ]);
     expect(wrapper.find(".breakdown__row--zero").exists()).toBe(true);
     expect(wrapper.findAll(".breakdown__seg")).toHaveLength(0);
     expect(wrapper.find(".breakdown__track").exists()).toBe(true);
+  });
+
+  it("marks the tail's own legend entry as wide-only", async () => {
+    // The stripe and the line explaining it have to leave together: a swatch
+    // for a colour the phone no longer paints is worse than either.
+    const wrapper = await mount([row()]);
+    const backlog = wrapper
+      .findAll(".breakdown__legend span")
+      .find((n) => n.find(".breakdown__swatch--track").exists())!;
+    expect(backlog.classes()).toContain("breakdown__wide-only");
+  });
+
+  it("carries a second geometry, measured against the found seats", async () => {
+    // A phone draws no tail, so a scale sized for one would leave every bar in
+    // a lane that is mostly blank with nothing saying what the blank is. Both
+    // geometries are emitted as custom properties and the stylesheet picks:
+    // a breakpoint composable would render one on the server and swap on the
+    // client, which is a hydration mismatch on every bar.
+    const wrapper = await mount([
+      row({
+        key: "a",
+        seats: 10,
+        unreviewed: 90,
+        segments: [{ ...partyDisplay("PO"), seats: 10 }],
+      }),
+      row({
+        key: "b",
+        seats: 5,
+        unreviewed: 45,
+        segments: [{ ...partyDisplay("PiS"), seats: 5 }],
+      }),
+    ]);
+    const width = (i: number, prop: string) =>
+      Number(
+        new RegExp(`(?:^|[;\\s])${prop}:\\s*([\\d.]+)%`).exec(
+          wrapper.findAll(".breakdown__seg")[i]!.attributes("style") ?? "",
+        )?.[1] ?? NaN,
+      );
+
+    // Wide: 10 seats of an axis that runs to the 100 the register knows.
+    expect(width(0, "--seg-width")).toBeCloseTo(10, 5);
+    // Narrow: the same row is the longest found, so it fills the lane...
+    expect(width(0, "--seg-width-narrow")).toBeCloseTo(100, 5);
+    // ...and the rows keep their ratio to each other, which is the property
+    // that makes one shared scale worth having.
+    expect(width(1, "--seg-width-narrow")).toBeCloseTo(50, 5);
   });
 });
 
@@ -161,8 +235,13 @@ describe("StatsHospitalBreakdown: the work-queue button", () => {
   it("wears a documented ink colour, never the 1.85:1 brand sage", async () => {
     // shared/colors.ts: `primary` is #a8c79f and fails as text; every ink-* in
     // the set clears 4.5:1 on every surface in it.
-    const wrapper = await mount([row(), row({ key: "z", seats: 0, unreviewed: 5, segments: [] })]);
-    const classes = wrapper.findAll(".breakdown__cta").map((c) => c.classes().join(" "));
+    const wrapper = await mount([
+      row(),
+      row({ key: "z", seats: 0, unreviewed: 5, segments: [] }),
+    ]);
+    const classes = wrapper
+      .findAll(".breakdown__cta")
+      .map((c) => c.classes().join(" "));
     expect(classes.some((c) => c.includes("text-ink-info"))).toBe(true);
     expect(classes.some((c) => c.includes("text-ink-warning"))).toBe(true);
     expect(classes.some((c) => c.includes("text-primary"))).toBe(false);
@@ -178,7 +257,12 @@ describe("StatsHospitalBreakdown: scale honesty", () => {
   it("declares the correction when the floor does bite", async () => {
     const wrapper = await mount([
       row({ key: "big", seats: 0, unreviewed: 900, segments: [] }),
-      row({ key: "tiny", seats: 1, unreviewed: 99, segments: [{ ...partyDisplay("PiS"), seats: 1 }] }),
+      row({
+        key: "tiny",
+        seats: 1,
+        unreviewed: 99,
+        segments: [{ ...partyDisplay("PiS"), seats: 1 }],
+      }),
     ]);
     expect(wrapper.text()).toContain("Korekta minimalnej szerokości");
   });
@@ -197,14 +281,25 @@ describe("StatsHospitalBreakdown: scale honesty", () => {
     ]);
     const widths = wrapper
       .findAll(".breakdown__seg")
-      .map((el) => Number(/width:\s*([\d.]+)%/.exec(el.attributes("style") ?? "")?.[1] ?? 0));
+      .map((el) =>
+        Number(
+          /(?:^|[;\s])--seg-width:\s*([\d.]+)%/.exec(
+            el.attributes("style") ?? "",
+          )?.[1] ?? 0,
+        ),
+      );
     expect(widths.reduce((a, b) => a + b, 0)).toBeCloseTo(100, 0);
   });
 
   it("caps a long split and counts what it held back", async () => {
     // Silent truncation reads as "that is all there is".
     const many = Array.from({ length: 40 }, (_, i) =>
-      row({ key: `h${i}`, label: `Szpital ${i}`, seats: 40 - i, unreviewed: 3 }),
+      row({
+        key: `h${i}`,
+        label: `Szpital ${i}`,
+        seats: 40 - i,
+        unreviewed: 3,
+      }),
     );
     const wrapper = await mount(many, "hospital");
     expect(
