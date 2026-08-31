@@ -285,7 +285,8 @@ class Context {
    */
   readonly edgeOccurrences = new Map<string, number>();
 
-  /** Stored edges this request has already matched a payload row onto.
+  /** Stored edges this request has already matched a payload row onto, and the
+   * `edgeIdentity` of the row that took each.
    *
    * Enrichment picks the first stored candidacy that a row could be a
    * better-informed version of, and several rows of one payload routinely have
@@ -293,8 +294,14 @@ class Context {
    * three candidates for all three rows. Without this the second row would
    * enrich the document the first one just did, and two facts would be written
    * over one.
+   *
+   * The identity, not just the id, because the exact-match path in
+   * `findEdgeOrCreate` has to tell "taken by a row saying something else" from
+   * "taken by an earlier row saying exactly this". Only the first excludes an
+   * edge; the second is already counted by `edgeOccurrences`, and subtracting
+   * it twice is what wrote a duplicate.
    */
-  readonly claimedEdgeIds = new Set<string>();
+  readonly claimedEdgeIds = new Map<string, string>();
 
   constructor(
     readonly db: FirebaseFirestore.Firestore,
@@ -682,13 +689,30 @@ async function findEdgeOrCreate(
 
   const { same, enrichable, ids } = await findEdgeMatches(ctx.db, edge);
 
-  // Skipping what this request has already taken is what keeps two rows from
-  // landing on one document. The query cannot help: nothing is committed until
-  // the end, so a row enriched a moment ago still reads back as it was, and a
-  // later row carrying less would match it exactly and be silently dropped.
-  const existing = same.filter((id) => !ctx.claimedEdgeIds.has(id))[occurrence];
+  // The n-th row of this identity onto the n-th stored edge that says it, out
+  // of those no *other* identity has taken.
+  //
+  // Both halves are needed and they are about different collisions. Skipping
+  // what another row has taken is what stops a bare row re-taking the candidacy
+  // an earlier row just enriched: nothing is committed until the end, so the
+  // enriched edge still reads back bare and matches exactly. Counting by
+  // `occurrence` is what tells two rows of the *same* identity apart, and it
+  // has to be the counter rather than the claim, because the employments are
+  // dispatched through `Promise.all` and both would read the pool before either
+  // wrote to it.
+  //
+  // Applying both to one list was the bug: a same-identity claim advanced the
+  // position once by being counted and again by being filtered, so two
+  // identical rows against two identical stored edges took the first, skipped
+  // the second and wrote a duplicate. Matching k rows needed 2k-1 stored edges.
+  // Round-tripping the 31 August export found 826 identity groups with a
+  // repeat, across 605 people, that a re-upload would have grown by 839 edges
+  // before settling.
+  const existing = same.filter(
+    (id) => (ctx.claimedEdgeIds.get(id) ?? identity) === identity,
+  )[occurrence];
   if (existing) {
-    ctx.claimedEdgeIds.add(existing);
+    ctx.claimedEdgeIds.set(existing, identity);
     return existing;
   }
 
@@ -698,7 +722,7 @@ async function findEdgeOrCreate(
   // the concurrent employments would.
   const candidate = enrichable.find((c) => !ctx.claimedEdgeIds.has(c.id));
   if (candidate) {
-    ctx.claimedEdgeIds.add(candidate.id);
+    ctx.claimedEdgeIds.set(candidate.id, identity);
     const edgeRef = ctx.db.collection("edges").doc(candidate.id);
     const enriched = enrichedEdge(
       withoutInternalFields(candidate.stored),
@@ -755,6 +779,6 @@ async function findEdgeOrCreate(
     approve: ctx.autoapprove,
     published: ctx.autoapprove,
   });
-  ctx.claimedEdgeIds.add(edgeRef.id);
+  ctx.claimedEdgeIds.set(edgeRef.id, identity);
   return edgeRef.id;
 }
