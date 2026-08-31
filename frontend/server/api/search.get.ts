@@ -72,6 +72,14 @@ export default editorFreshCachedEventHandler(async (event) => {
     for (const doc of snapshot.docs) {
       const node = parseNodeDoc<node>(doc);
       if (seen.has(node.id)) continue;
+      // A page that has been removed, or folded into another as a duplicate,
+      // is not a search hit. It keeps its `nameChunksLower` - nothing clears
+      // them, and the trigger only rewrites them when the name changes - so
+      // without this a merged duplicate goes on being offered under the name
+      // it had, and the reader gets a redirect to a page they were not looking
+      // for. Not `pageIsPublic`: an unpublished page is a legitimate hit here,
+      // because whoever is signed in may have just created it.
+      if (doc.data().deleted === true) continue;
       if (!nameMatchesTokens(node.name, tokens)) continue;
       seen.add(node.id);
       results.push(node);
