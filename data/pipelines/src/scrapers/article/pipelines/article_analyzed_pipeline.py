@@ -1,5 +1,6 @@
 import json
 import re
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +14,11 @@ from scrapers.article.pipelines.koryciarski_scores_pipeline import (
     ArticleKoryciarskiScores,
 )
 from scrapers.article.pipelines.parsed_pipeline import ArticleParsed
-from scrapers.article.pipelines.pipeline_utils import article_tag
+from scrapers.article.pipelines.pipeline_utils import (
+    article_analyzed_keep_evidence,
+    article_analyzed_only_matched_koryta,
+    article_tag,
+)
 from scrapers.article.pipelines.verified_facts_pipeline import ArticleFactsVerified
 from scrapers.stores import VERSIONED_DIR, Context
 
@@ -54,6 +59,16 @@ _PARTY_ALIASES: dict[str, str] = {
 def _norm(value: str | None) -> str:
     """Lowercased, whitespace-collapsed form used for dedup keys."""
     return " ".join((value or "").strip().lower().split())
+
+
+def _normalize_person_name(value: str | None) -> str:
+    """Match the website's normalizePersonName (names.ts): fold diacritics and
+    ``ł``, lowercase, collapse non-alphanumerics. Used for the person-page
+    match so the pipeline agrees with what the ingest endpoint will link."""
+    text = unicodedata.normalize("NFD", value or "")
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    text = text.replace("ł", "l").replace("Ł", "l").lower()
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", text).split())
 
 
 def _canonical_party(party: str | None) -> str:
@@ -267,6 +282,7 @@ def _fact_key(
 _MENTIONS_FILE = (
     Path(VERSIONED_DIR) / "article_person_mentions" / "article_person_mentions.jsonl"
 )
+_KORYTA_PEOPLE_FILE = Path(VERSIONED_DIR) / "person_koryta" / "person_koryta.jsonl"
 
 # Verifier bookkeeping fields kept in article_facts_verified but stripped from
 # the analyzed output.
@@ -314,6 +330,14 @@ class ArticleAnalyzed(IncrementalJsonlPipeline[ArticleAnalyzedRecord]):
         person_ids_by_url = _person_ids_by_url(_MENTIONS_FILE)
         print(f"  {len(koryta_ids_by_url):,} articles with confirmed mentions")
 
+        keep_evidence = article_analyzed_keep_evidence()
+        only_matched = article_analyzed_only_matched_koryta()
+        # Names of the koryta people each article's ids resolve to, so a fact
+        # whose person matches by name can be tied to a person page (the exact
+        # rule the website ingest applies).
+        koryta_name_by_id = _koryta_name_by_id(_KORYTA_PEOPLE_FILE)
+        print(f"  {len(koryta_name_by_id):,} koryta people loaded")
+
         emitted = 0
         # url -> (parsed_row, score_row, publication_date, [(fact_key, fact)])
         pending: dict[
@@ -348,6 +372,10 @@ class ArticleAnalyzed(IncrementalJsonlPipeline[ArticleAnalyzedRecord]):
                 if not isinstance(fact, dict) or fact.get("verified") is False:
                     continue
                 fact = _strip_and_date_fact(fact, publication_date)
+                if only_matched and not _fact_matches_koryta(
+                    fact, url, koryta_ids_by_url.get(url, []), koryta_name_by_id
+                ):
+                    continue
                 verified_facts.append(fact)
             triaged = _dedup_facts_for_article(
                 url,
@@ -371,7 +399,7 @@ class ArticleAnalyzed(IncrementalJsonlPipeline[ArticleAnalyzedRecord]):
             pending.items(), desc="Emitting", unit="article"
         ):
             deduped_facts = _collapse_between_articles(
-                url, triaged, first_seen, evidence_by_key
+                url, triaged, first_seen, evidence_by_key, keep_evidence=keep_evidence
             )
             if not deduped_facts:
                 continue
@@ -491,21 +519,69 @@ def _person_ids_by_url(path: Path) -> dict[str, dict[str, str]]:
     return result
 
 
+def _koryta_name_by_id(path: Path) -> dict[str, str]:
+    """koryta person id -> full name from the person_koryta dataset."""
+    result: dict[str, str] = {}
+    if not path.exists():
+        return result
+    with path.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row: dict[str, Any] = json.loads(line)
+            except Exception:
+                continue
+            person_id = row.get("id")
+            name = row.get("full_name")
+            if (
+                isinstance(person_id, str)
+                and person_id
+                and isinstance(name, str)
+                and name.strip()
+            ):
+                result[person_id] = name
+    return result
+
+
 def _collapse_between_articles(
     url: str,
     triaged: list[tuple[_FactKey, dict[str, Any]]],
     first_seen: dict[_FactKey, str],
     evidence_by_key: dict[_FactKey, list[str]],
+    keep_evidence: bool = False,
 ) -> list[dict[str, Any]]:
-    """Keep only facts first seen in this article; attach their evidence."""
+    """Keep only facts first seen in this article; optionally attach evidence."""
     deduped: list[dict[str, Any]] = []
     for key, fact in triaged:
         if first_seen[key] != url:
             continue
         fact = dict(fact)
-        fact["evidence"] = list(evidence_by_key[key])
+        if keep_evidence:
+            fact["evidence"] = list(evidence_by_key[key])
         deduped.append(fact)
     return deduped
+
+
+def _fact_matches_koryta(
+    fact: dict[str, Any],
+    url: str,
+    koryta_ids: list[str],
+    koryta_name_by_id: dict[str, str],
+) -> bool:
+    """Whether a fact's person (subject for relations) matches one of the
+    article's confirmed koryta people by normalized name — the same match the
+    website ingest uses to link a fact to a person page.
+    """
+    subject = fact.get("person") or fact.get("subject")
+    if not subject or not koryta_ids:
+        return False
+    normed = _normalize_person_name(subject)
+    return any(
+        _normalize_person_name(koryta_name_by_id.get(pid)) == normed
+        for pid in koryta_ids
+    )
 
 
 def _load_facts(path: Path) -> dict[str, list[dict[str, Any]]]:

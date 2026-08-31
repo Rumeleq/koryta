@@ -212,6 +212,21 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         "mentions as an optional people hint.",
     )
     parser.add_argument(
+        "--article-analyzed-keep-evidence",
+        action="store_true",
+        help="Attach the dedup `evidence` (list of article URLs where the same "
+        "fact was seen) to kept facts in article_analyzed. Default: the field "
+        "is dropped so the output matches the ingest schema.",
+    )
+    parser.add_argument(
+        "--article-analyzed-only-matched-koryta",
+        action="store_true",
+        help="Keep only facts whose person (subject for relations) matches one "
+        "of the article's confirmed koryta_ids by name — the rule the website "
+        "ingest uses to link a fact to a person page. Default: keep every "
+        "verified fact.",
+    )
+    parser.add_argument(
         "--tag",
         type=str,
         default=None,
@@ -295,3 +310,11 @@ def article_facts_text_limit() -> int | None:
 
 def article_facts_require_mentions() -> bool:
     return bool(_args().article_facts_require_mentions)
+
+
+def article_analyzed_keep_evidence() -> bool:
+    return bool(_args().article_analyzed_keep_evidence)
+
+
+def article_analyzed_only_matched_koryta() -> bool:
+    return bool(_args().article_analyzed_only_matched_koryta)

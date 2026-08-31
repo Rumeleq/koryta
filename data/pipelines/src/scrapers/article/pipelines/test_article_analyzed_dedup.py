@@ -7,7 +7,9 @@ from scrapers.article.pipelines.article_analyzed_pipeline import (
     _collapse_between_articles,
     _dedup_facts_for_article,
     _fact_key,
+    _fact_matches_koryta,
     _fact_person,
+    _koryta_name_by_id,
     _person_ids_by_url,
     _strip_and_date_fact,
 )
@@ -211,8 +213,12 @@ def test_dedup_facts_for_article_keeps_different_ids_apart():
     t2 = _dedup_facts_for_article(
         "b.pl/2", [pw], first_seen, evidence, person_ids={"piotr woźniak": "idB"}
     )
-    out1 = _collapse_between_articles("a.pl/1", t1, first_seen, evidence)
-    out2 = _collapse_between_articles("b.pl/2", t2, first_seen, evidence)
+    out1 = _collapse_between_articles(
+        "a.pl/1", t1, first_seen, evidence, keep_evidence=True
+    )
+    out2 = _collapse_between_articles(
+        "b.pl/2", t2, first_seen, evidence, keep_evidence=True
+    )
     assert len(out1) == 1
     assert len(out2) == 1
 
@@ -249,13 +255,13 @@ def test_hypothetical_same_name_two_people_id_split_end_to_end():
         pending[url] = triaged
 
     out_a1 = _collapse_between_articles(
-        "a.pl/1", pending["a.pl/1"], first_seen, evidence
+        "a.pl/1", pending["a.pl/1"], first_seen, evidence, keep_evidence=True
     )
     out_b = _collapse_between_articles(
-        "b.pl/2", pending["b.pl/2"], first_seen, evidence
+        "b.pl/2", pending["b.pl/2"], first_seen, evidence, keep_evidence=True
     )
     out_a2 = _collapse_between_articles(
-        "c.pl/3", pending["c.pl/3"], first_seen, evidence
+        "c.pl/3", pending["c.pl/3"], first_seen, evidence, keep_evidence=True
     )
 
     # A and B are DIFFERENT people -> both facts survive (not merged).
@@ -335,12 +341,30 @@ def test_between_articles_keeps_first_evidence():
         evidence,
     )
 
-    out1 = _collapse_between_articles("a.pl/1", t1, first_seen, evidence)
-    out2 = _collapse_between_articles("b.pl/2", t2, first_seen, evidence)
+    out1 = _collapse_between_articles(
+        "a.pl/1", t1, first_seen, evidence, keep_evidence=True
+    )
+    out2 = _collapse_between_articles(
+        "b.pl/2", t2, first_seen, evidence, keep_evidence=True
+    )
 
     assert len(out1) == 1
     assert out1[0]["evidence"] == ["a.pl/1", "b.pl/2"]
     assert out2 == []
+
+
+def test_collapse_drops_evidence_by_default():
+    first_seen = {}
+    evidence = {}
+    t1 = _dedup_facts_for_article(
+        "a.pl/1", [employment("Jan Kowalski", "Orlen", "prezes")], first_seen, evidence
+    )
+    _dedup_facts_for_article(
+        "b.pl/2", [employment("Jan Kowalski", "Orlen", "prezes")], first_seen, evidence
+    )
+    out1 = _collapse_between_articles("a.pl/1", t1, first_seen, evidence)
+    assert len(out1) == 1
+    assert "evidence" not in out1[0]
 
 
 def test_distinct_facts_all_kept():
@@ -355,9 +379,28 @@ def test_distinct_facts_all_kept():
         first_seen,
         evidence,
     )
-    out1 = _collapse_between_articles("a.pl/1", t1, first_seen, evidence)
+    out1 = _collapse_between_articles(
+        "a.pl/1", t1, first_seen, evidence, keep_evidence=True
+    )
     assert len(out1) == 2
     assert all("evidence" in f for f in out1)
+
+
+def test_collapse_drops_evidence_by_default_keeps_distinct():
+    first_seen = {}
+    evidence = {}
+    t1 = _dedup_facts_for_article(
+        "a.pl/1",
+        [
+            employment("Jan Kowalski", "Orlen", "prezes"),
+            employment("Anna Nowak", "Orlen", "prezes"),
+        ],
+        first_seen,
+        evidence,
+    )
+    out1 = _collapse_between_articles("a.pl/1", t1, first_seen, evidence)
+    assert len(out1) == 2
+    assert all("evidence" not in f for f in out1)
 
 
 # --- _person_ids_by_url / _fact_person -------------------------------------- #
@@ -384,6 +427,46 @@ def test_person_ids_by_url_keeps_yes_only_and_normalizes(tmp_path):
 
 def test_person_ids_by_url_missing_file(tmp_path):
     assert _person_ids_by_url(tmp_path / "missing.jsonl") == {}
+
+
+def test_koryta_name_by_id_reads_person_koryta(tmp_path):
+    path = tmp_path / "person_koryta.jsonl"
+    path.write_text(
+        '{"id": "idA", "full_name": "Piotr Woźniak"}\n'
+        '{"id": "idB", "full_name": "Anna Nowak"}\n',
+        encoding="utf-8",
+    )
+    assert _koryta_name_by_id(path) == {"idA": "Piotr Woźniak", "idB": "Anna Nowak"}
+
+
+def test_koryta_name_by_id_missing_file(tmp_path):
+    assert _koryta_name_by_id(tmp_path / "missing.jsonl") == {}
+
+
+def test_fact_matches_koryta_by_name():
+    names = {"idA": "Piotr Woźniak", "idB": "Jan Kowalski"}
+    fact = employment("Piotr Woźniak", "Orlen", "prezes")
+    assert _fact_matches_koryta(fact, "a.pl/1", ["idA"], names)
+    assert not _fact_matches_koryta(fact, "a.pl/1", ["idB"], names)
+    # Case/whitespace insensitive, diacritics folded.
+    fact2 = employment(" PIOTR WOŹNIAK  ", "Orlen", "prezes")
+    assert _fact_matches_koryta(fact2, "a.pl/1", ["idA"], names)
+
+
+def test_fact_matches_koryta_subject_for_relation():
+    names = {"idA": "Anna Nowak"}
+    fact = {
+        "fact_type": "personal_relation",
+        "subject": "Anna Nowak",
+        "object": "Jan Kowalski",
+        "relation": "żona",
+    }
+    assert _fact_matches_koryta(fact, "a.pl/1", ["idA"], names)
+    # No person/subject, or no ids -> not matched.
+    assert not _fact_matches_koryta(
+        {"fact_type": "employment"}, "a.pl/1", ["idA"], names
+    )
+    assert not _fact_matches_koryta(fact, "a.pl/1", [], names)
 
 
 def test_fact_person_uses_person_then_subject():
