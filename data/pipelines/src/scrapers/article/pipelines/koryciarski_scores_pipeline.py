@@ -73,8 +73,8 @@ class ArticleKoryciarskiScores(IncrementalJsonlPipeline[KoryciarskiScore]):
         )
         self.prepare_temp_output()
         model = llm_model()
-        records = _latest_ok_parsed_records(_PARSED_FILE)
-        asyncio.run(_score_records(ctx, records, existing, model=model))
+        latest = _latest_parsed_offsets(_PARSED_FILE)
+        asyncio.run(_score_records(ctx, _PARSED_FILE, latest, existing, model=model))
         _print_llm_usage(ctx)
         return pd.DataFrame()
 
@@ -104,13 +104,14 @@ def _existing_score_cache_from_files(*paths: Path) -> dict[str, dict[str, Any]]:
     return cache
 
 
-def _latest_ok_parsed_records(path: Path) -> list[dict[str, Any]]:
-    latest: dict[str, dict[str, Any]] = {}
-    with path.open("r", encoding="utf-8") as handle:
-        for line in tqdm(handle, desc="Reading parsed articles", unit="row"):
-            raw = line.strip()
-            if not raw:
-                continue
+def _latest_parsed_offsets(path: Path) -> dict[str, int]:
+    # Pass 1 (of 2): record only the byte offset of the last "ok" row per
+    # url, so pass 2 can re-read just the rows it scores and the article
+    # contents are never held in memory at once.
+    latest: dict[str, int] = {}
+    with path.open("rb") as handle:
+        for raw in tqdm(handle, desc="Reading parsed articles", unit="row"):
+            offset = handle.tell() - len(raw)
             try:
                 row = json.loads(raw)
             except Exception:
@@ -126,29 +127,26 @@ def _latest_ok_parsed_records(path: Path) -> list[dict[str, Any]]:
                 and isinstance(content, str)
                 and content.strip()
             ):
-                # Keep only the fields scoring needs — dropping outbound_urls
-                # (63% of the row) and other columns keeps memory bounded.
-                latest[url] = {
-                    "url": url,
-                    "article_content_hash": content_hash,
-                    "article_content": content,
-                }
-    return list(latest.values())
+                latest[url] = offset
+    return latest
 
 
 async def _score_records(
     ctx: Context,
-    records: list[dict[str, Any]],
+    path: Path,
+    latest: dict[str, int],
     existing: dict[str, dict[str, Any]],
     *,
     model: str,
-) -> list[dict[str, Any]]:
+) -> None:
+    # Pass 2 (of 2): seek to each latest offset and stream the rows through
+    # the bounded LLM pool, so in-flight memory stays O(pool capacity).
     await LLM.from_context(ctx).check_health()
     pending: dict[int, dict[str, Any]] = {}
-    uncached = _emit_cached_scores(ctx, records, existing, model)
+    cached_count = 0
 
     with tqdm(
-        total=len(uncached),
+        total=len(latest),
         desc="Scoring koryciarstwo",
         unit="article",
         dynamic_ncols=True,
@@ -156,8 +154,33 @@ async def _score_records(
         smoothing=0.05,
     ) as bar:
         async with LLM.from_context(ctx).response_pool() as pool:
-            for record in uncached:
-                while pool.is_full():
+            with path.open("rb") as handle:
+                ordered = sorted(latest.items(), key=lambda item: item[1])
+                for url, offset in ordered:
+                    handle.seek(offset)
+                    record: dict[str, Any] = json.loads(handle.readline())
+                    cached = existing.get(url)
+                    if _cache_valid(cached, record, model):
+                        assert cached is not None
+                        _emit_score(ctx, _score_row_from_cache(cached))
+                        cached_count += 1
+                        bar.update(1)
+                        continue
+
+                    while pool.is_full():
+                        request_id, response = await pool.get_response()
+                        _emit_score_response(
+                            ctx,
+                            pending.pop(request_id),
+                            response,
+                            model,
+                        )
+                        bar.update(1)
+
+                    request_id = await pool.put_request(_score_request(record, model))
+                    pending[request_id] = record
+
+                while pending:
                     request_id, response = await pool.get_response()
                     _emit_score_response(
                         ctx,
@@ -167,41 +190,8 @@ async def _score_records(
                     )
                     bar.update(1)
 
-                request_id = await pool.put_request(_score_request(record, model))
-                pending[request_id] = record
-
-            while pending:
-                request_id, response = await pool.get_response()
-                _emit_score_response(
-                    ctx,
-                    pending.pop(request_id),
-                    response,
-                    model,
-                )
-                bar.update(1)
-
-    return []
-
-
-def _emit_cached_scores(
-    ctx: Context,
-    records: list[dict[str, Any]],
-    existing: dict[str, dict[str, Any]],
-    model: str,
-) -> list[dict[str, Any]]:
-    uncached: list[dict[str, Any]] = []
-    cached_count = 0
-    for record in records:
-        cached = existing.get(str(record["url"]))
-        if _cache_valid(cached, record, model):
-            assert cached is not None
-            _emit_score(ctx, _score_row_from_cache(cached))
-            cached_count += 1
-            continue
-        uncached.append(record)
     if cached_count:
         print(f"Reused cached koryciarstwo scores: {cached_count}")
-    return uncached
 
 
 def _emit_score_response(

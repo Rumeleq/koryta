@@ -1,11 +1,11 @@
 import argparse
 import io
+import json
 import tarfile
 from collections import defaultdict
 from functools import cache
-from typing import Generator
-
-import pandas as pd
+from pathlib import Path
+from typing import Generator, Iterator
 
 from entities.util import NormalizedParse
 from scrapers.stores import Context, DoneUrl
@@ -24,9 +24,7 @@ def _member_path(url: str) -> str:
         return ""
 
 
-def read_html_from_storage(
-    ctx: Context, done_urls: list[DoneUrl]
-) -> dict[str, bytes]:
+def read_html_from_storage(ctx: Context, done_urls: list[DoneUrl]) -> dict[str, bytes]:
     """Download tar.gz files from GCS and extract HTML for each URL in memory.
 
     Groups by storage_path so each tar.gz is downloaded only once.
@@ -105,32 +103,34 @@ def iter_html_from_storage(
             continue
 
 
-def domains_from_done_urls(done_df: pd.DataFrame) -> set[str]:
-    domains: set[str] = set()
-    for row in done_df.itertuples(index=False):
-        try:
-            domains.add(NormalizedParse.parse(str(row.url)).hostname_normalized)
-        except Exception:
-            continue
-    return domains
+def iter_done_urls_from_file(
+    path: str | Path, *, progress_every: int = 0
+) -> Iterator[DoneUrl]:
+    """Stream done URL rows from the article_done_urls.jsonl output file.
 
-
-def iter_done_urls(done_df: pd.DataFrame) -> list[DoneUrl]:
-    done_urls: list[DoneUrl] = []
-    for row in done_df.to_dict(orient="records"):
-        done_urls.append(
-            DoneUrl(
+    The done urls file is far too large to load into a pandas DataFrame in one
+    go (millions of rows), so this reads it line by line and yields ``DoneUrl``
+    objects. ``progress_every`` optionally prints a per-N processed-row tally.
+    """
+    with open(path, encoding="utf-8") as handle:
+        for i, line in enumerate(handle):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            yield DoneUrl(
                 uid=str(row["uid"]),
                 url=str(row["url"]),
                 storage_path=str(row["storage_path"]),
                 media_type=(
-                    None
-                    if pd.isna(row.get("media_type"))
-                    else str(row.get("media_type"))
+                    None if row.get("media_type") is None else str(row["media_type"])
                 ),
             )
-        )
-    return done_urls
+            if progress_every and (i + 1) % progress_every == 0:
+                print(f"  read {i + 1:,} done URLs")
 
 
 # ---------------------------------------------------------------------------
@@ -210,6 +210,21 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         "mentions, and error if the mentions file is missing. Off by default: "
         "ArticleExtractedFacts runs over every scored parsed article and treats "
         "mentions as an optional people hint.",
+    )
+    parser.add_argument(
+        "--article-analyzed-keep-evidence",
+        action="store_true",
+        help="Attach the dedup `evidence` (list of article URLs where the same "
+        "fact was seen) to kept facts in article_analyzed. Default: the field "
+        "is dropped so the output matches the ingest schema.",
+    )
+    parser.add_argument(
+        "--article-analyzed-only-matched-koryta",
+        action="store_true",
+        help="Keep only facts whose person (subject for relations) matches one "
+        "of the article's confirmed koryta_ids by name — the rule the website "
+        "ingest uses to link a fact to a person page. Default: keep every "
+        "verified fact.",
     )
     parser.add_argument(
         "--tag",
@@ -295,3 +310,11 @@ def article_facts_text_limit() -> int | None:
 
 def article_facts_require_mentions() -> bool:
     return bool(_args().article_facts_require_mentions)
+
+
+def article_analyzed_keep_evidence() -> bool:
+    return bool(_args().article_analyzed_keep_evidence)
+
+
+def article_analyzed_only_matched_koryta() -> bool:
+    return bool(_args().article_analyzed_only_matched_koryta)
