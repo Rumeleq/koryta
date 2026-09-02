@@ -9,7 +9,7 @@
           size="small"
           class="text-none"
           :prepend-icon="mdiTable"
-          to="/eksploruj/tabela?visibility=private&hideVoted=no_votes&sortBy=votes.interesting&sortDesc=true"
+          to="/eksploruj/tabela?visibility=private&hideVoted=no_votes&sortBy=stats.votes.interesting&sortDesc=true"
         >
           Tabela
         </v-btn>
@@ -367,6 +367,11 @@ const availableCategories = companyCategories.map((c) => ({
 }));
 const { stringFilter, choiceFilter, numberFilter } = useQueryFilters();
 const filterCategory = stringFilter("category");
+/** Read from the url and nowhere else - the page has no control for it. It is
+ * how /eksploruj/szpitale asks for the people sitting on a hospital board now
+ * rather than everybody who ever did, and it only means anything next to a
+ * `category`, `place` or `companyTeryt` for `selected` to narrow. */
+const filterCurrentlyEmployed = stringFilter("currentlyEmployed");
 
 /** Which end of the queue to work through.
  *
@@ -564,6 +569,9 @@ const apiQuery = computed(
       visibility: "private",
       hideVoted: "no_votes",
       category: filterCategory.value || undefined,
+      currentlyEmployed:
+        (filterCurrentlyEmployed.value as Query["currentlyEmployed"]) ||
+        undefined,
       minVotes: orderRecent.value ? minVotes.value : undefined,
     }) as Query,
 );

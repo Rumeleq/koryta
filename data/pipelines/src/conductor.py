@@ -70,12 +70,15 @@ class Conductor(IO):
             dfs = FileSource(fs)
             if not dfs.downloaded():
                 logging.info("Downloading %s", fs.url)
+                # Downloads that are skipped here -- a --cache-only miss raises
+                # inside download() -- must not count as downloads, so the bar
+                # is only touched once the file actually landed.
+                dfs.download()
                 if self.progress_bar is None or not self.continous_download:
                     self.progress_bar = tqdm(desc="Downloading files")
                     self.continous_download = True
                 assert self.progress_bar is not None
                 self.progress_bar.update(1)
-                dfs.download()
             else:
                 logging.info("Reading from cache %s", dfs.downloaded_path)
             try:

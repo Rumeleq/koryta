@@ -48,6 +48,395 @@ export const qaAreaConfig: Record<QaArea, { title: string; color: string }> = {
  * before the list could be read at all. */
 export const QA_ITEMS: QaItem[] = [
   {
+    id: "szpitale-bez-ostrzezen-hydracji-po-zalogowaniu",
+    title: "Strona szpitali nie zgłasza błędów hydracji po zalogowaniu",
+    description:
+      "Zalogowany czytelnik dostawał w konsoli kilkanaście ostrzeżeń Vue i " +
+      "stronę zbudowaną na nowo; teraz kto czyta, strona sprawdza dopiero po " +
+      "wczytaniu i wtedy dociąga świeże liczby.",
+    steps: [
+      "Zalogowany otwórz /eksploruj/szpitale z otwartą konsolą: żadnych „Hydration … mismatch”, a zestawienie i linki „Zobacz osoby” są na miejscu.",
+    ],
+    link: "/eksploruj/szpitale",
+    area: "contributor",
+  },
+  {
+    id: "wzmianki-i-cytowane-notatki-ten-sam-naglowek",
+    title:
+      "„Artykuły, które o tym wspominają” i „Notatki z innych stron” mają nagłówek jak reszta sekcji",
+    description:
+      "Obie sekcje rysowały nagłówek własnym przepisem; teraz używają tego " +
+      "samego szablonu co „Notatki” i „Zmiany na stanowisku”, więc ikona, " +
+      "tytuł i podpis pod nim wyglądają wszędzie tak samo.",
+    steps: [
+      "Na stronie osoby ze wzmiankami w prasie i na stronie artykułu z notatkami z innych stron porównaj te nagłówki z nagłówkiem „Notatki” obok.",
+    ],
+    link: "/",
+    area: "public",
+  },
+  {
+    id: "notatki-ten-sam-kafel",
+    title: "Notatki są takimi samymi kafelkami jak reszta strony",
+    description:
+      "Sam nagłówek „Notatki” to było za mało: pojedyncza notatka wciąż " +
+      "wyglądała jak niewypełniony formularz - tekst siedział w polu do " +
+      "wpisywania, nad nim wisiało szare pytanie do autora („Czego tu " +
+      "brakuje?”), a litery były dwa razy większe niż w sekcjach obok. Teraz " +
+      "notatka to zwykły kafelek - biała, cienka ramka, zaokrąglone rogi i " +
+      "zielona krawędź po lewej - dokładnie taki sam jak karty w „Zmianach na " +
+      "stanowisku” i na stronie spółki, bo wszystkie rysuje już jedna reguła " +
+      "zamiast pięciu przepisanych ręcznie kopii. Pole do pisania pojawia się " +
+      "dopiero wtedy, gdy sam edytujesz swoją notatkę. Adres źródła jest " +
+      "podpisany nazwą serwisu zamiast uciętego w pół linku, a notatki idą " +
+      "jedna pod drugą na całą szerokość, jak powiązania nad nimi.",
+    steps: [
+      "Wejdź zalogowany na stronę osoby, która ma notatki, np. /osoba/marzena-slomka-a8sCGsKrCC6OyVDmkOeg. Notatki mają być zwykłym tekstem - żadnej ramki pola do wpisywania, żadnego szarego pytania nad tekstem.",
+      "Porównaj kafelek notatki z kartą w sekcji „Zmiany na stanowisku” nad nią: ta sama ramka, to samo zaokrąglenie rogów, ta sama zielona krawędź po lewej i ta sama wielkość liter.",
+      "Najedź myszką na notatkę - ramka ma zzielenieć i pojawić się delikatny cień, tak samo jak przy najechaniu na kartę zmiany na stanowisku.",
+      "Sprawdź adres źródła: ma być podpisany nazwą serwisu (np. „wyborcza.pl”), a nie uciętym w połowie długim linkiem. Kliknięcie otwiera oryginał w nowej karcie.",
+      "Zwróć uwagę, że nagłówki „Historia powiązań”, „Zmiany na stanowisku”, „Notatki” i „Fakty z artykułów” zaczynają się teraz w jednej linii, jeden pod drugim.",
+      "Kliknij „Zgłoś poprawkę”, wpisz treść i zapisz. Dopiero w trybie edycji ma być widoczne pole do pisania razem z pytaniem pomocniczym; po zapisaniu wraca zwykły tekst.",
+      "Kliknij „Edytuj”, potem „Anuluj” - notatka ma wrócić do poprzedniej treści.",
+      "Trzy przyciski dodawania („Dodaj źródło”, „Zgłoś poprawkę”, „Zgłoś brak”) mają być w jednym rzędzie i bez kolorowych obwódek, tak jak „Dodaj” w „Historii powiązań”.",
+      "To samo sprawdź na stronie spółki (/instytucja/...), artykułu i tematu, w panelu bocznym otwieranym z /eksploruj/tabela oraz na /eksploruj/nowe - notatki rysuje wszędzie ten sam komponent.",
+      "Na telefonie: notatki mają iść jedna pod drugą na całą szerokość, tak jak powiązania nad nimi.",
+    ],
+    link: "/osoba/marzena-slomka-a8sCGsKrCC6OyVDmkOeg",
+    area: "public",
+  },
+  {
+    id: "szpitale-linki-do-obecnych-miejsc",
+    title: "Linki ze strony szpitali prowadzą do obecnych członków rad",
+    description:
+      "Słupki wykresu, lista województw i przyciski „Sprawdzaj osoby ze " +
+      "szpitali” i „Cała lista w tabeli” otwierały wszystkich, którzy " +
+      "kiedykolwiek zasiadali w radzie szpitala. Teraz każdy z tych linków " +
+      "dodaje filtr „obecnie zatrudniony”, więc pokazuje ludzi, którzy " +
+      "zasiadają w niej dziś.",
+    steps: [
+      "Na /eksploruj/szpitale kliknij słupek partii albo „Cała lista w tabeli” - w adresie ma być currentlyEmployed=selected, a w tabeli tylko osoby z trwającym miejscem w szpitalu.",
+    ],
+    link: "/eksploruj/szpitale",
+    area: "public",
+  },
+  {
+    id: "osoba-wspomniana-w-artykulach",
+    title: "Na stronie osoby i spółki widać artykuły, które o nich wspominają",
+    description:
+      "Sekcja była w kodzie od dawna i nigdy nic nie pokazywała: brała " +
+      "powiązania z grafu, a graf z założenia wyrzuca wszystko, co dotyka " +
+      "artykułu. Teraz czyta je osobno - i te znalezione przez model, i te " +
+      "dopisane ręcznie na stronie artykułu, i te powstałe z dopisania źródła " +
+      "do notatki. Najnowsze na górze. Powiązanie czekające na zatwierdzenie " +
+      'widzą tylko zalogowani, z plakietką "szkic".',
+    steps: [
+      "Wejdź na stronę osoby, o której pisała prasa.",
+      'Zjedź do sekcji "Artykuły, które o tym wspominają".',
+      "Sprawdź, że kafelek prowadzi na stronę artykułu i pokazuje domenę oraz datę.",
+      "To samo na stronie spółki.",
+      "Wyloguj się: szkice powinny zniknąć, opublikowane zostać.",
+    ],
+    area: "public",
+  },
+  {
+    id: "zrodlo-w-notatce-oznacza-osobe",
+    title:
+      "Źródło dopisane do notatki oznacza osobę jako wspomnianą w artykule",
+    description:
+      "Dopisanie źródła tworzyło stronę artykułu i na tym się kończyło - " +
+      "artykuł trafiał do bazy niepowiązany z nikim, więc jego sekcja " +
+      '"Wspomniane osoby i instytucje" była pusta, a graf pod nim nie miał ' +
+      "co narysować. Teraz w tym samym zapisie powstaje powiązanie z osobą " +
+      "albo spółką, przy której notatka wisi. Ten sam adres wpisany na dwa " +
+      "sposoby (z www, ze slashem na końcu) to jeden artykuł, a nie dwa.",
+    steps: [
+      "Zaloguj się i dodaj do notatki przy osobie źródło z adresem artykułu.",
+      'Zapisz i przejdź żetonem "Artykuł" na stronę artykułu.',
+      'Sprawdź, że osoba jest w "Wspomniane osoby i instytucje" (jako szkic).',
+      "Wróć do notatki i zapisz ją jeszcze raz - nie powinno powstać drugie powiązanie ani drugi artykuł.",
+    ],
+    area: "contributor",
+  },
+  {
+    id: "artykul-zbiera-notatki",
+    title:
+      "Strona artykułu pokazuje notatki napisane przy osobach i spółkach, a własne notatki są krótkie",
+    description:
+      "Źródło dopisane do notatki przy osobie jest notatką o tym artykule - " +
+      "ale widać ją było tylko tam, gdzie ją napisano. Strona artykułu zbiera " +
+      "je teraz wszystkie, razem ze stroną, przy której powstały: kilka " +
+      "powodów, dla których różni ludzie trzymają ten sam tekst, obok tekstu. " +
+      "Łączymy po artykule i po adresie, więc łapią się też notatki starsze " +
+      "niż ta funkcja oraz zgłoszenia poprawek, które adres mają, a artykułem " +
+      "nigdy się nie stają. Widoczne po zalogowaniu, bo notatki przy osobach " +
+      "też są. Przy okazji notatka dodawana na samym artykule to teraz jeden " +
+      "przycisk i pole tekstu - adres, który wpisywało się wcześniej, był " +
+      "adresem strony, na której już jesteś.",
+    steps: [
+      'Zaloguj się, wejdź na stronę osoby i dodaj notatkę typu "Dodaj źródło" z adresem artykułu.',
+      'Zapisz i poczekaj, aż pojawi się żeton "Artykuł".',
+      "Przejdź nim na stronę artykułu.",
+      'Sprawdź sekcję "Notatki z innych stron" - powinna być tam Twoja notatka z nazwiskiem osoby.',
+      'Niżej dodaj notatkę do samego artykułu: powinien być jeden przycisk "Dodaj notatkę" i żadnego pola na adres.',
+    ],
+    area: "contributor",
+  },
+  {
+    id: "fakt-na-powiazanie",
+    title: "Wydobyty fakt można zamienić na powiązanie w grafie",
+    description:
+      "Do tej pory fakt wydobyty z artykułu można było tylko ocenić - i na " +
+      "tym się kończyło: nic nie czytało tej oceny, a żeby zapisać to, co fakt " +
+      "mówi, trzeba było przepisać go ręcznie w formularzu na stronie osoby. " +
+      'Karta faktu ma teraz przycisk "Utwórz powiązanie". Osobę bierzemy z ' +
+      "dopasowania zrobionego przy imporcie, drugą stronę wskazujesz sam - " +
+      "nazwa firmy w artykule to zwykły tekst, a dwie firmy noszą tę samą " +
+      "nazwę równie często jak dwie osoby. Powiązanie powstaje jako szkic i " +
+      "ma artykuł jako źródło. Dotyczy zatrudnienia i relacji osobistych; " +
+      "członkostwo partyjne i rola w aferze nie mają jeszcze typu powiązania " +
+      "i przycisku nie dostają.",
+    steps: [
+      "Zaloguj się i wejdź na stronę artykułu, z którego coś wydobyto.",
+      'Rozwiń "Wydobyte fakty".',
+      'Na fakcie o zatrudnieniu kliknij "Utwórz powiązanie".',
+      "Wskaż pracodawcę, sprawdź stanowisko i zapisz.",
+      "Kliknij drugi raz to samo - powinno trafić w to samo powiązanie, a nie utworzyć drugie.",
+      "Wejdź na stronę tej osoby i sprawdź, że powiązanie tam jest, oznaczone jako szkic.",
+    ],
+    area: "contributor",
+  },
+  {
+    id: "rada-spoleczna-takze-na-stronie-szpitala",
+    title: "Rada społeczna nazwana tak samo na stronie szpitala",
+    description:
+      "Nazwa organu nadzoru była poprawiana tylko tam, gdzie wiersz " +
+      "prowadził do instytucji: na stronie osoby i w „Ostatnio " +
+      "zatrudnionych”. Na stronie samego szpitala wiersz prowadzi do " +
+      "osoby, więc nie było z czego odczytać, jaki organ ma ta " +
+      "instytucja - i wszystkie 892 miejsca w radach społecznych 238 " +
+      "szpitali były tam nadal podpisane „Rada Nadzorcza”, czyli " +
+      "dokładnie na tej stronie, na której najłatwiej to zauważyć. Teraz " +
+      "strona instytucji mówi o sobie kartce z powiązaniami, więc podpis " +
+      "jest ten sam po obu stronach powiązania. Tak samo w sekcji „Zmiany " +
+      "na stanowisku” - nagłówki funkcji biorą nazwę organu z rejestru, " +
+      "po obu stronach: na stronie szpitala i na stronie osoby.",
+    steps: [
+      "Wejdź na stronę szpitala („Wojewódzki Szpital dla Nerwowo i Psychicznie Chorych „Dziekanka” w Gnieźnie”) i sprawdź w „Historii powiązań”, że członkowie organu nadzoru są podpisani „Rada Społeczna”, a nie „Rada Nadzorcza”.",
+      "Na tej samej stronie sprawdź nagłówki w „Zmianach na stanowisku” - jeśli jakieś są, mają mówić „Rada Społeczna” i stać zaraz po „Zarządzie”.",
+      "Kliknij nazwisko z tej listy i sprawdź, że na stronie osoby to samo powiązanie jest podpisane tak samo.",
+      "Wejdź na stronę spółki z prawdziwą radą nadzorczą (np. PKP SKM w Trójmieście) i sprawdź, że tam nadal jest „Rada Nadzorcza”.",
+    ],
+    link: "/instytucja/wojewodzki-szpital-dla-nerwowo-i-psychicznie-chorych-dziekanka-im-aleksandra-piotrowskiego-w-gnieznie-gniezno-3s7wdCYxNJnOrufj3T7r",
+    area: "public",
+  },
+  {
+    id: "rozbicie-wyniku-w-tabeli",
+    title: "Wynik w tabeli mówi, skąd się wziął",
+    description:
+      "Liczba w kolumnie „Głosy łącznie” sumowała głosy ludzi z najwyższą " +
+      "oceną modelu, więc czwórka mogła znaczyć cztery zgodne modele albo " +
+      "jedną przekonaną osobę - i nie dało się ich odróżnić. Teraz kliknięcie " +
+      "w liczbę pokazuje, ile modeli oceniło tę osobę, co każdy z nich " +
+      "powiedział i ile osób na nią zagłosowało. Osoby, której nikt i żaden " +
+      "model nie ocenił, nadal pokazujemy jako samą liczbę.",
+    steps: [
+      "Wejdź na /eksploruj/tabela i posortuj malejąco po kolumnie „Głosy łącznie”.",
+      "Kliknij liczbę w tej kolumnie przy osobie z góry listy.",
+      "Sprawdź, że karta wymienia modele z ich ocenami i liczbę osób, które głosowały.",
+      "Sprawdź, że przy kilku modelach karta mówi, iż do wyniku liczy się tylko najwyższa ocena.",
+      "Znajdź osobę z wynikiem 0 i sprawdź, że liczba nie jest klikalna.",
+    ],
+    link: "/eksploruj/tabela",
+    area: "public",
+  },
+  {
+    id: "model-ocenia-po-artykulach",
+    title: "Osoby z artykułami w bazie trafiają wyżej w kolejce",
+    description:
+      "Nowy model oceniający („Artykuły w bazie”) bierze pod uwagę fakty " +
+      "wyciągnięte z artykułów i dopasowane do konkretnej osoby. Im o więcej " +
+      "różnych artykułów chodzi, tym wyżej - kilka faktów z jednego tekstu to " +
+      "wciąż jedno źródło. Fakt, który ktoś oznaczył jako błędny albo jako " +
+      "dotyczący innej osoby, przestaje się liczyć.",
+    steps: [
+      "Wejdź na /eksploruj/tabela i kliknij wynik osoby, o której mamy artykuły.",
+      "Sprawdź, że na liście modeli jest „Artykuły w bazie”.",
+    ],
+    link: "/eksploruj/tabela",
+    area: "contributor",
+  },
+  {
+    id: "statystyki-powiazan-duzych-wezlow",
+    title: "Statystyki powiązań największych instytucji znów się przeliczają",
+    description:
+      "Liczby liczone z powiązań - staż, „obecnie zatrudniony”, lista " +
+      "powiązanych podmiotów - nie odświeżały się dla węzłów mających " +
+      "więcej niż 15 różnych powiązań. Zapytanie, które je przelicza, " +
+      "przekraczało limit Firestore na złożoność i kończyło się błędem, a " +
+      "błąd był po cichu połykany, więc statystyki zostawały takie, jakie " +
+      "zostawił po sobie ostatni import. W ostatnim tygodniu sierpnia " +
+      "dotyczyło to co najmniej 85 węzłów, w tym Warszawy i Krakowa - " +
+      "czyli akurat tych, które mają najwięcej powiązań. Przy okazji samo " +
+      "przeliczanie przeniosło się z „od razu przy każdej zmianie " +
+      "powiązania” na „raz na minutę, zbiorczo”: pojedyncza zmiana jest " +
+      "widoczna do minuty później, za to masowy import nie kosztuje już " +
+      "milionów odczytów bazy.",
+    steps: [
+      "Wejdź na stronę instytucji z dużą liczbą powiązań, np. Miasto Warszawa.",
+      "Sprawdź, że liczba powiązanych podmiotów w statystykach zgadza się z listą powiązań na stronie.",
+      "Dodaj albo usuń jedno powiązanie i odczekaj minutę.",
+      "Odśwież stronę - statystyki mają uwzględniać tę zmianę.",
+      "W Eksploruj ustaw filtr „obecnie zatrudniony” i sprawdź, że osoby powiązane z tą instytucją są w wynikach.",
+    ],
+    area: "public",
+  },
+  {
+    id: "strzalki-na-liscie-regionu-w-jednej-linii",
+    title: "Strzałki na liście osób regionu stoją w jednej kolumnie",
+    description:
+      "Na stronie głównej, po kliknięciu powiatu, strzałka w wierszu osoby z " +
+      "partią stała kilka pikseli niżej niż w wierszu bez partii. Teraz " +
+      "wszystkie są na jednej wysokości, a bardzo długa nazwa partii kończy " +
+      "się wielokropkiem zamiast wypychać strzałkę. Kilka partii w jednym " +
+      "wierszu układa się w dwie linie, więc na wąskim telefonie strzałka " +
+      "też zostaje na karcie.",
+    steps: [
+      "Kliknij powiat na mapie, w którym ktoś ma partię, i porównaj strzałki w wierszach z partią i bez.",
+      "Warszawa na telefonie: osoba z trzema partiami ma strzałkę tam, gdzie pozostałe wiersze.",
+    ],
+    link: "/",
+    area: "public",
+  },
+  {
+    id: "rewizje-w-panelu-tym-samym-przyciskiem",
+    title: "„Rewizje” w panelu bocznym wygląda jak na stronie osoby",
+    description:
+      "Skrót do rewizji w panelu bocznym tabeli był szarym przyciskiem z " +
+      "napisem. Teraz jest tym samym kwadratowym przyciskiem z ikoną i " +
+      "dymkiem, co w nagłówku strony osoby.",
+    steps: [
+      "Jako admin kliknij nazwisko w /eksploruj/tabela i porównaj przycisk obok „Zaproponuj zmianę” z tym na stronie osoby.",
+    ],
+    link: "/eksploruj/tabela",
+    area: "admin",
+  },
+  {
+    id: "zrodla-zaczynaja-sie-od-listy",
+    title: "„Źródła” zaczynają się od źródeł",
+    description:
+      "Stronę otwierało sześć linijek zastrzeżenia prawnego, a sześć linijek " +
+      "na monitorze to szesnaście na telefonie: pierwszy tytuł artykułu " +
+      "zaczynał się dopiero 670 pikseli niżej, czyli dwa ekrany po tym, jak " +
+      "ktoś kliknął „Źródła”. Zastrzeżenie zostaje na górze strony, bo tam " +
+      "jest jego miejsce - ale jako jedna linijka, którą się rozwija. Pod " +
+      "tabelę go nie przenosimy: to byłoby ukrycie go, a nie skrócenie.",
+    steps: [
+      "Otwórz /zrodla. Na górze ma być jeden zwijany wiersz „Na czym opiera się ta strona i czego nie twierdzimy”, a nie akapit.",
+      "Kliknij go - rozwija się pełny tekst zastrzeżenia, słowo w słowo ten sam co wcześniej.",
+      "Na telefonie (375px) tabela ze źródłami ma się zaczynać na pierwszym ekranie.",
+    ],
+    link: "/zrodla",
+    area: "public",
+  },
+  {
+    id: "telefon-bez-przewijania-w-bok",
+    title: "Strony przestały uciekać w bok na telefonie",
+    description:
+      "Pod „Pomóż uzupełnić te liczby” na stronie rad szpitali stały obok " +
+      "siebie dwa przyciski, których napisy razem potrzebują 424 pikseli, a " +
+      "telefon daje 311 - a przycisk nigdy nie łamie swojego napisu. Strona " +
+      "nie tyle wystawała poza ekran, co się do tego rzędu rozciągnęła: 502 " +
+      "piksele zamiast 375, więc każda karta na niej była za szeroka i całość " +
+      "dało się przesuwać palcem w bok. Przyciski stoją teraz na telefonie " +
+      "jeden pod drugim, a od szerokości tabletu wracają obok siebie. Samo " +
+      "rozciąganie naprawione jest raz dla wszystkich stron, bo brało się z " +
+      "układu wspólnego dla całego serwisu - na /eksploruj/statystyki robiło " +
+      "z 375-pikselowego telefonu dokument szeroki na 382 piksele, choć nic " +
+      "na tej stronie nie było przycięte.",
+    steps: [
+      "Otwórz /eksploruj/szpitale na telefonie (albo w trybie urządzenia mobilnego, 375px) i spróbuj przesunąć stronę palcem w bok - nie ma drgnąć.",
+      "W karcie „Pomóż uzupełnić te liczby” przyciski „Sprawdzaj osoby ze szpitali” i „Cała lista w tabeli” mają być jeden pod drugim, każdy na całą szerokość karty.",
+      "Rozszerz okno powyżej 600 pikseli - te same przyciski wracają obok siebie.",
+      "Oba prowadzą tam, gdzie wcześniej: pierwszy do kolejki szpitali, drugi do tabeli przefiltrowanej na szpitale.",
+      "To samo sprawdź na /eksploruj/statystyki i /zrodla - żadna z nich nie ma się przesuwać w bok, a karty mają kończyć się na krawędzi ekranu.",
+    ],
+    link: "/eksploruj/szpitale",
+    area: "public",
+  },
+  {
+    id: "porownanie-rewizji-da-sie-przewinac",
+    title: "Porównanie rewizji da się przewinąć i zawęzić",
+    description:
+      "Na /admin/rewizje/<id> każda rewizja to osobna kolumna, więc węzeł, " +
+      "który pipeline wgrywa co noc, rozjeżdżał się na kilka ekranów w bok. " +
+      "Strona siedzi we flexowym kontenerze, a element flexa nie zwęża się " +
+      "poniżej swojej treści - tabela rozpychała więc stronę zamiast się " +
+      "przewijać, a `overflow-x: hidden` z Vuetify obcinał prawe kolumny bez " +
+      "żadnego sposobu, żeby do nich dojechać. Teraz przewija się sama " +
+      "tabela, a jej pasek stoi na dole okna zamiast na dole całej listy " +
+      "pól. Nad tabelą doszły trzy filtry - wszystkie, od ludzi, oczekujące " +
+      "- z licznikami, żeby dziesięć restartów pipeline'u nie stało między " +
+      "recenzentem a propozycją, po którą przyszedł.",
+    steps: [
+      "Wejdź na /admin/rewizje i otwórz węzeł z dużą liczbą rewizji (kolumna „Rewizje łącznie”).",
+      "Sprawdź, że strona nie rozjeżdża się w bok, a sama tabela ma poziomy pasek przewijania i da się nim dojechać do ostatniej kolumny.",
+      "Przewiń tabelę w dół - poziomy pasek ma zostać widoczny, nie uciekać pod koniec listy pól.",
+      "Kliknij „Od ludzi” - mają zostać tylko rewizje bez plakietki „Auto”, a licznik obok ma mówić, ile z ilu widać.",
+      "Kliknij „Oczekujące” - ma zniknąć kolumna zatwierdzona i te odrzucone.",
+      "Wejdź z kolejki /admin/rewizje/kolejka w „Pełne porównanie” konkretnej rewizji i włącz filtr, który by ją odciął - podświetlona kolumna ma zostać widoczna mimo filtra.",
+    ],
+    link: "/admin/rewizje",
+    area: "admin",
+  },
+  {
+    id: "widac-wlasna-propozycje-na-stronie",
+    title: "Strona instytucji pokazuje, co się na niej zaproponowało",
+    description:
+      "Po wysłaniu „Zaproponuj zmianę” strona wracała do wersji sprzed " +
+      "zmiany i nie mówiła nic więcej - potwierdzenie znikało przy " +
+      "odświeżeniu, a jedyne miejsce z odpowiedzią było na /profil. Jedna " +
+      "osoba wysłała przez to tę samą poprawkę do spółki kilka razy. Teraz " +
+      "pod nagłówkiem instytucji stoi karta „Twoje propozycje zmian do tej " +
+      "strony”: status każdej z nich, co dokładnie zmienia, podgląd strony w " +
+      "tej wersji i powód odrzucenia, jeśli redakcja odmówiła. Serwer " +
+      "dokłada się z drugiej strony - to samo zgłoszenie wysłane dwa razy " +
+      "trafia w tę samą propozycję zamiast zakładać kolejną, a propozycja, " +
+      "która niczego nie zmienia, nie przechodzi w ogóle. Admin ma tam też " +
+      "skrót „Rewizje” do historii zmian spółki, którego strona instytucji " +
+      "- w odróżnieniu od strony osoby - nigdy nie miała.",
+    steps: [
+      "Zaloguj się i wejdź na stronę dowolnej instytucji. Dopóki nic tu nie zgłosiłeś, żadnej karty z propozycjami nie ma.",
+      "Kliknij „Zaproponuj zmianę”, zmień opis i wyślij. Pod nagłówkiem ma się pojawić karta „Twoje propozycje zmian do tej strony” ze statusem „Oczekuje”.",
+      "Odśwież stronę - karta ma tam nadal być, razem z podpisem mówiącym, ile propozycji czeka na redakcję.",
+      "Kliknij „Podgląd tej wersji”: strona ma się pokazać z Twoją zmianą i paskiem informującym, że to podgląd.",
+      "Wyślij dokładnie tę samą zmianę drugi raz. Potwierdzenie ma powiedzieć „Tę zmianę już zgłosiłeś”, a na karcie ma dalej być jedna propozycja, nie dwie.",
+      "Otwórz „Zaproponuj zmianę” i wyślij formularz bez żadnej zmiany - w oknie ma się pojawić czerwony komunikat, że propozycja niczego nie zmienia.",
+      "Jako admin sprawdź, że przy „Zaproponuj zmianę” jest przycisk „Rewizje” prowadzący do /admin/rewizje/<id spółki>; jako zwykły użytkownik tego przycisku ma nie być.",
+    ],
+    area: "contributor",
+  },
+  {
+    id: "notatki-spolki-na-calej-szerokosci",
+    title: "Notatki spółki otwierają się pod kartą, nie obok niej",
+    description:
+      "Przycisk „Notatki” na karcie spółki dzielił ją dotąd na dwie kolumny: " +
+      "szczegóły po lewej, notatki po prawej. Na /eksploruj/tabela, gdzie " +
+      "karta zbiera wszystkie wybrane filtrem spółki, taka połówka była za " +
+      "wąska, żeby przeczytać w niej wklejony cytat. Notatki otwierają się " +
+      "teraz pod szczegółami, na całej szerokości karty. W kolejce " +
+      "/eksploruj/nowe, gdzie sekcja notatek i tak zajmuje pół ekranu, " +
+      "kolejne wpisy przestały się dodatkowo dzielić na dwie kolumny.",
+    steps: [
+      "Zaloguj się i wejdź na /eksploruj/tabela z wybraną spółką (np. przez filtr firmy) - nad tabelą stoi karta „Wybrane firmy”.",
+      "Rozwiń szczegóły spółki i kliknij „Notatki”: sekcja ma się pojawić pod danymi spółki i zajmować całą szerokość karty, a nie stanąć obok nich.",
+      "Dodaj dwie notatki - mają leżeć jedna pod drugą, każda na całą szerokość.",
+      "To samo sprawdź na stronie spółki (/instytucja/...) - tam karta zachowuje się tak samo.",
+      "Na /eksploruj/nowe otwórz kolejkę: notatki po prawej stronie mają iść w jednej kolumnie, po jednym wpisie w wierszu.",
+    ],
+    link: "/eksploruj/tabela",
+    area: "contributor",
+  },
+  {
     id: "poprawianie-powiazan",
     title: "Powiązanie da się poprawić bez usuwania go",
     description:
@@ -1305,13 +1694,13 @@ export const QA_ITEMS: QaItem[] = [
     description:
       "Na wąskim ekranie nad wyszukiwarką jest jedno zdanie o tym, co ta " +
       "strona robi - zabrakło go, kiedy logo i nagłówek zeszły z pierwszego " +
-      "ekranu. Przycisk âDziałaj z namiâ znika z telefonów, żeby mapa " +
+      "ekranu. Przycisk „Działaj z nami” znika z telefonów, żeby mapa " +
       "koryciarstwa była pierwszą rzeczą pod wyszukiwarką; ten sam " +
       "odnośnik jest teraz w stopce, więc dalej można do niego trafić.",
     steps: [
       "Na telefonie (albo zwęż okno poniżej 960 px) wejdź na stronę główną - nad wyszukiwarką ma być jedno zdanie o tym, co robimy.",
-      "Sprawdź, że pod wyszukiwarką nie ma już przycisku âDziałaj z namiâ i że zaraz pod nią zaczyna się mapa.",
-      "Przewiń na sam dół - w stopce, w âO projekcieâ, ma być âDziałaj z namiâ, prowadzące na /pomoc.",
+      "Sprawdź, że pod wyszukiwarką nie ma już przycisku „Działaj z nami” i że zaraz pod nią zaczyna się mapa.",
+      "Przewiń na sam dół - w stopce, w „O projekcie”, ma być „Działaj z nami”, prowadzące na /pomoc.",
       "Rozszerz okno powyżej 960 px - wraca logo, nagłówek i przycisk obok wyszukiwarki, a zdanie znika (mówi to samo, co nagłówek).",
     ],
     link: "/",
@@ -1328,9 +1717,9 @@ export const QA_ITEMS: QaItem[] = [
       "staremu, filtry są rozwinięte.",
     steps: [
       "Na telefonie (albo zwęż okno poniżej 960 px) wejdź na /eksploruj/tabela - tabela ma być widoczna bez przewijania albo po jednym machnięciu.",
-      "Kliknij przycisk âFiltry i wyszukiwanieâ - filtry mają się rozwinąć i zwinąć ponownie.",
-      "Ustaw jakiś filtr, na przykład partię, i zwiń panel - na przycisku ma być âFiltry (1)â, żeby nie filtrował po cichu.",
-      "Wyloguj się i sprawdź niebieski banerek: przycisk âZaloguj sięâ ma być pod tekstem, w całości na ekranie.",
+      "Kliknij przycisk „Filtry i wyszukiwanie” - filtry mają się rozwinąć i zwinąć ponownie.",
+      "Ustaw jakiś filtr, na przykład partię, i zwiń panel - na przycisku ma być „Filtry (1)”, żeby nie filtrował po cichu.",
+      "Wyloguj się i sprawdź niebieski banerek: przycisk „Zaloguj się” ma być pod tekstem, w całości na ekranie.",
       "Spróbuj przewinąć stronę w bok - nie ma czego, nic nie wystaje poza ekran.",
       "Rozszerz okno powyżej 960 px - filtry mają być rozwinięte, bez przycisku do zwijania.",
     ],
@@ -1341,20 +1730,20 @@ export const QA_ITEMS: QaItem[] = [
     id: "reviewer-queue-one-button",
     title: "Kolejka rewizji: jeden przycisk zamiast pięciu",
     description:
-      "Wiersz w kolejce ma teraz jeden przycisk - âRozpatrzâ - który otwiera " +
+      "Wiersz w kolejce ma teraz jeden przycisk - „Rozpatrz” - który otwiera " +
       "porównanie rewizji tego wpisu z tą jedną podświetloną i przewiniętą " +
       "na widok. Decyzje zapadają tam, gdzie widać całą zmianę, a nie w " +
       "najwęższej kolumnie tabeli. Autor i data to jedna kolumna " +
-      "âZgłoszenieâ na początku wiersza, a âCzego dotyczyâ nie rozpycha się " +
+      "„Zgłoszenie” na początku wiersza, a „Czego dotyczy” nie rozpycha się " +
       "już na tytuł artykułu.",
     steps: [
       "Jako admin wejdź na /admin/rewizje/kolejka.",
-      "Sprawdź pierwszą kolumnę âZgłoszenieâ - w jednym miejscu ma być autor, kiedy zgłosił i status.",
+      "Sprawdź pierwszą kolumnę „Zgłoszenie” - w jednym miejscu ma być autor, kiedy zgłosił i status.",
       "Sprawdź ostatnią kolumnę - ma być w niej dokładnie jeden przycisk.",
-      "Kliknij âRozpatrzâ - otwiera się porównanie rewizji tego wpisu, a kolumna z tą rewizją jest podświetlona i widoczna bez przewijania w bok.",
-      "Zatwierdź albo odrzuć ją tam i wróć do kolejki - przycisk przy rozpatrzonej zmienia się na âZobaczâ.",
-      "Ustaw filtr âRodzajâ na âWszystkoâ i znajdź rewizję powiązania - jej przycisk ma prowadzić na /admin/rewizje-krawedzi, bo powiązania recenzuje się tam.",
-      "Znajdź rewizję artykułu o długim tytule - kolumna âCzego dotyczyâ ma być wąska, tytuł ucięty po dwóch liniach, a cały widoczny w dymku po najechaniu.",
+      "Kliknij „Rozpatrz” - otwiera się porównanie rewizji tego wpisu, a kolumna z tą rewizją jest podświetlona i widoczna bez przewijania w bok.",
+      "Zatwierdź albo odrzuć ją tam i wróć do kolejki - przycisk przy rozpatrzonej zmienia się na „Zobacz”.",
+      "Ustaw filtr „Rodzaj” na „Wszystko” i znajdź rewizję powiązania - jej przycisk ma prowadzić na /admin/rewizje-krawedzi, bo powiązania recenzuje się tam.",
+      "Znajdź rewizję artykułu o długim tytule - kolumna „Czego dotyczy” ma być wąska, tytuł ucięty po dwóch liniach, a cały widoczny w dymku po najechaniu.",
     ],
     link: "/admin/rewizje/kolejka",
     area: "admin",
@@ -1363,15 +1752,15 @@ export const QA_ITEMS: QaItem[] = [
     id: "drawer-admin-revisions-link",
     title: "Skrót do rewizji także w panelu bocznym",
     description:
-      "Przycisk âRewizjeâ, który admin ma na stronie osoby, jest teraz również " +
-      "w panelu bocznym otwieranym z tabeli - w tej samej linii co âZaproponuj " +
-      "zmianęâ i głosy. Nie trzeba już wychodzić z tabeli, żeby dojść do " +
+      "Przycisk „Rewizje”, który admin ma na stronie osoby, jest teraz również " +
+      "w panelu bocznym otwieranym z tabeli - w tej samej linii co „Zaproponuj " +
+      "zmianę” i głosy. Nie trzeba już wychodzić z tabeli, żeby dojść do " +
       "ekranu, na którym stronę się publikuje.",
     steps: [
-      "Jako admin wejdź na /eksploruj/tabela i kliknij nazwisko - w panelu, w linii z głosami, ma być przycisk âRewizjeâ.",
+      "Jako admin wejdź na /eksploruj/tabela i kliknij nazwisko - w panelu, w linii z głosami, ma być przycisk „Rewizje”.",
       "Kliknij go - ma otworzyć listę rewizji tej samej osoby, którą panel pokazywał.",
       "Wróć do tabeli, otwórz inną osobę i sprawdź, że przycisk prowadzi do niej, a nie do poprzedniej.",
-      "Zaloguj się jako zwykły użytkownik i powtórz - âZaproponuj zmianęâ ma być, âRewizjiâ nie.",
+      "Zaloguj się jako zwykły użytkownik i powtórz - „Zaproponuj zmianę” ma być, „Rewizji” nie.",
     ],
     link: "/eksploruj/tabela",
     area: "admin",

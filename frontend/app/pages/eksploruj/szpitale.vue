@@ -76,36 +76,6 @@
       </v-col>
     </v-row>
 
-    <!-- The exclusion, directly under the chart it applies to, because it is
-         the one thing a reader has to understand to read those numbers. It also
-         has to be prominent for a second reason: a rada społeczna is the body
-         actually filled with radni and officials, so a reader who notices it
-         was dropped and finds no explanation would reasonably read the omission
-         as cherry-picking rather than as the fairness choice it is. The switch
-         it points at is the one directly above the chart, which is why it now
-         says „nad wykresem” rather than „poniżej”. -->
-    <v-alert
-      type="info"
-      variant="tonal"
-      density="comfortable"
-      class="mb-6"
-      :icon="mdiScaleBalance"
-    >
-      <p class="mb-2">
-        <strong>Rada społeczna to nie rada nadzorcza.</strong> Rada społeczna
-        jest organem opiniodawczo-doradczym samodzielnego publicznego zakładu
-        opieki zdrowotnej. Ustawa o działalności leczniczej nie przewiduje dla
-        jej członków ani wynagrodzenia, ani diety — jedynie rekompensatę
-        utraconych zarobków, jeżeli pracodawca udzielił członkowi na czas
-        posiedzenia bezpłatnego zwolnienia z obowiązków pracowniczych (art. 48
-        ust. 9-10). Dlatego tych miejsc nie wliczamy do zestawienia.
-      </p>
-      <p class="mb-0">
-        {{ exclusionSummary }} Przełącznik nad wykresem pokazuje, co dokładnie
-        zostało wyłączone.
-      </p>
-    </v-alert>
-
     <!-- ------------------------------------------------------------------ -->
     <!-- The way in, directly under the number that says why it is needed.
          The chart's own subtitle has just admitted how much of the register is
@@ -135,13 +105,29 @@
         czego szukać - to zarazem samouczek, więc nie trzeba nic wiedzieć na
         start. Wystarczy pięć minut i konto na stronie.
       </v-card-text>
-      <v-card-actions class="px-4 pb-4 pt-0">
+      <!-- Stacked below `sm`. A `v-btn` never wraps its label, so side by side
+           these two want 424px of row and a 375px phone has 311 to give: the
+           row set the width of the document, and every card on the page was
+           then laid out 502px wide with a horizontal scrollbar under it.
+           Stretching rather than wrapping because wrapping only moves the
+           problem to the next narrow phone - „Sprawdzaj osoby ze szpitali”
+           alone is 252px, which is already most of a 320px screen. Chosen by
+           breakpoint classes and not `useDisplay()`, for the reason
+           StatsHospitalBreakdown gives: the server would render one layout and
+           the browser correct it. -->
+      <!-- `currentlyEmployed=selected` on both, as on every link out of the
+           chart: the page counts seats held now, and without it the queue led
+           with people whose seat on a board ended years ago while somebody
+           sitting on one today waited behind them. -->
+      <v-card-actions
+        class="flex-column flex-sm-row align-stretch align-sm-center px-4 pb-4 pt-0"
+      >
         <v-btn
           color="primary"
           variant="flat"
           class="text-none"
           :append-icon="mdiArrowRight"
-          to="/eksploruj/nowe?category=szpitale"
+          to="/eksploruj/nowe?category=szpitale&currentlyEmployed=selected"
           data-testid="hospitals-join-queue"
         >
           Sprawdzaj osoby ze szpitali
@@ -150,12 +136,42 @@
           variant="text"
           class="text-none"
           :prepend-icon="mdiTable"
-          to="/eksploruj/tabela?category=szpitale&visibility=private&sortBy=latestEmploymentStart&sortDesc=true"
+          to="/eksploruj/tabela?category=szpitale&currentlyEmployed=selected&visibility=private&sortBy=latestEmploymentStart&sortDesc=true"
         >
           Cała lista w tabeli
         </v-btn>
       </v-card-actions>
     </v-card>
+
+    <!-- The exclusion, directly under the chart it applies to, because it is
+         the one thing a reader has to understand to read those numbers. It also
+         has to be prominent for a second reason: a rada społeczna is the body
+         actually filled with radni and officials, so a reader who notices it
+         was dropped and finds no explanation would reasonably read the omission
+         as cherry-picking rather than as the fairness choice it is. The switch
+         it points at is the one directly above the chart, which is why it now
+         says „nad wykresem” rather than „poniżej”. -->
+    <v-alert
+      type="info"
+      variant="tonal"
+      density="comfortable"
+      class="mb-6"
+      :icon="mdiScaleBalance"
+    >
+      <p class="mb-2">
+        <strong>Rada społeczna to nie rada nadzorcza.</strong> Rada społeczna
+        jest organem opiniodawczo-doradczym samodzielnego publicznego zakładu
+        opieki zdrowotnej. Ustawa o działalności leczniczej nie przewiduje dla
+        jej członków ani wynagrodzenia, ani diety — jedynie rekompensatę
+        utraconych zarobków, jeżeli pracodawca udzielił członkowi na czas
+        posiedzenia bezpłatnego zwolnienia z obowiązków pracowniczych (art. 48
+        ust. 9-10). Dlatego tych miejsc nie wliczamy do zestawienia.
+      </p>
+      <p class="mb-0">
+        {{ exclusionSummary }} Przełącznik nad wykresem pokazuje, co dokładnie
+        zostało wyłączone.
+      </p>
+    </v-alert>
 
     <!-- ------------------------------------------------------------------ -->
     <h2 class="text-h6 mb-3">W skrócie</h2>

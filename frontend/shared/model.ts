@@ -80,6 +80,16 @@ export interface NodeStats {
     interesting?: number;
     quality?: number;
     humanVoted?: boolean;
+    /** How many people have voted on this node - not how much they said.
+     *
+     * `interesting` sums the verdicts, so a 4 is one enthusiast or four mild
+     * opinions or four models agreeing, and the number alone cannot say which.
+     * This is the count that tells them apart, and with `models` it is what
+     * `VoteBreakdown` renders. Absent, rather than 0, when nobody has voted:
+     * Firestore cannot query for a field that is not there, and writing a 0
+     * onto every node in the graph to say "nothing happened" is a migration
+     * with no reader. */
+    humanCount?: number;
     lastVotedAt?: string;
     /** What each scoring model made of this person, keyed by its `userUid`.
      * Only the best of them is in `interesting`; this is what says which model
@@ -234,22 +244,34 @@ export const nodeTypes = [
 
 export type NodeType = (typeof nodeTypes)[number];
 
-export type EdgeType =
-  | "employed"
-  | "connection"
-  | "mentions"
+/** Every kind of relation, in one place.
+ *
+ * The tuple is the source of truth and `EdgeType` is derived from it, the same
+ * arrangement `nodeTypes` has and for the same reason: a handler validating a
+ * `type` off the wire can say `z.enum(edgeTypes)` rather than writing the list
+ * out again, and `/api/edges/create` accepted any string at all until it could.
+ *
+ * Individual types are documented on the union below.
+ */
+export const edgeTypes = [
+  "employed",
+  "connection",
+  "mentions",
   /** Ownership: a shareholder, a parent company, the gmina that holds the
    * shares. Region -> company means the region *owns* it, which since the
    * `seat` split is a claim about shares rather than about geography. */
-  | "owns"
+  "owns",
   /** Where a company is registered. Split out of `owns`, which meant both
    * "sits in" and "is owned by" and could not mean both once the register's
    * shareholder lists were ingested: a gmina that owns a company seated in the
    * next town would otherwise move it there. */
-  | "seat"
-  | "comment"
-  | "election"
-  | "tagged";
+  "seat",
+  "comment",
+  "election",
+  "tagged",
+] as const;
+
+export type EdgeType = (typeof edgeTypes)[number];
 
 export const destinationAddText: Record<NodeType, string> = {
   person: "Dodaj osobę",
@@ -609,6 +631,16 @@ export type NoteSource = {
   adminTypeDeferred?: boolean;
 };
 
+/** Entries written before kinds existed are all sources.
+ *
+ * Here rather than in `composables/notes.ts`, where it used to live, so that
+ * `utils/notePromotion.ts` can read a kind without importing the composable -
+ * which now reads the promotion helpers back, and the two would form a cycle.
+ */
+export function noteKindOf(source: Pick<NoteSource, "kind">): NoteEntryKind {
+  return source.kind ?? "source";
+}
+
 /** Whether an entry is still waiting on an admin, which is what the dashboard
  * counts under "Notatki wymagające działania".
  *
@@ -676,6 +708,11 @@ export type NoteRow = {
   note: string;
   url: string | null;
   kind: NoteEntryKind;
+  /** The article node this entry's url became, once it has. Carried so a
+   * reviewer can reach the page it made, and so an entry that was never
+   * promoted - everything written before the feature, and everything whose
+   * promotion failed - is tellable from one that was. */
+  articleNodeId: string | null;
   adminStatus: NoteAdminStatus | null;
   adminType: string | null;
   /** Whether classifying this entry was handed back to the table view. */

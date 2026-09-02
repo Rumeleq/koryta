@@ -55,7 +55,12 @@
           :key="nodeId"
           :company="company"
           :location="location"
+          @submitted="proposals?.refresh()"
         />
+
+        <!-- Renders nothing until the reader has proposed something for this
+             company, so a page nobody has touched looks exactly as it did. -->
+        <RevisionNodeProposals ref="proposals" :node-id="nodeId" />
 
         <div class="d-flex flex-wrap ga-2 mt-4">
           <v-btn
@@ -100,6 +105,7 @@
           />
           <CardEmploymentHistory
             :edges="edges"
+            :company="company"
             :can-add="canAddRelations"
             :can-cite="canAddRelations"
             :can-correct="canEditRelations"
@@ -131,6 +137,10 @@
             @click="showGraph = true"
           />
         </div>
+
+        <!-- The press on this company: the same section a person's page
+             carries, off the same endpoint. `mentions` is declared for both. -->
+        <MentionArticleList :node-id="nodeId" class="mt-6" />
 
         <NoteEditor :node-id="nodeId" node-type="place" class="mt-6" />
 
@@ -245,6 +255,11 @@ watch(
   },
   { immediate: true },
 );
+
+/** The card listing what this reader has proposed here. Refreshed by hand
+ * after a submission rather than by a watcher: the proposal is made inside the
+ * summary card, and the card has no other reason to know about it. */
+const proposals = ref<{ refresh: () => void } | null>(null);
 
 const revisionId = computed(() => route.query.revisionId as string | undefined);
 

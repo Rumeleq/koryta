@@ -32,14 +32,12 @@ from scrapers.article.pipelines.done_urls_pipeline import ArticleDoneUrls
 from scrapers.article.pipelines.incremental import IncrementalJsonlPipeline
 from scrapers.article.pipelines.pipeline_utils import (
     article_workers,
-    iter_done_urls,
+    iter_done_urls_from_file,
 )
 from scrapers.stores import DOWNLOADED_DIR, VERSIONED_DIR, Context, DoneUrl
 
 _FINAL_OUTPUT_FILE = Path(VERSIONED_DIR) / "article_parsed" / "article_parsed.jsonl"
-_TEMP_OUTPUT_FILE = (
-    Path(VERSIONED_DIR) / "article_parsed" / "article_parsed.jsonl.tmp"
-)
+_TEMP_OUTPUT_FILE = Path(VERSIONED_DIR) / "article_parsed" / "article_parsed.jsonl.tmp"
 
 
 @dataclass(frozen=True)
@@ -65,7 +63,7 @@ class ArticleParsed(IncrementalJsonlPipeline[ParsedArticleRecord]):
         return ParsedArticleRecord
 
     def process(self, ctx: Context):
-        done_df = self.done_urls.read_or_process(ctx)
+        self.done_urls.read_or_process(ctx)
         selectors_df = self.domain_selectors.read_or_process(ctx)
         selectors = selector_map_from_df(selectors_df)
         existing_records = _existing_parse_index(_FINAL_OUTPUT_FILE)
@@ -74,7 +72,9 @@ class ArticleParsed(IncrementalJsonlPipeline[ParsedArticleRecord]):
         reusable_urls: set[str] = set()
         tasks_by_domain: dict[str, list[ParseTask]] = {}
         seen_urls: set[str] = set()
-        for done in iter_done_urls(done_df):
+        for done in iter_done_urls_from_file(
+            self.done_urls.final_output_path, progress_every=200000
+        ):
             if done.url in seen_urls:
                 continue
             seen_urls.add(done.url)

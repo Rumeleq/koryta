@@ -123,8 +123,16 @@ jobs:
       # wikimedia once and restored from cache every night after. Repo-wide
       # cache is 10 GB and evicts least-recently-used, which the uv cache also
       # draws on -- another reason the ml group stays out of this job.
+      # restore/save rather than `actions/cache`, whose post step declares
+      # `post-if: success()` -- it saves nothing from a job that failed. The
+      # full tier had never once succeeded, so between 2026-07-31 and
+      # 2026-09-01 it re-fetched the 2.9 GB dump every night and cached it
+      # never; `gh api repos/:owner/:repo/actions/caches` showed slice entries
+      # and no full ones at all. Downloading is not what breaks, so what was
+      # downloaded should outlive the run that broke.
       - name: Cache the dump
-        uses: actions/cache@v6
+        id: dump-cache
+        uses: actions/cache/restore@v6
         with:
           path: data/pipelines/downloaded/${{ env.DUMP_FILE }}
           key: wikidump-${{ env.DUMP_FILE }}
@@ -133,7 +141,7 @@ jobs:
       # stat.gov.pl. Separate from the dump because this one turns over: the
       # rolling key always saves, and restore-keys takes the newest previous.
       - name: Cache the other downloads
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: |
             data/pipelines/downloaded
@@ -172,8 +180,39 @@ jobs:
           # their own full pass over the dump, which would roughly triple the
           # run for a dataset nothing serves yet. Excluding the top-level one
           # takes the dependency with it.
+          #
+          # The article branch comes out for a different reason: ArticleDoneUrls
+          # reads the production crawl-queue Postgres and the url_store service,
+          # and a GitHub runner has neither, so it raises
+          # psycopg_pool.PoolTimeout five seconds in. Naming it alone would not
+          # help -- select_pipelines only subtracts from the top-level list, and
+          # read_or_process runs a stale source anyway -- so the eight pipelines
+          # that reach it through their annotations come out with it. Standing
+          # up an empty `services: postgres:` here would be worse than the
+          # failure: it answers with zero done URLs, and all eight go green
+          # having processed nothing.
+          #
+          # This leaves 40 of the 51 pipelines running, and drops the only
+          # ContextResource the nightly was asking for -- the article branch is
+          # what pulled in an LLM client. To put the branch back, give the
+          # runner a reachable crawl queue rather than deleting lines here.
           if [ "$TIER" = "full" ]; then
-            selection="--all-pipelines --exclude ProcessWikiNer"
+            excluded=(
+              ProcessWikiNer
+              ArticleDoneUrls
+              ArticleParsed
+              ArticleDomainSelectors
+              ArticleAnalyzed
+              ArticlePersonMentions
+              ArticleExtractedFacts
+              ArticleFactsVerified
+              ArticleKoryciarskiScores
+              PeopleAffairTags
+            )
+            selection="--all-pipelines"
+            for pipeline in "${excluded[@]}"; do
+              selection="$selection --exclude $pipeline"
+            done
           else
             # Wiki only: the rest reads GCS or Firestore, which a fork PR has
             # no credentials for. ProcessWiki needs none.
@@ -186,6 +225,30 @@ jobs:
             --assume-yes \
             --wiki-dump-url "$DUMP_URL" \
             --wiki-dump-file "$DUMP_FILE"
+
+      # Both saves sit here rather than in a post step so that a failed run
+      # still keeps its downloads. `!cancelled()` and not `always()`: a
+      # cancelled job can be holding a half-written file.
+      #
+      # The dump is skipped on a restore hit -- the key is the filename, so the
+      # content cannot have changed, and saving an existing key is an error.
+      - name: Save the dump
+        if: ${{ !cancelled() && steps.dump-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          path: data/pipelines/downloaded/${{ env.DUMP_FILE }}
+          key: wikidump-${{ env.DUMP_FILE }}
+
+      # No such guard here: the key carries the run id, so it is new every
+      # time and there is nothing to collide with.
+      - name: Save the other downloads
+        if: ${{ !cancelled() }}
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            data/pipelines/downloaded
+            !data/pipelines/downloaded/*.bz2
+          key: downloads-${{ env.TIER }}-${{ github.run_id }}
 
       # src/tests/pipelines runs real pipelines through read_or_process, which
       # is why the unit-test job ignores src/tests entirely (issue #196). Here
@@ -234,10 +297,34 @@ jobs:
       #
       # Runs even if the step above failed: versioned/ output and stored data
       # break independently, and one night should report both.
+      #
+      # The ceiling is a backstop, not a budget: the 60 tests that remain read
+      # one Firestore export between them and finished in seven minutes the
+      # first night they ran at all. A step that wants half an hour has found
+      # something new to download, and should say so rather than eat the job.
       - name: Check the database invariants
         if: ${{ !cancelled() && env.TIER == 'full' }}
+        timeout-minutes: 30
         working-directory: data/pipelines
-        run: uv run --no-sync pytest -m e2e src/tests/pipelines -v
+        run: |
+          set -euo pipefail
+          # test_rejestrio_coverage.py is the one file here that does not read
+          # the export. Both its module fixtures walk the whole
+          # `hostname=rejestr.io` prefix of gs://koryta-pl-crawled -- once for
+          # RejestrIOCoverage, again for PersonFeedCoverage -- and that bucket
+          # is multi-region, so the egress is billed per GB. On 2026-09-01,
+          # the first night this step ever got past authentication, its 11
+          # tests took the 100 minutes between the other 60 finishing and the
+          # job's 120-minute ceiling, then died without a verdict; the
+          # cancellation took the caches and the artifact upload with it.
+          #
+          # It is an audit rather than a nightly signal anyway -- the budgets
+          # it asserts are measured by hand and dated in the file. Run it
+          # deliberately:
+          #
+          #   .venv/bin/pytest -m e2e src/tests/pipelines/test_rejestrio_coverage.py
+          uv run --no-sync pytest -m e2e src/tests/pipelines -v \
+            --ignore=src/tests/pipelines/test_rejestrio_coverage.py
 
       - name: Upload pipeline output
         if: ${{ !cancelled() }}

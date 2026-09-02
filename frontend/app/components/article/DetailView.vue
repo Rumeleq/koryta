@@ -140,6 +140,7 @@
                 v-for="fact in facts"
                 :key="fact.id ?? fact.url"
                 :fact="fact"
+                can-promote
                 class="mb-3"
               >
                 <template #actions>
@@ -252,6 +253,15 @@
             osób.
           </p>
         </template>
+
+        <!-- 7. What readers have made of it -->
+        <v-divider class="my-4" />
+        <!-- Both halves of the same thing: the notes filed against this piece
+             from the pages it is about, and the box for adding one from here.
+             The join is `NoteSource.articleNodeId`, which promoting a source
+             stamps on the entry - so a url somebody kept under a person shows
+             up here, next to their reason for keeping it. -->
+        <ArticleCitedNotes :node-id="nodeId" />
 
         <NoteEditor :node-id="nodeId" node-type="article" class="mt-4" />
       </div>

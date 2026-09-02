@@ -1,4 +1,4 @@
-import { computed, ref } from "vue";
+import { computed, ref, shallowRef, watch } from "vue";
 import { useCurrentUser } from "vuefire";
 import type { Ref } from "vue";
 import type {
@@ -126,6 +126,14 @@ export function partyDisplay(party: string): PartyDisplay {
   };
 }
 
+/** The seats this page counts are the ones held now, so every link out of it
+ * says so. Without this the table answered "who has ever sat on a hospital
+ * board" - a reader clicking a bar of current seats landed among people whose
+ * seat ended years ago, and the queue put a long-gone member ahead of somebody
+ * sitting on a board today. `selected` narrows the employer filter beside it -
+ * the category, the region, the one hospital - to relations still running. */
+const CURRENT_SEATS = { currentlyEmployed: "selected" } as const;
+
 /** A link to the same seats in the explore table: the party, narrowed to the
  * institutions this page counts.
  *
@@ -136,6 +144,7 @@ function partyTableLink(party: string): string {
   const query = new URLSearchParams();
   for (const alias of partyAliasesOf(party)) query.append("party", alias);
   query.set("category", "szpitale");
+  query.set("currentlyEmployed", CURRENT_SEATS.currentlyEmployed);
   return `/eksploruj/tabela?${query.toString()}`;
 }
 
@@ -313,6 +322,7 @@ export function regionQueueLink(teryt: string): string | null {
   const query = new URLSearchParams({
     category: "szpitale",
     companyTeryt: teryt,
+    ...CURRENT_SEATS,
     visibility: "private",
     sortBy: "latestEmploymentStart",
     sortDesc: "true",
@@ -362,6 +372,7 @@ export function regionDisplayRows(
 export function hospitalQueueLink(id: string): string {
   const query = new URLSearchParams({
     place: id,
+    ...CURRENT_SEATS,
     visibility: "private",
     sortBy: "latestEmploymentStart",
     sortDesc: "true",
@@ -453,15 +464,36 @@ export function breakdownRows(
  * than fetched from the browser.
  */
 export async function useHospitalBoards() {
-  const user = useCurrentUser();
+  const currentUser = useCurrentUser();
+
+  /** The reader, as far as the markup is allowed to know them.
+   *
+   * Null on the server, and null in the browser too until the page has
+   * hydrated - only then does it follow `useCurrentUser()`. The server never
+   * knows who is asking, but a returning reader's session is restored before
+   * the client's setup runs, so reading `useCurrentUser()` directly here made
+   * the two sides disagree about everything that depends on it: the `useFetch`
+   * key (a different query is a different payload entry, so the client found
+   * nothing and hydrated the whole page against null stats), the "Zobacz
+   * osoby" links, the sentence about excluded seats. Vue reported each of them
+   * as a hydration mismatch and rebuilt the page. */
+  const user = shallowRef<typeof currentUser.value>(null);
+  onNuxtReady(() =>
+    watch(
+      currentUser,
+      (reader) => {
+        user.value = reader ?? null;
+      },
+      { immediate: true },
+    ),
+  );
 
   // Anonymous readers ask for the plain URL, which is the one the six-hour
   // cache - ours and Cloud CDN's - is holding, and the one that gets indexed.
   // A signed-in reader is the person who might have just published a board
   // member, so they ask for `latest`, which the endpoint answers `no-store`.
-  // Reactive rather than read once: vuefire resolves the user after hydration,
-  // so at the time of the server render there is nobody to know about yet, and
-  // `useFetch` refetches when the query changes.
+  // Reactive rather than read once: `useFetch` refetches when the query
+  // changes, which for a signed-in reader is right after hydration.
   const { data, pending, error, refresh } = await useFetch<HospitalStats>(
     "/api/stats/hospitals",
     { query: computed(() => (user.value ? { latest: "true" } : {})) },
@@ -481,8 +513,9 @@ export async function useHospitalBoards() {
   );
 
   return {
-    /** Resolved here, before the `await` below, and handed back so a page does
-     * not call `useCurrentUser()` for itself.
+    /** The hydration-safe reader from above, handed back so a page does not
+     * call `useCurrentUser()` for itself - which would bring the mismatches
+     * back, and worse.
      *
      * A page that awaits this composable has a top-level `await` in its
      * `<script setup>`, and calling a composable AFTER that await runs it with
